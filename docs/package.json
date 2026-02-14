@@ -18,5 +18,8 @@
   "devDependencies": {
     "@types/node": "^20.14.0",
     "typescript": "^5.5.0"
+  },
+  "overrides": {
+    "next-mdx-remote": "^6.0.0"
   }
 }

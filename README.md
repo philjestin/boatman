@@ -189,10 +189,31 @@ See [HYBRID_ARCHITECTURE.md](./HYBRID_ARCHITECTURE.md) for details.
 
 ## Release Strategy
 
-While developed together, the components can be released independently:
+Components use **independent versioning** within the monorepo:
 
-- **CLI**: Standalone releases for terminal users
-- **Desktop**: Bundles the CLI internally, synchronized releases
+- **CLI**: `cli/v1.2.3` - Standalone releases for terminal users
+- **Desktop**: `desktop/v1.0.5` - Bundles CLI, can release independently
+
+### Quick Release
+
+```bash
+# Interactive wizard (recommended)
+make release
+
+# Or manually
+make bump-cli-minor        # Bump CLI version
+vim cli/CHANGELOG.md       # Update changelog
+git commit -am "cli: Release v1.1.0"
+git tag cli/v1.1.0
+git push origin main --tags
+```
+
+GitHub Actions automatically:
+- Builds binaries for all platforms
+- Creates GitHub releases
+- Uploads artifacts
+
+See [RELEASE_SUMMARY.md](./RELEASE_SUMMARY.md) for quick reference or [RELEASES.md](./RELEASES.md) for the complete guide.
 
 ## Contributing
 

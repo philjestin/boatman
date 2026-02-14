@@ -1,0 +1,122 @@
+name: Release Desktop
+
+on:
+  push:
+    tags:
+      - 'desktop/v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    strategy:
+      matrix:
+        platform:
+          - os: ubuntu-latest
+            target: linux
+          - os: macos-latest
+            target: darwin
+          - os: windows-latest
+            target: windows
+
+    runs-on: ${{ matrix.platform.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract version
+        id: get_version
+        shell: bash
+        run: |
+          # Extract version from tag (desktop/v1.2.3 -> 1.2.3)
+          VERSION=${GITHUB_REF#refs/tags/desktop/v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=$GITHUB_REF_NAME" >> $GITHUB_OUTPUT
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.1'
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install Wails
+        shell: bash
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+      - name: Install Linux dependencies
+        if: matrix.platform.target == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev
+
+      - name: Build CLI
+        shell: bash
+        run: |
+          cd cli
+          go build -o boatman ./cmd/boatman
+
+          # Copy to desktop directory so it's bundled
+          cp boatman ../desktop/
+
+      - name: Install frontend dependencies
+        shell: bash
+        run: |
+          cd desktop/frontend
+          npm install
+
+      - name: Run tests
+        shell: bash
+        run: |
+          cd desktop
+          go test ./...
+
+      - name: Build Desktop App
+        shell: bash
+        run: |
+          cd desktop
+          wails build -platform ${{ matrix.platform.target }}
+
+      - name: Create Release Archive (macOS)
+        if: matrix.platform.target == 'darwin'
+        run: |
+          cd desktop/build/bin
+          zip -r boatman-desktop-${{ steps.get_version.outputs.version }}-macos.zip Boatman.app
+
+      - name: Create Release Archive (Linux)
+        if: matrix.platform.target == 'linux'
+        run: |
+          cd desktop/build/bin
+          tar czf boatman-desktop-${{ steps.get_version.outputs.version }}-linux.tar.gz boatman
+
+      - name: Create Release Archive (Windows)
+        if: matrix.platform.target == 'windows'
+        shell: bash
+        run: |
+          cd desktop/build/bin
+          7z a boatman-desktop-${{ steps.get_version.outputs.version }}-windows.zip boatman.exe
+
+      - name: Upload Release Assets
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.get_version.outputs.tag }}
+          files: |
+            desktop/build/bin/*.zip
+            desktop/build/bin/*.tar.gz
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.platform.target }}-${{ steps.get_version.outputs.version }}
+          path: desktop/build/bin/*
