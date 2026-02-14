@@ -92,7 +92,7 @@ changelog:
 release:
   github:
     owner: philjestin
-    name: boatmanmode
+    name: boatman
   name_template: "{{.ProjectName}}-v{{.Version}}"
   draft: false
   prerelease: auto
