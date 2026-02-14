@@ -23,7 +23,7 @@ jobs:
         with:
           go-version: '1.24.1'
 
-      - name: Extract version
+      - name: Extract version and create stripped tag
         id: get_version
         run: |
           # Extract version from tag (cli/v1.2.3 -> v1.2.3)
@@ -37,6 +37,10 @@ jobs:
           # Find previous CLI tag for changelog
           PREV_TAG=$(git tag -l 'cli/v*' --sort=-version:refname | grep -v "$GITHUB_REF_NAME" | head -n 1 | sed 's/cli\///')
           echo "prev_tag=$PREV_TAG" >> $GITHUB_OUTPUT
+
+          # Create stripped tag for GoReleaser (e.g., v1.0.0 from cli/v1.0.0)
+          # GoReleaser needs this tag to exist in git for validation
+          git tag "$STRIPPED_TAG"
 
       - name: Run tests
         run: |
@@ -52,8 +56,6 @@ jobs:
           workdir: cli
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GORELEASER_CURRENT_TAG: ${{ steps.get_version.outputs.stripped_tag }}
-          GORELEASER_PREVIOUS_TAG: ${{ steps.get_version.outputs.prev_tag }}
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
