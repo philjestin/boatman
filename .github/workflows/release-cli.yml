@@ -26,10 +26,17 @@ jobs:
       - name: Extract version
         id: get_version
         run: |
-          # Extract version from tag (cli/v1.2.3 -> 1.2.3)
-          VERSION=${GITHUB_REF#refs/tags/cli/v}
+          # Extract version from tag (cli/v1.2.3 -> v1.2.3)
+          STRIPPED_TAG=${GITHUB_REF#refs/tags/cli/}
+          # Also extract just the version number (v1.2.3 -> 1.2.3)
+          VERSION=${STRIPPED_TAG#v}
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "tag=$GITHUB_REF_NAME" >> $GITHUB_OUTPUT
+          echo "stripped_tag=$STRIPPED_TAG" >> $GITHUB_OUTPUT
+
+          # Find previous CLI tag for changelog
+          PREV_TAG=$(git tag -l 'cli/v*' --sort=-version:refname | grep -v "$GITHUB_REF_NAME" | head -n 1 | sed 's/cli\///')
+          echo "prev_tag=$PREV_TAG" >> $GITHUB_OUTPUT
 
       - name: Run tests
         run: |
@@ -45,6 +52,8 @@ jobs:
           workdir: cli
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GORELEASER_CURRENT_TAG: ${{ steps.get_version.outputs.stripped_tag }}
+          GORELEASER_PREVIOUS_TAG: ${{ steps.get_version.outputs.prev_tag }}
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

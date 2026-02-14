@@ -3,10 +3,6 @@
 
 version: 1
 
-# Monorepo configuration - only consider tags with cli/ prefix
-monorepo:
-  tag_prefix: cli/
-
 before:
   hooks:
     # Ensure dependencies are up to date
