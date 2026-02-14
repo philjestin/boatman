@@ -3,14 +3,9 @@
 
 version: 1
 
-# Only consider tags matching cli/v* pattern
-# Strip the cli/ prefix from the tag to get the version
-git:
-  tag_sort: -version:refname
-  prerelease_suffix: "-"
-
-# Strip cli/ prefix from tag for version
-tag_template: '{{ trimPrefix .Tag "cli/" }}'
+# Monorepo configuration - only consider tags with cli/ prefix
+monorepo:
+  tag_prefix: cli/
 
 before:
   hooks:
