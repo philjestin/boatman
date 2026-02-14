@@ -1,0 +1,137 @@
+# Boatman Ecosystem
+
+**AI-powered autonomous software development, from CLI to desktop.**
+
+Boatman is an integrated ecosystem for automating software development workflows using Claude AI. It takes tasks — from Linear tickets, inline prompts, or markdown files — and implements them end-to-end: planning, coding, testing, reviewing, refactoring, and creating pull requests.
+
+---
+
+## The Ecosystem
+
+### BoatmanMode CLI
+
+The command-line autonomous development agent. Feed it a task, and it orchestrates a multi-agent pipeline to deliver production-ready code.
+
+- Multi-phase workflow: plan, execute, test, review, refactor
+- Git worktree isolation for safe parallel work
+- Configurable Claude model selection per agent
+- Structured JSON event emission for integration
+- Usable as a Go library
+
+[Get started with the CLI →](/cli)
+
+### Boatman Desktop
+
+A cross-platform desktop application built with Wails (Go + React) that wraps the CLI with a rich GUI.
+
+- Interactive Claude AI chat for your codebase
+- Firefighter Mode for production incident investigation
+- Real-time streaming of agent execution
+- Session management and project organization
+- MCP server integration (Linear, Datadog, Bugsnag, Slack)
+
+[Get started with the Desktop app →](/desktop)
+
+---
+
+## How It Works
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Input Sources                                              │
+│  Linear Ticket  │  Inline Prompt  │  Markdown File          │
+└────────┬────────────────┬──────────────────┬────────────────┘
+         │                │                  │
+         ▼                ▼                  ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    BoatmanMode CLI                           │
+│                                                             │
+│  1. Prepare Task         5. Run Tests                       │
+│  2. Create Worktree      6. Peer Review                     │
+│  3. Plan (AI Agent)      7. Refactor Loop                   │
+│  4. Execute (AI Agent)   8. Commit & Push                   │
+│                          9. Create PR                       │
+│                                                             │
+│  Emits structured JSON events ─────────────────────────┐    │
+└─────────────────────────────────────────────────────────┼────┘
+                                                          │
+         ┌────────────────────────────────────────────────┘
+         │
+         ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    Boatman Desktop                           │
+│                                                             │
+│  • Captures JSON events from CLI subprocess                 │
+│  • Displays real-time agent progress in Tasks tab           │
+│  • Provides Firefighter Mode for incident investigation     │
+│  • Integrates with Linear, Bugsnag, Datadog via MCP         │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Quick Start
+
+### CLI
+
+```bash
+# Install
+go install github.com/philjestin/boatmanmode/cmd/boatman@latest
+
+# Or download pre-built binary
+curl -fsSL https://raw.githubusercontent.com/philjestin/boatmanmode/main/install.sh | bash
+
+# Run
+boatman work --prompt "Add a health check endpoint at /health"
+```
+
+### Desktop
+
+```bash
+# Clone the monorepo
+git clone https://github.com/philjestin/boatman-ecosystem
+cd boatman-ecosystem
+
+# Build CLI first
+make build-cli
+
+# Start desktop in dev mode
+make dev
+```
+
+---
+
+## Prerequisites
+
+| Tool | Purpose | Required For |
+|------|---------|-------------|
+| Go 1.24.1+ | Build CLI and Desktop backend | Both |
+| Node.js 18+ | Desktop frontend | Desktop |
+| Wails v2 | Desktop app framework | Desktop |
+| `claude` CLI | AI code generation and review | Both |
+| `gh` CLI | Pull request creation | CLI |
+| `git` | Version control | Both |
+| `tmux` | Agent session management | CLI |
+
+---
+
+## Repository Structure
+
+```
+boatman-ecosystem/
+├── cli/              # BoatmanMode CLI — autonomous agent
+│   ├── cmd/          # CLI entry points
+│   ├── internal/     # Implementation packages
+│   └── examples/     # Library usage examples
+│
+├── desktop/          # Boatman Desktop — GUI application
+│   ├── frontend/     # React/TypeScript UI
+│   ├── agent/        # Session management
+│   ├── boatmanmode/  # CLI integration layer
+│   └── config/       # Configuration
+│
+├── shared/           # Shared Go packages
+├── docs/             # This documentation site
+├── go.work           # Go workspace configuration
+└── Makefile          # Build commands
+```

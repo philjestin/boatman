@@ -1,0 +1,163 @@
+# Contributing
+
+## Development Setup
+
+### Prerequisites
+- Go 1.24.1+
+- Node.js 18+
+- Wails v2 CLI
+- `tmux`
+
+### Clone and Setup
+
+```bash
+git clone https://github.com/philjestin/boatman-ecosystem
+cd boatman-ecosystem
+go work sync
+```
+
+### Build
+
+```bash
+# CLI
+cd cli && go build -o boatman ./cmd/boatman
+
+# Desktop
+cd desktop && wails build
+
+# Or use the Makefile
+make build-all
+```
+
+### Run Tests
+
+```bash
+# CLI tests
+cd cli && go test ./...
+
+# Desktop Go tests
+cd desktop && go test ./...
+
+# Frontend tests
+cd desktop/frontend && npm test
+
+# All tests
+make test-all
+```
+
+---
+
+## Repository Structure
+
+| Directory | Language | Description |
+|-----------|----------|-------------|
+| `cli/` | Go | BoatmanMode CLI |
+| `desktop/` | Go + TypeScript | Desktop application |
+| `desktop/frontend/` | TypeScript/React | Desktop UI |
+| `shared/` | Go | Shared packages |
+| `docs/` | MDX | Documentation site |
+
+---
+
+## Code Conventions
+
+### Go Code
+- Use `gofmt` for formatting
+- Follow standard Go project layout
+- Keep packages focused and small
+- Write tests alongside implementation
+- Use `internal/` for non-public packages
+
+### TypeScript Code
+- Use TypeScript strict mode
+- Follow React hooks patterns
+- Use functional components
+- Keep components small and focused
+
+### Commit Messages
+
+Follow the prefix convention:
+
+```bash
+[cli] feat: add support for file-based prompts
+[desktop] fix: correct Okta token refresh
+[both] refactor: update event protocol
+[docs] add architecture overview
+[build] update CI workflow
+```
+
+For CLI auto-versioning:
+```bash
+feat: ...    → minor bump
+fix: ...     → patch bump
+breaking: ...→ major bump
+```
+
+---
+
+## Development Workflow
+
+### CLI Development
+
+```bash
+cd cli
+
+# Build and test
+go build -o boatman ./cmd/boatman
+go test ./...
+
+# Run locally
+./boatman work --prompt "Test prompt" --dry-run
+```
+
+### Desktop Development
+
+```bash
+cd desktop
+
+# Start dev mode with hot reload
+wails dev
+
+# Build for production
+wails build -clean -production
+```
+
+### Documentation Development
+
+```bash
+cd docs
+npm install
+npm run dev
+# Open http://localhost:3000
+```
+
+---
+
+## Pull Request Process
+
+1. Create a feature branch from `main`
+2. Make changes following code conventions
+3. Write or update tests
+4. Run the full test suite
+5. Submit PR with a description of changes
+6. Wait for CI checks to pass
+7. Request review
+
+---
+
+## Testing Guidelines
+
+### Unit Tests
+- Test public APIs and critical paths
+- Use table-driven tests for Go
+- Mock external dependencies
+
+### Integration Tests
+- Use the `testenv` package for e2e scenarios
+- Tag with `//go:build e2e` for slow tests
+- Provide mock servers for external APIs
+
+### Frontend Tests
+- Test component rendering and interactions
+- Use React Testing Library patterns
+- Mock Wails bindings

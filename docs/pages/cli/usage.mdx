@@ -1,0 +1,175 @@
+# Usage
+
+## Execute a Task
+
+BoatmanMode supports three input modes:
+
+```bash
+cd /path/to/your/project
+
+# 1. Linear ticket (default)
+boatman work ENG-123
+
+# 2. Inline prompt
+boatman work --prompt "Add a health check endpoint at /health"
+
+# 3. File-based prompt
+boatman work --file ./tasks/authentication.md
+
+# With custom title and branch
+boatman work --prompt "Add auth" --title "Authentication" --branch-name "feature/auth"
+```
+
+---
+
+## Command Options
+
+```bash
+boatman work ENG-123 --max-iterations 5        # More refactor attempts
+boatman work ENG-123 --base-branch develop     # Different base branch
+boatman work ENG-123 --dry-run                 # Preview without changes
+boatman work ENG-123 --review-skill my-review  # Use custom review skill
+```
+
+### All Flags
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--prompt` | Inline prompt text | — |
+| `--file` | Read prompt from file | — |
+| `--title` | Override task title (prompt/file mode) | Auto-extracted |
+| `--branch-name` | Override branch name (prompt/file mode) | Auto-generated |
+| `--max-iterations` | Max review/refactor iterations | 3 |
+| `--base-branch` | Base branch for worktree | `main` |
+| `--auto-pr` | Automatically create PR on success | `true` |
+| `--dry-run` | Run without making changes | `false` |
+| `--timeout` | Timeout in minutes for each Claude agent | 60 |
+| `--review-skill` | Claude skill for code review | `peer-review` |
+| `--resume` | Resume interrupted workflow from checkpoint | `false` |
+
+---
+
+## Watch Claude Work (Live Streaming)
+
+Open a second terminal and run:
+
+```bash
+boatman watch
+```
+
+Or attach to specific tmux sessions:
+
+```bash
+tmux attach -t boatman-executor
+tmux attach -t boatman-reviewer-1
+tmux attach -t boatman-planner
+```
+
+### What You'll See
+
+```
+Claude is working (with file write permissions)...
+Activity will stream below:
+
+Running: ls -la packs/
+Reading: packs/annotations/app/graphql/consumer/types/...
+Editing: packs/annotations/app/graphql/consumer/mutations/...
+Writing: packs/annotations/spec/graphql/consumer/...
+Searching files...
+
+Task completed!
+```
+
+### tmux Controls
+
+| Key | Action |
+|-----|--------|
+| `Ctrl+B` then `D` | Detach from session |
+| `Ctrl+B` then arrow keys | Switch panes |
+
+---
+
+## Session Management
+
+```bash
+boatman sessions list       # List active sessions
+boatman sessions kill       # Kill all boatman sessions
+boatman sessions kill -f    # Also kill orphaned claude processes
+boatman sessions cleanup    # Clean up idle sessions
+```
+
+---
+
+## Worktree Management
+
+```bash
+boatman worktree list                    # List all worktrees
+boatman worktree commit                  # Commit changes (WIP)
+boatman worktree commit wt-name "msg"    # Commit with message
+boatman worktree push                    # Push branch to origin
+boatman worktree clean                   # Remove all worktrees
+```
+
+### Viewing Changes Manually
+
+```bash
+# Navigate to the worktree
+cd .worktrees/philmiddleton-eng-123-feature
+
+# Inspect changes
+git status
+git diff
+
+# Commit and push
+git add -A
+git commit -m "feat: implement feature"
+git push -u origin HEAD
+```
+
+---
+
+## Checkpoint Management
+
+```bash
+# Resume an interrupted workflow
+boatman work ENG-123 --resume
+
+# View checkpoint history
+git log --oneline --grep "\[checkpoint\]"
+
+# Create a snapshot branch
+boatman checkpoint snapshot "before-refactor"
+
+# Squash checkpoint commits before PR
+boatman checkpoint squash "feat: implement feature ENG-123"
+```
+
+### Rollback Scenarios
+
+```bash
+# Undo last refactor attempt
+git reset --hard HEAD~1
+
+# Go back to before review started
+boatman checkpoint rollback --step execution
+
+# Restore from snapshot branch
+git checkout checkpoint/ENG-123/before-review -- .
+```
+
+---
+
+## Debug Mode
+
+For detailed structured logging:
+
+```bash
+export BOATMAN_DEBUG=1
+boatman work ENG-123
+```
+
+This outputs structured logs showing:
+- Retry attempts and delays
+- Dropped messages
+- Context cancellation
+- Coordinator state changes

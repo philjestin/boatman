@@ -1,0 +1,208 @@
+# Configuration
+
+BoatmanMode is configured through a YAML file, environment variables, and CLI flags.
+
+## Configuration File
+
+Create `~/.boatman.yaml` (global) or `.boatman.yaml` in your project root (project-specific):
+
+```yaml
+# Linear API key (or set LINEAR_API_KEY env var)
+linear_key: lin_api_xxxxx
+
+# Claude CLI tools
+enable_tools: true
+
+# Workflow settings
+max_iterations: 5
+base_branch: main
+auto_pr: true
+review_skill: peer-review
+
+# Review pass criteria
+review:
+  max_critical_issues: 1
+  max_major_issues: 3
+  min_verification_confidence: 50
+  strict_parsing: false
+
+# Claude CLI settings
+claude:
+  command: claude
+  use_tmux: false
+  large_prompt_threshold: 100000
+  timeout: 0
+  enable_prompt_caching: true
+
+  # Multi-model strategy per agent type
+  models:
+    planner: claude-sonnet-4.5
+    executor: claude-sonnet-4.5
+    reviewer: claude-sonnet-4.5
+    refactor: claude-sonnet-4.5
+    preflight: claude-haiku-4
+    test_runner: claude-haiku-4
+
+# Coordinator settings
+coordinator:
+  message_buffer_size: 1000
+  subscriber_buffer_size: 100
+
+# Retry settings
+retry:
+  max_attempts: 3
+  initial_delay: 500ms
+  max_delay: 30s
+
+# Token budgets for handoffs
+token_budget:
+  context: 8000
+  plan: 2000
+  review: 4000
+
+# Feature toggles
+enable_preflight: true
+enable_tests: true
+enable_diff_verify: true
+enable_memory: true
+checkpoint_dir: ~/.boatman/checkpoints
+memory_dir: ~/.boatman/memory
+```
+
+---
+
+## Environment Variables
+
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `LINEAR_API_KEY` | Linear API key for ticket fetching | Yes (for Linear mode) |
+| `CLAUDE_CODE_USE_VERTEX` | Set to `1` for Vertex AI | If using Vertex |
+| `CLOUD_ML_REGION` | Vertex AI region | If using Vertex |
+| `ANTHROPIC_VERTEX_PROJECT_ID` | GCP project ID | If using Vertex |
+| `ANTHROPIC_API_KEY` | Anthropic API key | If using direct API |
+| `BOATMAN_DEBUG` | Set to `1` for debug output | No |
+| `BOATMAN_CHECKPOINT_DIR` | Custom checkpoint directory | No |
+| `BOATMAN_MEMORY_DIR` | Custom memory directory | No |
+| `LINEAR_API_URL` | Override Linear API URL (for testing) | No |
+
+---
+
+## Model Configuration
+
+Each agent in the workflow can use a different Claude model for cost optimization:
+
+### Available Models
+
+| Model | ID | Best For |
+|-------|----|----------|
+| Claude Opus 4.6 | `claude-opus-4-6` | Highest quality: complex planning, nuanced code generation |
+| Claude Sonnet 4.5 | `claude-sonnet-4.5` | Good balance of quality and cost |
+| Claude Haiku 4 | `claude-haiku-4` | Fast and cheap: validation and parsing tasks |
+
+### Configuration Profiles
+
+**Maximum quality:**
+```yaml
+claude:
+  models:
+    planner: claude-opus-4-6
+    executor: claude-opus-4-6
+    reviewer: claude-opus-4-6
+    refactor: claude-opus-4-6
+    preflight: claude-haiku-4
+    test_runner: claude-haiku-4
+```
+
+**Balanced (recommended):**
+```yaml
+claude:
+  models:
+    planner: claude-sonnet-4.5
+    executor: claude-sonnet-4.5
+    reviewer: claude-sonnet-4.5
+    refactor: claude-sonnet-4.5
+    preflight: claude-haiku-4
+    test_runner: claude-haiku-4
+```
+
+**Cost-optimized:**
+```yaml
+claude:
+  models:
+    planner: claude-sonnet-4.5
+    executor: claude-sonnet-4.5
+    reviewer: claude-haiku-4
+    refactor: claude-haiku-4
+    preflight: claude-haiku-4
+    test_runner: claude-haiku-4
+```
+
+If a model field is omitted, the Claude CLI's default model is used.
+
+---
+
+## Review Configuration
+
+Control how strict the peer review system is:
+
+```yaml
+review:
+  max_critical_issues: 1           # Max critical issues to still pass
+  max_major_issues: 3              # Max major issues to still pass
+  min_verification_confidence: 50  # Min confidence % for diff verification
+  strict_parsing: false            # Strict keyword parsing for reviews
+```
+
+### Review Profiles
+
+| Profile | Critical | Major | Confidence | Strict Parsing |
+|---------|----------|-------|------------|---------------|
+| Strict | 0 | 1 | 70% | true |
+| Balanced (default) | 1 | 3 | 50% | false |
+| Lenient | 2 | 5 | 40% | false |
+
+---
+
+## Coordinator Configuration
+
+For parallel agent execution:
+
+```yaml
+coordinator:
+  message_buffer_size: 1000      # Main message channel buffer
+  subscriber_buffer_size: 100    # Per-agent channel buffer
+```
+
+Increase these if you see "coordinator message channel full" warnings.
+
+---
+
+## Retry Configuration
+
+Control retry behavior for API calls:
+
+```yaml
+retry:
+  max_attempts: 3       # Number of retry attempts
+  initial_delay: 500ms  # Initial delay between retries
+  max_delay: 30s        # Maximum delay (exponential backoff)
+```
+
+---
+
+## Token Budget Configuration
+
+Control context sizes for agent handoffs:
+
+```yaml
+token_budget:
+  context: 8000   # General context budget
+  plan: 2000      # Plan handoff budget
+  review: 4000    # Review handoff budget
+```
+
+| Handoff | Content | Default Budget |
+|---------|---------|---------------|
+| Plan to Executor | Summary, approach, files | ~4000 tokens |
+| Executor to Reviewer | Requirements, diff, test results | ~3000 tokens |
+| Reviewer to Refactor | Issues (deduplicated), guidance | ~2000 tokens |

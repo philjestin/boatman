@@ -1,0 +1,94 @@
+# Boatman Desktop
+
+Boatman Desktop is a native desktop application built with Wails (Go + React) that provides a rich GUI for interacting with Claude AI on your codebase, with specialized **Firefighter Mode** for production incident investigation.
+
+## Features
+
+### Claude AI Agent
+- **Interactive Chat**: Ask questions, request changes, get explanations about your codebase
+- **Code Analysis**: Deep understanding of your project structure and patterns
+- **Autonomous Actions**: Edit files, run commands, create commits with your approval
+- **Sub-Agents**: Spawns specialized agents for complex multi-step tasks
+- **Project Management**: Open and manage multiple coding projects
+- **Task Tracking**: View and monitor tasks created by the agent
+
+### Firefighter Mode
+- **Linear Integration**: Monitors triage queue for production incidents
+- **Error Investigation**: Connects Bugsnag errors with Datadog logs and git history
+- **Root Cause Analysis**: Correlates deployments, code changes, and error patterns
+- **Auto-Fix**: Creates isolated worktrees, attempts fixes, runs tests, opens PRs
+- **Slack Integration**: Responds to @mentions for urgent production issues
+
+### BoatmanMode Integration
+- **One-Click Execution**: Execute Linear tickets through BoatmanMode's full pipeline
+- **Live Progress**: Real-time tracking of planning, execution, review, and refactoring
+- **Event-Driven**: Structured JSON events streamed from CLI to desktop UI
+
+### MCP Integration
+- **Extensible**: Connect to any MCP-compatible tool or service
+- **Built-in Servers**: GitHub, Datadog, Bugsnag, Linear, Slack
+- **OAuth Support**: Authenticate via Okta SSO for enterprise integrations
+- **Custom Servers**: Build your own MCP servers
+
+---
+
+## Project Structure
+
+```
+desktop/
+├── frontend/              # React TypeScript frontend
+│   ├── src/
+│   │   ├── components/    # UI components
+│   │   │   ├── approval/  # Approval bar for agent actions
+│   │   │   ├── boatmanmode/  # BoatmanMode integration UI
+│   │   │   ├── chat/      # Chat view and message bubbles
+│   │   │   ├── diff/      # Diff viewer and batch approval
+│   │   │   ├── firefighter/  # Firefighter mode UI
+│   │   │   ├── layout/    # Header, sidebar, layout
+│   │   │   ├── logs/      # Agent logs panel
+│   │   │   ├── onboarding/  # First-run setup
+│   │   │   ├── project/   # Project management
+│   │   │   ├── search/    # Search interface
+│   │   │   ├── session/   # Session management
+│   │   │   ├── settings/  # Settings modal
+│   │   │   └── tasks/     # Task list display
+│   │   ├── hooks/         # React hooks (useAgent, etc.)
+│   │   ├── store/         # State management
+│   │   └── types/         # TypeScript type definitions
+│   └── wailsjs/           # Wails-generated bindings
+├── agent/                 # Agent session management (Go)
+├── boatmanmode/           # BoatmanMode CLI integration (Go)
+├── config/                # Configuration and preferences (Go)
+├── diff/                  # Diff parsing and rendering (Go)
+├── git/                   # Git integration (Go)
+├── mcp/                   # MCP server management (Go)
+├── project/               # Project and workspace management (Go)
+├── app.go                 # Main application logic
+└── main.go                # Application entry point
+```
+
+---
+
+## Supported Models
+
+| Model | ID | Recommended For |
+|-------|----|----------------|
+| Claude Opus 4.6 | `claude-opus-4-6` | Complex analysis, thorough reviews |
+| Claude Sonnet 4.5 | `claude-sonnet-4.5` | General development, balanced quality |
+| Claude Haiku 4 | `claude-haiku-4` | Quick tasks, fast responses |
+
+---
+
+## FAQ
+
+**Q: What OS is supported?**
+A: Currently macOS (M1/M2/M3). Windows/Linux support planned.
+
+**Q: How much does it cost?**
+A: Boatman Desktop is free. You pay for Claude API usage.
+
+**Q: Is my code secure?**
+A: Code is sent to Claude API following Anthropic's privacy policy. Use Google Cloud for private VPC.
+
+**Q: Can I use it offline?**
+A: No, requires internet for Claude API and MCP servers.

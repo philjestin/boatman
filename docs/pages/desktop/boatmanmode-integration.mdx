@@ -1,0 +1,194 @@
+# BoatmanMode Integration
+
+Boatman Desktop integrates with the BoatmanMode CLI to provide automated ticket execution through the GUI.
+
+## Overview
+
+| Feature | Firefighter Mode | BoatmanMode |
+|---------|-----------------|-------------|
+| Purpose | Investigate incidents | Automate implementation |
+| Approach | Manual analysis with MCP tools | Full automated pipeline |
+| Output | Investigation report | Pull request |
+| Best for | "What caused this?" | "Fix this bug" |
+
+---
+
+## Architecture
+
+Boatman Desktop calls the `boatman` CLI binary as a **subprocess** rather than importing Go modules directly.
+
+**Why subprocess?**
+- BoatmanMode's packages are in `internal/` (Go import restriction)
+- Clean separation of concerns — UI vs automation engine
+- No version coupling — each can be updated independently
+- Works as standalone CLI or through the desktop GUI
+
+```
+┌─────────────────────────────────────────────────────┐
+│                  Boatman Desktop                     │
+│                                                     │
+│  ┌────────────────┐    ┌────────────────┐          │
+│  │  Firefighter   │    │  BoatmanMode   │          │
+│  │     Mode       │    │  Integration   │          │
+│  │                │    │                │          │
+│  │ • Investigate  │    │ • Auto-Execute │          │
+│  │ • Report       │    │ • Stream Output│          │
+│  │ • Manual Fix   │    │ • Fetch Tickets│          │
+│  └───────┬────────┘    └───────┬────────┘          │
+│          │                     │                    │
+│          │ MCP Tools           │ Subprocess         │
+│          │                     │ exec.Command        │
+│          │                     ▼                    │
+│          │            ┌────────────────┐            │
+│          │            │  boatman CLI   │            │
+│          │            │ (boatmanmode)  │            │
+│          │            └────────────────┘            │
+└──────────┼─────────────────────┼───────────────────┘
+           │                     │
+           ▼                     ▼
+   Bugsnag / Datadog       Linear / Git / Claude
+```
+
+---
+
+## Event Flow
+
+```
+CLI Process                Integration Layer              Frontend
+━━━━━━━━━━━                ━━━━━━━━━━━━━━━━━              ━━━━━━━━
+boatman CLI         →    boatmanmode/integration.go   →   useAgent.ts
+emits JSON events        parses JSON, emits Wails        listens to events
+to stdout                EventsEmit("boatmanmode:event")  updates Tasks tab
+```
+
+### Event Types Handled
+
+| Event | UI Behavior |
+|-------|-------------|
+| `agent_started` | Creates task with "in_progress" status |
+| `agent_completed` | Updates task status to "completed" or "failed" |
+| `progress` | Displays in output stream |
+| `task_created` | Creates sub-task in task list |
+| `task_updated` | Updates sub-task status |
+
+---
+
+## Usage
+
+### Simple Execution
+
+```go
+result, err := ExecuteLinearTicketWithBoatmanMode(
+    linearAPIKey,
+    ticketID,
+    projectPath,
+)
+```
+
+### Streaming Execution
+
+```go
+err := StreamLinearTicketExecution(
+    linearAPIKey,
+    ticketID,
+    projectPath,
+)
+
+// Frontend listens:
+EventsOn("boatmanmode:output", (data) => {
+    console.log(data.message);
+})
+```
+
+### Fetching Tickets
+
+```go
+tickets, err := FetchLinearTicketsForBoatmanMode(
+    linearAPIKey,
+    projectPath,
+)
+```
+
+---
+
+## User Flow
+
+1. Click **"Boatman Mode"** button in header (purple)
+2. Dialog opens asking for:
+   - Linear ticket ID (e.g., `TICKET-123`)
+   - Shows current project path
+3. Enter ticket ID and click **"Start Execution"**
+4. BoatmanMode subprocess:
+   - Creates git worktree
+   - Plans implementation
+   - Executes code changes
+   - Runs tests
+   - Peer reviews
+   - Refactors until passing
+   - Creates PR
+5. Events stream to UI:
+   - Tasks tab shows real-time agent progress
+   - Output stream shows formatted messages
+   - Session list shows purple "Boatman" badge
+
+---
+
+## UI Components
+
+### BoatmanModeDialog
+
+Dialog for starting execution:
+- Ticket ID input
+- Project path display
+- Configuration status warnings
+
+### BoatmanModeBadge
+
+Purple badge in session list identifying BoatmanMode sessions.
+
+### Tasks Tab Display
+
+| Icon | Status |
+|------|--------|
+| Robot icon | Agent in progress |
+| Checkmark | Agent completed successfully |
+| X mark | Agent failed |
+| Clipboard | Task created |
+| Hourglass | Progress message |
+
+---
+
+## Binary Location
+
+The integration looks for the `boatman` binary in:
+
+1. `boatman` in PATH (`exec.LookPath`)
+2. `~/workspace/personal/boatman-ecosystem/cli/boatman` (monorepo)
+3. `~/workspace/handshake/boatmanmode/boatman` (legacy fallback)
+
+### Configuring PATH
+
+```bash
+# Option 1: Add to PATH
+export PATH="$PATH:~/workspace/personal/boatman-ecosystem/cli"
+
+# Option 2: Symlink
+ln -s ~/workspace/personal/boatman-ecosystem/cli/boatman /usr/local/bin/boatman
+
+# Option 3: Install from monorepo
+cd ~/workspace/personal/boatman-ecosystem
+make install-cli
+```
+
+---
+
+## When to Use Which?
+
+| Use Case | Tool |
+|----------|------|
+| "What caused this production error?" | Firefighter Mode |
+| "Fix this straightforward bug" | BoatmanMode |
+| "Unclear what's broken" | Firefighter Mode |
+| "Implement feature XYZ" | BoatmanMode |
+| "Need postmortem report" | Firefighter Mode |
+| "Simple refactor task" | BoatmanMode |

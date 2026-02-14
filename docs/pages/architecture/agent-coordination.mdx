@@ -1,0 +1,175 @@
+# Agent Coordination
+
+BoatmanMode coordinates multiple AI agents through a central coordinator with work claiming, file locking, and shared context.
+
+## Coordinator Architecture
+
+```
+┌──────────────────────────────────────────────────┐
+│                  Coordinator                      │
+│                                                  │
+│  ┌─────────────┐  ┌─────────────┐              │
+│  │ Work Claims │  │ File Locks  │              │
+│  │ (map)       │  │ (map)       │              │
+│  └─────────────┘  └─────────────┘              │
+│                                                  │
+│  ┌─────────────┐  ┌─────────────┐              │
+│  │ Shared Ctx  │  │ Message Bus │              │
+│  │ (map)       │  │ (channels)  │              │
+│  └─────────────┘  └─────────────┘              │
+│                                                  │
+│  running: atomic.Bool (thread-safe)              │
+└──────────────────────────────────────────────────┘
+     │           │           │           │
+     ▼           ▼           ▼           ▼
+  Planner    Executor    Reviewer    Refactor
+   Agent      Agent       Agent       Agent
+```
+
+---
+
+## Work Claiming
+
+Prevents duplicate effort when multiple agents work in parallel:
+
+```go
+coord.ClaimWork("executor", &WorkClaim{
+    WorkID: "implement-feature",
+    Files:  []string{"pkg/feature.go"},
+})
+```
+
+If another agent tries to claim the same work, it receives an error.
+
+---
+
+## File Locking
+
+Prevents race conditions on shared files:
+
+```go
+// Lock files before modifying
+coord.LockFiles("executor", []string{"pkg/feature.go", "pkg/feature_test.go"})
+
+// Do work...
+
+// Release locks when done
+coord.UnlockFiles("executor")
+```
+
+Locks are per-agent and automatically released on agent cleanup.
+
+---
+
+## Shared Context
+
+Agents share data through a key-value context store:
+
+```go
+// Planner stores the plan
+coord.SetContext("plan", planJSON)
+
+// Executor retrieves the plan
+plan, ok := coord.GetContext("plan")
+```
+
+Common context keys:
+| Key | Set By | Used By | Content |
+|-----|--------|---------|---------|
+| `plan` | Planner | Executor | Implementation plan |
+| `diff` | Executor | Reviewer | Code diff |
+| `test_results` | Test Runner | Reviewer | Test output |
+| `review_feedback` | Reviewer | Refactor | Issues list |
+
+---
+
+## Message Bus
+
+The coordinator provides a pub/sub message bus for inter-agent communication:
+
+```go
+// Subscribe to messages
+ch := coord.Subscribe("executor")
+for msg := range ch {
+    // Handle message
+}
+
+// Publish a message
+coord.Publish("plan_ready", planData)
+```
+
+### Buffer Configuration
+
+```yaml
+coordinator:
+  message_buffer_size: 1000      # Main channel buffer
+  subscriber_buffer_size: 100    # Per-agent buffer
+```
+
+If buffers overflow, messages are dropped and logged:
+```
+WARN: coordinator message channel full, message dropped
+```
+
+---
+
+## Thread Safety
+
+The coordinator uses several concurrency primitives:
+
+| Component | Mechanism |
+|-----------|-----------|
+| Running state | `atomic.Bool` |
+| Work claims | `sync.Mutex` |
+| File locks | `sync.Mutex` |
+| Shared context | `sync.RWMutex` |
+| Message channels | Go channels |
+
+No data races exist under concurrent access.
+
+---
+
+## Lifecycle
+
+```go
+// Create
+coord := coordinator.New(&config.CoordinatorConfig{
+    MessageBufferSize:    1000,
+    SubscriberBufferSize: 100,
+})
+
+// Start
+coord.Start()
+
+// Use during workflow...
+
+// Stop (clears all state, prevents memory leaks)
+coord.Stop()
+```
+
+`Stop()` clears all maps, closes channels, and releases resources in reverse order.
+
+---
+
+## Handoff Compression
+
+When context is passed between agents, it's compressed to fit token budgets:
+
+### Compression Levels
+
+| Level | Strategy |
+|-------|----------|
+| Light | Full content, minimal trimming |
+| Medium | Summarize long sections, keep structure |
+| Heavy | Extract signatures + bullet points |
+| Extreme | Key facts only, aggressive truncation |
+
+### Priority-Based Preservation
+
+Content is prioritized during compression:
+1. **Critical**: Error messages, failing test names
+2. **High**: Implementation approach, file list
+3. **Medium**: Code patterns, examples
+4. **Low**: Verbose explanations, background context
+
+The system automatically selects the compression level based on the content size relative to the token budget.

@@ -1,0 +1,90 @@
+# Configuration
+
+## Settings Overview
+
+Access settings via the gear icon in the top-right corner.
+
+### General Tab
+
+| Setting | Description |
+|---------|-------------|
+| Authentication | Anthropic API key or Google Cloud OAuth |
+| Default Model | Claude model for new sessions |
+| Theme | Dark or light mode |
+| Notifications | Desktop notification preferences |
+
+### Approval Tab
+
+| Mode | Description |
+|------|-------------|
+| Suggest Mode | You approve all changes (safest) |
+| Auto-Edit Mode | Claude edits files, asks for bash commands |
+| Full Auto Mode | Claude has complete autonomy (risky) |
+
+### Memory Tab
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| Max messages per session | 1000 | Trim older messages beyond this limit |
+| Archive old messages | Enabled | Moves old messages out of active context |
+| Auto-cleanup sessions | 30 days | Delete sessions older than this |
+| Max total sessions | 100 | Maximum number of stored sessions |
+
+### MCP Servers Tab
+
+- Enable/disable individual MCP servers
+- Add custom MCP servers
+- Configure environment variables per server
+
+### Firefighter Tab
+
+- Okta OAuth configuration (domain, client ID, client secret)
+- Sign in/out controls
+- Access token status display
+- Linear API key for ticket integration
+
+### About Tab
+
+- Version information
+- Links to documentation and support
+
+---
+
+## Configuration Files
+
+### User Configuration
+
+| File | Purpose |
+|------|---------|
+| `~/.boatman/config.json` | User preferences and settings |
+| `~/.claude/claude_mcp_config.json` | MCP server configurations |
+| `~/.boatman/sessions/` | Session data and history |
+
+### Build Configuration
+
+Edit `wails.json` for build settings:
+
+```json
+{
+  "name": "boatman",
+  "outputfilename": "boatman",
+  "frontend:install": "npm install",
+  "frontend:build": "npm run build",
+  "frontend:dev:watcher": "npm run dev"
+}
+```
+
+See [Wails documentation](https://wails.io/docs/reference/project-config) for details.
+
+---
+
+## Project-Specific Settings
+
+Each project can override global settings:
+
+```
+Right-click project → Project Settings
+- Approval mode override
+- Model override
+- Custom environment variables
+```

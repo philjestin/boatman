@@ -1,0 +1,366 @@
+# Library Usage
+
+BoatmanMode can be used as a Go module in your own applications, allowing you to programmatically execute development workflows.
+
+## Installation
+
+```bash
+go get github.com/philjestin/boatmanmode@latest
+
+# Or a specific version
+go get github.com/philjestin/boatmanmode@v1.0.0
+```
+
+---
+
+## Quick Start
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "log"
+
+    "github.com/philjestin/boatmanmode"
+)
+
+func main() {
+    cfg := &boatmanmode.Config{
+        LinearKey:      "your-linear-api-key",
+        BaseBranch:     "main",
+        MaxIterations:  3,
+        ReviewSkill:    "peer-review",
+        EnableTools:    true,
+    }
+
+    a, err := boatmanmode.NewAgent(cfg)
+    if err != nil {
+        log.Fatalf("Failed to create agent: %v", err)
+    }
+
+    t, err := boatmanmode.NewPromptTask(
+        "Add a health check endpoint at /health",
+        "", // auto-generate title
+        "", // auto-generate branch name
+    )
+    if err != nil {
+        log.Fatalf("Failed to create task: %v", err)
+    }
+
+    ctx := context.Background()
+    result, err := a.Work(ctx, t)
+    if err != nil {
+        log.Fatalf("Work failed: %v", err)
+    }
+
+    if result.PRCreated {
+        fmt.Printf("PR created: %s\n", result.PRURL)
+    }
+}
+```
+
+---
+
+## Task Types
+
+### Linear Tickets
+
+```go
+t, err := boatmanmode.NewLinearTask(ctx, "your-api-key", "ENG-123")
+```
+
+### Inline Prompts
+
+```go
+t, err := boatmanmode.NewPromptTask(
+    "Implement user authentication with JWT tokens",
+    "Authentication Feature",  // custom title
+    "feature/auth",           // custom branch
+)
+```
+
+### File-based Prompts
+
+```go
+t, err := boatmanmode.NewFileTask(
+    "./tasks/implement-caching.md",
+    "",  // auto-generate title from file
+    "",  // auto-generate branch
+)
+```
+
+---
+
+## Task Interface
+
+All task types implement the `Task` interface:
+
+```go
+type Task interface {
+    GetID() string
+    GetTitle() string
+    GetDescription() string
+    GetBranchName() string
+    GetLabels() []string
+    GetMetadata() TaskMetadata
+}
+```
+
+Use this to write code that works with any task source:
+
+```go
+func processTask(t boatmanmode.Task) {
+    fmt.Printf("Task ID: %s\n", t.GetID())
+    fmt.Printf("Title: %s\n", t.GetTitle())
+    fmt.Printf("Branch: %s\n", t.GetBranchName())
+
+    metadata := t.GetMetadata()
+    fmt.Printf("Source: %s\n", metadata.Source)
+}
+```
+
+---
+
+## Configuration Options
+
+```go
+type Config struct {
+    LinearKey     string       // Linear API key
+    BaseBranch    string       // Base branch for worktrees (default: "main")
+    MaxIterations int          // Max review/refactor iterations (default: 3)
+    ReviewSkill   string       // Claude skill for review (default: "peer-review")
+    EnableTools   bool         // Enable Claude tools (default: true)
+    Claude        ClaudeConfig // Claude-specific settings
+}
+
+type ClaudeConfig struct {
+    Models struct {
+        Planner  string // Model for planning
+        Executor string // Model for execution
+        Refactor string // Model for refactoring
+    }
+    EnablePromptCaching bool // Enable prompt caching (default: true)
+}
+```
+
+---
+
+## Examples
+
+### Batch Processing Tasks
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "log"
+
+    "github.com/philjestin/boatmanmode/internal/agent"
+    "github.com/philjestin/boatmanmode/internal/config"
+    "github.com/philjestin/boatmanmode/internal/task"
+)
+
+func main() {
+    cfg := &config.Config{
+        LinearKey:     "your-api-key",
+        BaseBranch:    "main",
+        MaxIterations: 3,
+        EnableTools:   true,
+    }
+
+    a, err := agent.New(cfg)
+    if err != nil {
+        log.Fatalf("Failed to create agent: %v", err)
+    }
+
+    prompts := []string{
+        "Add health check endpoint",
+        "Implement rate limiting",
+        "Add request logging middleware",
+    }
+
+    ctx := context.Background()
+
+    for i, prompt := range prompts {
+        fmt.Printf("\n=== Processing task %d/%d ===\n", i+1, len(prompts))
+
+        t, err := task.CreateFromPrompt(prompt, "", "")
+        if err != nil {
+            log.Printf("Failed to create task: %v", err)
+            continue
+        }
+
+        result, err := a.Work(ctx, t)
+        if err != nil {
+            log.Printf("Task failed: %v", err)
+            continue
+        }
+
+        if result.PRCreated {
+            fmt.Printf("PR created: %s\n", result.PRURL)
+        }
+    }
+}
+```
+
+### Custom Task Source
+
+Implement the `Task` interface for your own task source:
+
+```go
+type JiraTask struct {
+    issueKey    string
+    summary     string
+    description string
+    labels      []string
+}
+
+func (t *JiraTask) GetID() string          { return t.issueKey }
+func (t *JiraTask) GetTitle() string       { return t.summary }
+func (t *JiraTask) GetDescription() string { return t.description }
+func (t *JiraTask) GetBranchName() string  {
+    return fmt.Sprintf("%s-%s",
+        strings.ToLower(t.issueKey),
+        sanitizeBranchName(t.summary))
+}
+func (t *JiraTask) GetLabels() []string    { return t.labels }
+func (t *JiraTask) GetMetadata() task.TaskMetadata {
+    return task.TaskMetadata{
+        Source:    task.TaskSource("jira"),
+        CreatedAt: time.Now(),
+    }
+}
+```
+
+### Building a Web Service
+
+```go
+package main
+
+import (
+    "encoding/json"
+    "net/http"
+
+    "github.com/philjestin/boatmanmode/internal/agent"
+    "github.com/philjestin/boatmanmode/internal/config"
+    "github.com/philjestin/boatmanmode/internal/task"
+)
+
+type TaskRequest struct {
+    Prompt string `json:"prompt"`
+    Title  string `json:"title"`
+    Branch string `json:"branch"`
+}
+
+func main() {
+    cfg := &config.Config{
+        BaseBranch:    "main",
+        MaxIterations: 3,
+        EnableTools:   true,
+    }
+
+    a, _ := agent.New(cfg)
+
+    http.HandleFunc("/api/tasks", func(w http.ResponseWriter, r *http.Request) {
+        var req TaskRequest
+        json.NewDecoder(r.Body).Decode(&req)
+
+        t, _ := task.CreateFromPrompt(req.Prompt, req.Title, req.Branch)
+
+        go func() {
+            result, _ := a.Work(r.Context(), t)
+            // Store result, notify user, etc.
+            _ = result
+        }()
+
+        w.Header().Set("Content-Type", "application/json")
+        json.NewEncoder(w).Encode(map[string]string{
+            "task_id": t.GetID(),
+            "message": "Task queued for processing",
+        })
+    })
+
+    http.ListenAndServe(":8080", nil)
+}
+```
+
+### GitHub Actions Integration
+
+```yaml
+name: Auto-implement feature
+on:
+  issues:
+    types: [labeled]
+
+jobs:
+  implement:
+    if: contains(github.event.issue.labels.*.name, 'auto-implement')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - name: Install boatman
+        run: go install github.com/philjestin/boatmanmode/cmd/boatman@latest
+      - name: Execute task
+        env:
+          LINEAR_KEY: ${{ secrets.LINEAR_KEY }}
+        run: boatman work --prompt "${{ github.event.issue.body }}"
+```
+
+---
+
+## Exported Packages
+
+### Core Packages
+
+| Package | Purpose |
+|---------|---------|
+| `internal/agent` | Main workflow orchestration |
+| `internal/task` | Task abstraction and implementations |
+| `internal/config` | Configuration management |
+
+### Specialized Packages
+
+| Package | Purpose |
+|---------|---------|
+| `internal/linear` | Linear API client |
+| `internal/executor` | Claude-powered code execution |
+| `internal/planner` | Task planning and analysis |
+| `internal/scottbott` | Code review agent |
+| `internal/worktree` | Git worktree management |
+
+### Utility Packages
+
+| Package | Purpose |
+|---------|---------|
+| `internal/cost` | Cost tracking for Claude API |
+| `internal/handoff` | Context passing between agents |
+| `internal/retry` | Retry logic with exponential backoff |
+
+---
+
+## Best Practices
+
+1. **Error Handling**: Always check errors returned by the agent
+2. **Context**: Use context with timeouts for long-running operations
+3. **Configuration**: Load from environment or config files
+4. **Concurrency**: The agent is not thread-safe; use one agent per goroutine
+5. **Resource Cleanup**: Worktrees are automatically cleaned up on completion
+
+---
+
+## API Stability
+
+BoatmanMode follows [Semantic Versioning](https://semver.org/):
+
+- **Major** (v2.x.x): Breaking API changes
+- **Minor** (v1.x.x): New features, backward compatible
+- **Patch** (v1.0.x): Bug fixes, backward compatible
+
+The library is in active development. APIs may evolve within major versions.

@@ -1,0 +1,149 @@
+# Monorepo Structure
+
+## Why a Monorepo?
+
+The CLI and Desktop are tightly coupled:
+- They share a JSON event protocol that evolves together
+- Desktop is essentially a GUI wrapper for the CLI
+- Features often span both components
+- Single source of truth for integration contracts
+- Atomic commits for cross-cutting changes
+
+---
+
+## Directory Layout
+
+```
+boatman-ecosystem/
+├── .git/                  # Single git history
+├── .gitignore
+├── go.work                # Go workspace configuration
+├── go.work.sum
+├── Makefile               # Top-level build commands
+├── README.md              # Ecosystem overview
+├── CONTRIBUTING.md         # Contributor guide
+├── MIGRATION.md           # Migration from standalone repos
+├── scripts/
+│   └── setup.sh           # Initial setup script
+│
+├── cli/                   # BoatmanMode CLI
+│   ├── .github/workflows/ # CI/CD (test, release, auto-version)
+│   ├── .goreleaser.yml    # Release configuration
+│   ├── cmd/boatman/       # CLI entry point
+│   ├── internal/          # All implementation packages
+│   ├── examples/          # Library usage examples
+│   ├── go.mod             # module github.com/philjestin/boatmanmode
+│   ├── go.sum
+│   ├── README.md
+│   └── *.md               # Feature-specific docs
+│
+├── desktop/               # Boatman Desktop
+│   ├── frontend/          # React/TypeScript UI
+│   │   ├── src/
+│   │   ├── package.json
+│   │   └── wailsjs/       # Auto-generated Wails bindings
+│   ├── agent/             # Session management
+│   ├── boatmanmode/       # CLI integration layer
+│   ├── config/            # User preferences
+│   ├── diff/              # Diff parsing
+│   ├── git/               # Git operations
+│   ├── mcp/               # MCP server management
+│   ├── project/           # Project management
+│   ├── mcp-servers/       # Custom MCP server binaries
+│   ├── build/             # Build assets and configs
+│   ├── app.go             # Main application
+│   ├── main.go            # Entry point
+│   ├── go.mod             # module boatman
+│   ├── go.sum
+│   ├── wails.json         # Wails configuration
+│   └── *.md               # Desktop-specific docs
+│
+├── shared/                # Shared Go packages
+│   └── go.mod             # module github.com/philjestin/boatman-ecosystem/shared
+│
+└── docs/                  # Documentation site (this site)
+    ├── pages/
+    ├── package.json
+    └── next.config.mjs
+```
+
+---
+
+## Go Workspace
+
+The `go.work` file configures the Go workspace:
+
+```go
+go 1.24.1
+
+use (
+    ./cli
+    ./desktop
+    ./shared
+)
+```
+
+This allows:
+- Cross-module development without publishing
+- Shared dependency resolution
+- Single `go work sync` to update everything
+
+---
+
+## Module Independence
+
+Each component maintains its own `go.mod`:
+
+| Component | Module Path | Can be imported? |
+|-----------|-------------|------------------|
+| CLI | `github.com/philjestin/boatmanmode` | Yes (as a Go library) |
+| Desktop | `boatman` | No (application-only) |
+| Shared | `github.com/philjestin/boatman-ecosystem/shared` | Yes |
+
+The CLI publishes as a versioned Go module. The Desktop is a standalone application.
+
+---
+
+## Build Commands
+
+From the monorepo root:
+
+| Command | Description |
+|---------|-------------|
+| `make build-cli` | Build the CLI binary |
+| `make build-desktop` | Build the desktop app (includes CLI) |
+| `make build-all` | Build both |
+| `make test-cli` | Run CLI tests |
+| `make test-desktop` | Run desktop Go tests |
+| `make test-frontend` | Run frontend tests |
+| `make test-all` | Run all tests |
+| `make dev` | Start desktop in dev mode |
+| `make install-cli` | Install CLI to ~/bin |
+| `make clean` | Remove build artifacts |
+| `make deps` | Download all dependencies |
+| `make fmt` | Format all Go code |
+| `make lint` | Run linters |
+| `make workspace-sync` | Sync Go workspace |
+
+---
+
+## Release Strategy
+
+The components can be released independently:
+
+- **CLI**: Standalone releases for terminal users (via GoReleaser)
+- **Desktop**: Bundles the CLI internally, synchronized releases (via Wails build)
+
+The CLI follows automatic versioning based on commit message prefixes.
+
+---
+
+## Commit Message Convention
+
+```
+[cli] Add metadata to agent_completed events
+[desktop] Update firefighter ticket list UI
+[both] Update event protocol with data field
+[docs] Add architecture documentation
+[build] Update CI workflow
+```

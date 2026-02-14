@@ -1,0 +1,143 @@
+# Migration Guide
+
+Instructions for migrating from the standalone `boatmanmode` and `boatmanapp` repositories to the unified monorepo.
+
+## Before You Start
+
+The monorepo at `boatman-ecosystem` combines:
+- `boatmanmode` → `cli/` directory
+- `boatmanapp` → `desktop/` directory
+- New: `shared/` for common packages
+- New: `docs/` for documentation site
+
+All Git history is preserved through a subtree merge.
+
+---
+
+## Step 1: Clone the Monorepo
+
+```bash
+git clone https://github.com/philjestin/boatman-ecosystem
+cd boatman-ecosystem
+```
+
+---
+
+## Step 2: Update Your PATH
+
+If you had `boatmanmode` in your PATH, update it:
+
+```bash
+# Old
+export PATH="$PATH:~/workspace/handshake/boatmanmode"
+
+# New
+export PATH="$PATH:~/workspace/personal/boatman-ecosystem/cli"
+```
+
+---
+
+## Step 3: Update Import Paths
+
+If you import BoatmanMode as a library, the module path remains the same:
+
+```go
+import "github.com/philjestin/boatmanmode"
+```
+
+No changes needed for library consumers.
+
+---
+
+## Step 4: Update Development Workflow
+
+### Old Workflow (Two Repos)
+
+```bash
+# Terminal 1: CLI
+cd ~/workspace/handshake/boatmanmode
+go build -o boatman ./cmd/boatmanmode
+
+# Terminal 2: Desktop
+cd ~/workspace/personal/boatmanapp
+wails dev
+```
+
+### New Workflow (Monorepo)
+
+```bash
+# Single repo
+cd ~/workspace/personal/boatman-ecosystem
+
+# Build both
+make build-all
+
+# Or individually
+make build-cli
+make dev
+```
+
+---
+
+## Step 5: Update CI/CD
+
+CI workflows remain in `cli/.github/workflows/` and continue to work.
+
+For monorepo-level CI, the root `Makefile` provides targets for building and testing all components.
+
+---
+
+## Step 6: Go Workspace
+
+The `go.work` file ties modules together:
+
+```go
+go 1.24.1
+
+use (
+    ./cli
+    ./desktop
+    ./shared
+)
+```
+
+Run `go work sync` to ensure dependencies are aligned.
+
+---
+
+## Troubleshooting
+
+### "module not found" errors
+
+```bash
+go work sync
+```
+
+### Old `boatman` binary conflicts
+
+Remove the old binary:
+```bash
+rm ~/workspace/handshake/boatmanmode/boatman
+```
+
+### Desktop can't find CLI binary
+
+Build the CLI first:
+```bash
+make build-cli
+```
+
+Or update PATH to include the monorepo `cli/` directory.
+
+---
+
+## What Changed
+
+| Before | After |
+|--------|-------|
+| `~/workspace/handshake/boatmanmode/` | `~/workspace/personal/boatman-ecosystem/cli/` |
+| `~/workspace/personal/boatmanapp/` | `~/workspace/personal/boatman-ecosystem/desktop/` |
+| Two separate repos | One monorepo |
+| Independent builds | Unified Makefile |
+| No shared code | `shared/` package |
+| Separate docs | Unified docs site |

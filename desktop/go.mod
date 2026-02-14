@@ -1,6 +1,6 @@
 module boatman
 
-go 1.23
+go 1.24.1
 
 require (
 	github.com/google/uuid v1.6.0
@@ -23,6 +23,8 @@ require (
 	github.com/leaanthony/u v1.1.1 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
+	github.com/philjestin/boatman-ecosystem/shared v0.0.0
+	github.com/philjestin/boatmanmode v0.0.0
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
@@ -42,3 +44,7 @@ require (
 // replace github.com/philjestin/boatmanmode => /Users/pmiddleton/workspace/handshake/boatmanmode
 
 // replace github.com/wailsapp/wails/v2 v2.11.0 => /Users/hyperion/go/pkg/mod
+
+replace github.com/philjestin/boatman-ecosystem/shared => ../shared
+
+replace github.com/philjestin/boatmanmode => ../cli

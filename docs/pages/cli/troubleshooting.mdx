@@ -1,0 +1,165 @@
+# Troubleshooting
+
+## Common Issues
+
+### "No files were changed in the worktree"
+
+Claude ran but didn't modify any files. Possible causes:
+- Ticket description is too vague — add more specific requirements
+- Implementation already exists — Claude may just be analyzing
+- Run `boatman watch` to see what Claude was doing
+
+### Claude seems stuck
+
+Check if Claude is actually working:
+
+```bash
+boatman watch
+```
+
+If truly stuck, kill and restart:
+
+```bash
+boatman sessions kill --force
+boatman work ENG-123
+```
+
+### Session not found
+
+```bash
+boatman sessions kill    # Kill stuck sessions
+boatman sessions list    # Verify clean state
+```
+
+### Want to see changes before PR
+
+```bash
+boatman worktree list                    # Find the worktree
+cd .worktrees/<name>                     # Navigate there
+git diff                                 # See changes
+boatman worktree commit                  # Commit them
+```
+
+### Resume interrupted workflow
+
+```bash
+boatman work ENG-123 --resume
+```
+
+---
+
+## API & Network Issues
+
+### Timeout waiting for Claude
+
+Large codebases take longer. The default timeout is 30 minutes. If Claude is actively working (visible in `boatman watch`), wait. If stuck:
+
+```bash
+boatman sessions kill --force
+```
+
+### Retry exhausted for API calls
+
+If you see "failed after N attempts":
+
+```bash
+# Check if services are accessible
+curl -I https://api.linear.app/graphql
+claude --version
+
+# Increase retry attempts in config
+# ~/.boatman.yaml
+retry:
+  max_attempts: 5
+  initial_delay: 2s
+```
+
+---
+
+## Coordinator Issues
+
+### Dropped messages warning
+
+If you see "coordinator message channel full, message dropped":
+
+```yaml
+# Increase buffer sizes in ~/.boatman.yaml
+coordinator:
+  message_buffer_size: 2000
+  subscriber_buffer_size: 200
+```
+
+---
+
+## Dependency Issues
+
+### Health check failures
+
+If startup fails with "missing required dependencies":
+
+```bash
+# Verify all tools are installed
+which git gh claude tmux
+
+# Check versions
+git --version
+gh --version
+claude --version
+```
+
+---
+
+## Debug Mode
+
+Enable structured debug logging:
+
+```bash
+export BOATMAN_DEBUG=1
+boatman work ENG-123
+```
+
+This shows:
+- Retry attempts and delays
+- Dropped messages
+- Context cancellation events
+- Coordinator state changes
+- Agent handoff details
+
+---
+
+## Running Tests
+
+```bash
+# All unit tests
+go test ./...
+
+# Verbose output
+go test -v ./...
+
+# Specific package
+go test -v ./internal/coordinator
+go test -v ./internal/checkpoint
+go test -v ./internal/retry
+
+# With coverage
+go test -cover ./...
+
+# E2E tests (includes mock servers)
+go test ./internal/testenv/... -tags=e2e
+
+# All tests including E2E
+go test ./... -tags=e2e -v
+```
+
+### Test Package Coverage
+
+| Package | Tests | Description |
+|---------|-------|-------------|
+| `coordinator` | 17 | Work claiming, file locking, atomic ops |
+| `retry` | 14 | Exponential backoff, jitter, permanent errors |
+| `healthcheck` | 12 | Dependency checks, timeouts |
+| `logger` | 12 | Level filtering, JSON output |
+| `config` | 13 | Defaults, custom values, nested configs |
+| `testenv` | 18 | Mock servers, fixtures, e2e workflows |
+| `agent` | 13 | Integration tests, parallel agents |
+| `events` | 5 | Event emission and formatting |

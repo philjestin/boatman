@@ -1,0 +1,177 @@
+# Cost Optimization
+
+Strategies for reducing Claude API costs while maintaining quality.
+
+## Model Selection
+
+The single most impactful optimization is choosing the right model per agent:
+
+### Default (Balanced)
+
+```yaml
+claude:
+  models:
+    planner: claude-sonnet-4.5
+    executor: claude-sonnet-4.5
+    reviewer: claude-sonnet-4.5
+    refactor: claude-sonnet-4.5
+    preflight: claude-haiku-4      # 90% cheaper
+    test_runner: claude-haiku-4    # 90% cheaper
+```
+
+### Cost-Optimized
+
+```yaml
+claude:
+  models:
+    planner: claude-sonnet-4.5     # Needs good planning
+    executor: claude-sonnet-4.5    # Needs good code generation
+    reviewer: claude-haiku-4       # Simple pass/fail + issues
+    refactor: claude-haiku-4       # Targeted fixes
+    preflight: claude-haiku-4      # Fast validation
+    test_runner: claude-haiku-4    # Simple output parsing
+```
+
+### Maximum Quality
+
+```yaml
+claude:
+  models:
+    planner: claude-opus-4-6
+    executor: claude-opus-4-6
+    reviewer: claude-opus-4-6
+    refactor: claude-opus-4-6
+    preflight: claude-haiku-4
+    test_runner: claude-haiku-4
+```
+
+---
+
+## Prompt Caching
+
+Enable prompt caching to reduce costs by 50-90% on repeated context:
+
+```yaml
+claude:
+  enable_prompt_caching: true   # Default: true
+```
+
+This is especially effective for:
+- Multiple review/refactor iterations on the same codebase
+- Batch processing of similar tasks
+- Retrying failed workflows
+
+---
+
+## Reduce Review Iterations
+
+Fewer iterations = fewer API calls:
+
+### Lenient Reviews
+```yaml
+max_iterations: 3
+review:
+  max_critical_issues: 2
+  max_major_issues: 5
+```
+
+This passes reviews more easily, reducing the number of refactor cycles.
+
+### Skip Review Entirely (Development Only)
+For prototyping where you'll review manually:
+
+```yaml
+max_iterations: 1
+```
+
+---
+
+## Token Budget Tuning
+
+Smaller handoffs = lower costs:
+
+```yaml
+token_budget:
+  context: 4000    # Reduced from 8000
+  plan: 1000       # Reduced from 2000
+  review: 2000     # Reduced from 4000
+```
+
+Trade-off: Smaller budgets may miss relevant context, potentially causing more iterations.
+
+---
+
+## Feature Toggles
+
+Disable features you don't need:
+
+```yaml
+enable_preflight: false      # Skip plan validation
+enable_tests: false          # Skip test running
+enable_diff_verify: false    # Skip diff verification
+enable_memory: false         # Skip cross-session learning
+```
+
+Each disabled feature saves one agent invocation per workflow.
+
+---
+
+## Workflow Strategies
+
+### Quick Prototype Mode
+```yaml
+max_iterations: 1
+enable_preflight: false
+enable_tests: false
+enable_diff_verify: false
+claude:
+  models:
+    planner: claude-haiku-4
+    executor: claude-sonnet-4.5
+    reviewer: claude-haiku-4
+    refactor: claude-haiku-4
+    preflight: claude-haiku-4
+    test_runner: claude-haiku-4
+```
+
+### Production Mode
+```yaml
+max_iterations: 5
+enable_preflight: true
+enable_tests: true
+enable_diff_verify: true
+claude:
+  models:
+    planner: claude-sonnet-4.5
+    executor: claude-sonnet-4.5
+    reviewer: claude-sonnet-4.5
+    refactor: claude-sonnet-4.5
+    preflight: claude-haiku-4
+    test_runner: claude-haiku-4
+```
+
+---
+
+## Monitoring Costs
+
+Use the built-in cost tracking:
+
+```bash
+export BOATMAN_DEBUG=1
+boatman work --prompt "Add feature"
+```
+
+Debug output includes token counts per agent invocation.
+
+---
+
+## Cost Comparison
+
+| Configuration | Approximate Cost per Task |
+|--------------|--------------------------|
+| Maximum quality (all Opus) | High |
+| Balanced (all Sonnet) | Medium |
+| Cost-optimized (mixed) | Low |
+| Quick prototype (mostly Haiku) | Minimal |
+
+Exact costs depend on codebase size, task complexity, and number of review iterations.

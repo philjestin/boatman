@@ -1,0 +1,246 @@
+# Workflow Pipeline
+
+BoatmanMode orchestrates a multi-agent pipeline with coordinated handoffs, checkpointing, and iterative refinement.
+
+## Pipeline Overview
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Step 1: PLANNER AGENT (tmux: boatman-planner)              │
+│  Analyzes ticket → Explores codebase → Creates plan         │
+│  Output: Summary, approach, relevant files, patterns        │
+├─────────────────────────────────────────────────────────────┤
+│  Step 2: PREFLIGHT VALIDATION                               │
+│  Validates plan → Checks files exist → Warns of issues      │
+│  Output: Validation result, warnings, suggestions           │
+├─────────────────────────────────────────────────────────────┤
+│              ↓ Compressed Handoff (token-aware) ↓           │
+├─────────────────────────────────────────────────────────────┤
+│  Step 3: EXECUTOR AGENT (tmux: boatman-executor)            │
+│  Receives plan → Reads key files → Implements solution      │
+│  Output: Modified files in worktree                         │
+├─────────────────────────────────────────────────────────────┤
+│  Step 4: TEST RUNNER                                        │
+│  Detects framework → Runs tests → Reports results           │
+│  Output: Pass/fail, coverage, failed test names             │
+├─────────────────────────────────────────────────────────────┤
+│              ↓ Git Diff + Test Results ↓                    │
+├─────────────────────────────────────────────────────────────┤
+│  Step 5: REVIEWER AGENT (tmux: boatman-reviewer-N)          │
+│  Reviews diff → Checks patterns → Pass/Fail verdict         │
+│  Output: Score, issues (deduplicated), guidance             │
+├─────────────────────────────────────────────────────────────┤
+│              ↓ If Failed (with issue deduplication) ↓       │
+├─────────────────────────────────────────────────────────────┤
+│  Step 6: REFACTOR AGENT (tmux: boatman-refactor-N)          │
+│  Receives feedback → Fixes issues → Updates files           │
+├─────────────────────────────────────────────────────────────┤
+│  Step 7: DIFF VERIFICATION                                  │
+│  Compares diffs → Verifies issues addressed                 │
+│  Output: Confidence score, addressed/unaddressed issues     │
+└─────────────────────────────────────────────────────────────┘
+         Checkpoint saved at each step
+         Patterns learned on success
+```
+
+---
+
+## Step Details
+
+### Step 1: Planning & Analysis
+
+The planner agent analyzes the task and creates a comprehensive implementation plan.
+
+**Inputs:**
+- Task description (from Linear, prompt, or file)
+- Codebase context (via Claude's tools)
+
+**Outputs:**
+- Summary of required changes
+- Implementation approach
+- Relevant files list
+- Code patterns to follow
+
+**tmux session:** `boatman-planner`
+
+### Step 2: Pre-flight Validation
+
+Validates the execution plan before any code changes are made.
+
+**Checks performed:**
+- All referenced files exist in the codebase
+- No deprecated patterns in the approach
+- Approach clarity and completeness
+- Warnings about potential issues
+
+**Can be disabled:** `enable_preflight: false` in config
+
+### Step 3: Code Execution
+
+The executor agent implements the plan, making actual code changes in the isolated worktree.
+
+**Process:**
+- Receives compressed plan via handoff
+- Reads key files for full context
+- Writes new files and modifies existing ones
+- Creates tests alongside production code
+
+**tmux session:** `boatman-executor`
+
+### Step 4: Test Runner
+
+Automatically detects and runs the project's test framework.
+
+**Supported frameworks:**
+| Language | Frameworks |
+|----------|-----------|
+| Go | `go test` |
+| JavaScript/TypeScript | Jest, Vitest |
+| Python | pytest |
+| Ruby | RSpec |
+| Java | JUnit/Maven, Gradle |
+| Rust | `cargo test` |
+
+**Outputs:**
+- Pass/fail verdict
+- Coverage metrics (if available)
+- Failed test names and output
+
+**Can be disabled:** `enable_tests: false` in config
+
+### Step 5: Peer Review
+
+A separate agent reviews the code diff using a configurable Claude skill.
+
+**Review criteria:**
+- Code quality and best practices
+- Bug detection
+- Pattern compliance
+- Test coverage adequacy
+
+**Verdict:** Pass or Fail with detailed issue list
+
+**Customization:** `--review-skill my-custom-skill` or `review_skill` in config
+
+### Step 6: Refactor Loop
+
+When review fails, the refactor agent addresses the specific issues.
+
+**Features:**
+- Fresh agent per iteration (no context bloat)
+- Receives only the specific issues to fix
+- Issue deduplication across iterations prevents re-reporting
+- Configurable maximum iterations (`max_iterations`)
+
+### Step 7: Diff Verification
+
+Verifies that refactoring actually addressed the reported issues.
+
+**Analysis:**
+- Compares old vs new diffs
+- Matches changes to specific issues
+- Calculates confidence scores
+- Detects newly introduced problems
+
+**Can be disabled:** `enable_diff_verify: false` in config
+
+---
+
+## Structured Handoffs
+
+Agents receive concise, focused context with dynamic compression:
+
+| Handoff | Content | Token Budget |
+|---------|---------|--------------|
+| Plan → Executor | Summary, approach, files | ~4000 tokens |
+| Executor → Reviewer | Requirements, diff, test results | ~3000 tokens |
+| Reviewer → Refactor | Issues (deduplicated), guidance | ~2000 tokens |
+
+### Dynamic Compression Levels
+
+| Level | Strategy | When Used |
+|-------|----------|----------|
+| Light | Full content, minimal trimming | Content fits budget |
+| Medium | Summarize long sections | Slightly over budget |
+| Heavy | Extract signatures + bullet points | Significantly over budget |
+| Extreme | Key facts only, aggressive truncation | Very over budget |
+
+---
+
+## Agent Coordination
+
+The coordinator manages parallel agent execution:
+
+```go
+// Agents can claim work to prevent conflicts
+coord.ClaimWork("executor", &WorkClaim{
+    WorkID: "implement-feature",
+    Files:  []string{"pkg/feature.go"},
+})
+
+// File locking prevents race conditions
+coord.LockFiles("executor", []string{"pkg/feature.go"})
+
+// Shared context for collaboration
+coord.SetContext("plan", planJSON)
+result, _ := coord.GetContext("plan")
+```
+
+**Features:**
+- Thread-safe operations using `atomic.Bool`
+- Work claiming prevents duplicate effort
+- File locking prevents race conditions
+- Shared context for agent collaboration
+
+---
+
+## Git-Integrated Checkpoints
+
+Progress is saved as git commits for durability:
+
+```
+# Checkpoint commit format
+[checkpoint] ENG-123: complete execution (step: execution, iter: 1)
+```
+
+**Checkpoint commits include:**
+- Ticket ID and step name
+- Iteration number
+- Serialized agent state in `.boatman-state.json`
+- All file changes up to that point
+
+---
+
+## Context Pinning
+
+Ensures consistency during multi-file changes:
+
+- Pins file contents with checksums
+- Tracks file dependencies
+- Detects stale files during long operations
+- Refreshes context when needed
+
+---
+
+## Agent Memory
+
+Cross-session learning for improved performance:
+
+- Learns successful code patterns
+- Remembers common issues and solutions
+- Caches effective prompts
+- Per-project memory storage in `~/.boatman/memory/`
+
+---
+
+## Smart File Summarization
+
+Handles large files intelligently with language-aware parsing:
+
+**Supported languages:** Go, Python, Ruby, JavaScript/TypeScript, Java, Rust
+
+**Extraction strategy:**
+- Function and class signatures
+- Import and export statements
+- Key comments and TODOs
+- Type definitions and interfaces

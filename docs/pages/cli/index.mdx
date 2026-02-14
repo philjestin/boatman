@@ -1,0 +1,100 @@
+# BoatmanMode CLI
+
+BoatmanMode is an AI-powered development agent that automates ticket execution with peer review. It fetches tasks from Linear (or accepts inline prompts and files), generates code using Claude, reviews changes with a configurable Claude skill, iterates until quality passes, and creates pull requests.
+
+## Key Features
+
+### AI-Powered Development
+- Generates complete implementations from ticket descriptions or prompts
+- Understands project conventions via Claude's context window
+- Creates appropriate tests alongside production code
+
+### Peer Review with Claude Skill
+- Uses a configurable Claude skill for code review (default: `peer-review`)
+- Automated pass/fail verdict with detailed feedback
+- Customize via `--review-skill` flag or config
+
+### Iterative Refinement
+- Automatically refactors based on review feedback
+- Fresh agent per iteration — clean context, no token bloat
+- Structured handoffs between agents with concise context
+
+### Live Activity Streaming
+- Watch Claude work in real-time via tmux sessions
+- See every tool call: file reads, edits, bash commands
+- Full visibility into AI decision-making
+
+### Git Worktree Isolation
+- Each task works in an isolated git worktree
+- No interference with your main working directory
+- Safe for parallel task execution
+
+---
+
+## Agent Pipeline Overview
+
+The workflow orchestrates multiple AI agents through a structured pipeline:
+
+```
+Step 1: PLANNER AGENT      → Analyzes codebase, creates plan
+Step 2: PREFLIGHT VALIDATION → Validates plan before execution
+Step 3: EXECUTOR AGENT      → Implements code changes
+Step 4: TEST RUNNER          → Detects framework, runs tests
+Step 5: REVIEWER AGENT      → Reviews diff, pass/fail verdict
+Step 6: REFACTOR AGENT      → Fixes issues (loops until pass)
+Step 7: DIFF VERIFICATION   → Verifies issues were addressed
+Step 8: COMMIT & PUSH       → Commits and pushes changes
+Step 9: CREATE PR            → Opens pull request
+```
+
+Each step saves a checkpoint for crash recovery. Patterns are learned on success for cross-session improvement.
+
+---
+
+## Support Systems
+
+| System | Purpose |
+|--------|---------|
+| Context Pinning | Ensures consistency during multi-file changes |
+| Dynamic Handoff Compression | Adapts context size to token budgets |
+| Smart File Summarization | Handles large files intelligently |
+| Issue Deduplication | Tracks issues across review iterations |
+| Git-Integrated Checkpoints | Saves progress as git commits |
+| Agent Memory | Cross-session learning for improved performance |
+
+---
+
+## Project Structure
+
+```
+cli/
+├── cmd/boatman/main.go       # Entry point
+├── internal/
+│   ├── agent/                # Workflow orchestration
+│   ├── checkpoint/           # Progress saving/resume
+│   ├── claude/               # Claude CLI wrapper
+│   ├── cli/                  # Cobra commands
+│   ├── config/               # Configuration
+│   ├── contextpin/           # File dependency tracking
+│   ├── coordinator/          # Parallel agent coordination
+│   ├── diffverify/           # Diff verification agent
+│   ├── events/               # JSON event emission
+│   ├── executor/             # Code generation
+│   ├── filesummary/          # Smart file summarization
+│   ├── github/               # PR creation (gh CLI)
+│   ├── handoff/              # Agent context passing
+│   ├── healthcheck/          # Dependency verification
+│   ├── issuetracker/         # Issue deduplication
+│   ├── linear/               # Linear API client
+│   ├── logger/               # Structured logging
+│   ├── memory/               # Cross-session learning
+│   ├── planner/              # Plan generation
+│   ├── preflight/            # Pre-execution validation
+│   ├── retry/                # Exponential backoff
+│   ├── scottbott/            # Peer review
+│   ├── testenv/              # E2E test environment
+│   ├── testrunner/           # Test execution
+│   ├── tmux/                 # Session management
+│   └── worktree/             # Git worktree management
+└── examples/                 # Library usage examples
+```

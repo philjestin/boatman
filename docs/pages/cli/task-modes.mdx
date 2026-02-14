@@ -1,0 +1,227 @@
+# Task Modes
+
+BoatmanMode supports three ways to specify work: Linear tickets, inline prompts, and file-based prompts. All three follow the same 9-step workflow.
+
+## Input Modes
+
+### 1. Linear Mode (Default)
+
+Work with Linear tickets:
+
+```bash
+boatman work ENG-123
+```
+
+The workflow:
+1. Fetches ticket details from Linear API
+2. Creates git worktree with ticket-based branch name
+3. Plans and executes the task
+4. Runs tests and reviews
+5. Creates a pull request with Linear ticket link
+
+### 2. Prompt Mode
+
+Provide an inline text prompt directly:
+
+```bash
+boatman work --prompt "Add user authentication with JWT tokens"
+```
+
+Features:
+- Auto-generates unique task ID: `prompt-20260213-150405-abc123`
+- Extracts title from prompt (checks for markdown headers or uses first line)
+- Auto-generates branch name: `prompt-20260213-150405-abc123-add-user-authentication`
+- Full description is the entire prompt text
+
+Override auto-generation:
+
+```bash
+boatman work --prompt "Add auth" --title "Authentication Feature" --branch-name "feature/auth"
+```
+
+### 3. File Mode
+
+Read the task prompt from a file:
+
+```bash
+boatman work --file ./tasks/authentication.md
+```
+
+Features:
+- Reads prompt from file (supports markdown, text, etc.)
+- Same auto-generation as prompt mode
+- Metadata includes file path for reference
+- Ideal for complex tasks with detailed requirements
+
+Example task file:
+
+```markdown
+# Add health check endpoint
+
+Add a simple HTTP health check endpoint at `/health` that returns:
+- `status`: "healthy"
+- `timestamp`: current time in ISO 8601 format
+- `version`: application version
+
+Follow existing API patterns in the codebase.
+```
+
+---
+
+## Branch Naming
+
+### Linear Mode
+```
+ENG-123-add-authentication
+```
+Format: `{ticket-id}-{sanitized-title}`
+
+### Prompt/File Mode
+```
+prompt-20260213-150405-abc123-add-authentication
+```
+Format: `{task-id}-{sanitized-title}`
+
+Branch names are automatically sanitized:
+- Lowercase conversion
+- Spaces replaced with hyphens
+- Special characters removed
+- Title portion limited to 30 characters
+
+---
+
+## Task IDs
+
+### Linear
+- Uses ticket identifier: `ENG-123`
+- Stable and human-readable
+
+### Prompt/File
+- Auto-generated: `prompt-20260213-150405-abc123`
+- Format: `prompt-{YYYYMMDD-HHMMSS}-{6-char-hash}`
+- Unique per invocation
+- Timestamp-based for traceability
+
+---
+
+## Pull Request Formatting
+
+### Linear Mode PR
+
+```markdown
+## Add authentication
+
+### Ticket
+[ENG-123](https://linear.app/issue/ENG-123)
+
+### Description
+{ticket description}
+
+### Changes
+{review summary}
+
+### Quality
+- Review iterations: 2
+- Tests: 15 passed
+- Coverage: 85.3%
+```
+
+### Prompt/File Mode PR
+
+```markdown
+## Add authentication
+
+### Task
+Prompt-based task (prompt-20260213-150405-abc123)
+
+### Description
+{prompt text - truncated to 500 chars}
+
+### Changes
+{review summary}
+
+### Quality
+- Review iterations: 1
+- Tests: 12 passed
+- Coverage: 92.1%
+```
+
+---
+
+## CLI Flags
+
+### Input Mode Flags
+| Flag | Description |
+|------|-------------|
+| `--prompt` | Treat argument as inline prompt text |
+| `--file` | Read prompt from file path |
+
+These are **mutually exclusive**: you cannot use both `--prompt` and `--file`.
+
+### Override Flags (Prompt/File Mode Only)
+| Flag | Description |
+|------|-------------|
+| `--title` | Override auto-extracted task title |
+| `--branch-name` | Override auto-generated branch name |
+
+---
+
+## Validation
+
+### Error Cases
+
+```bash
+# Multiple modes specified
+boatman work --prompt "..." --file ./task.txt
+# Error: only one of --prompt or --file can be specified
+
+# Override flags without prompt/file mode
+boatman work ENG-123 --title "Custom Title"
+# Error: --title can only be used with --prompt or --file
+
+# Nonexistent file
+boatman work --file ./missing.txt
+# Error: task file does not exist: ./missing.txt
+
+# Empty prompt
+boatman work --prompt ""
+# Error: prompt cannot be empty
+```
+
+---
+
+## Task Interface
+
+The task abstraction makes it easy to add more input sources. Each source implements the `Task` interface:
+
+```go
+type Task interface {
+    GetID() string
+    GetTitle() string
+    GetDescription() string
+    GetBranchName() string
+    GetLabels() []string
+    GetMetadata() TaskMetadata
+}
+```
+
+Potential future modes:
+```bash
+boatman work --github-issue 123
+boatman work --jira PROJ-456
+boatman work ENG-123 --additional-context notes.txt
+```
+
+---
+
+## Backward Compatibility
+
+All existing commands work unchanged:
+
+```bash
+boatman work ENG-123                     # Works as before
+boatman work ENG-456 --max-iterations 5  # Works as before
+boatman work ENG-789 --dry-run           # Works as before
+```
+
+New flags are optional and only affect prompt/file mode behavior.

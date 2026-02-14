@@ -1,0 +1,167 @@
+# Event Protocol
+
+The CLI and Desktop communicate through a structured JSON event protocol emitted via stdout.
+
+## Protocol Design
+
+### Format
+- **Encoding**: Newline-delimited JSON (NDJSON)
+- **Transport**: stdout (CLI process)
+- **Direction**: CLI → Desktop (one-way)
+- **Parsing**: Line-by-line, ignore non-JSON lines
+
+### Why NDJSON?
+- Streaming-friendly (no buffering required)
+- Standard format used by logging systems
+- Easy to parse with `bufio.Scanner`
+- Easy to filter with `grep '^{'`
+
+---
+
+## Event Schema
+
+```json
+{
+  "type": "string",           // Required: event type
+  "id": "string",             // Optional: unique identifier
+  "name": "string",           // Optional: human-readable name
+  "description": "string",    // Optional: detailed description
+  "status": "string",         // Optional: "success" or "failed"
+  "message": "string",        // Optional: progress message
+  "data": {}                  // Optional: additional metadata
+}
+```
+
+### Schema Rules
+- Events must have a `type` field (string)
+- Use `snake_case` for event types
+- Optional fields: `id`, `name`, `description`, `status`, `message`, `data`
+- The `data` field is free-form for phase-specific metadata
+
+---
+
+## Event Types
+
+| Type | Purpose | Key Fields |
+|------|---------|-----------|
+| `agent_started` | Agent begins execution | `id`, `name`, `description` |
+| `agent_completed` | Agent finishes | `id`, `name`, `status` |
+| `progress` | General progress update | `message` |
+| `task_created` | Internal task created (reserved) | `id`, `name`, `description` |
+| `task_updated` | Task status change (reserved) | `id`, `status` |
+
+---
+
+## Agent ID Convention
+
+IDs follow `{step}-{taskID}` for uniqueness and traceability:
+
+| Step | Pattern | Example |
+|------|---------|---------|
+| Prepare | `prepare-{taskID}` | `prepare-ENG-123` |
+| Worktree | `worktree-{taskID}` | `worktree-ENG-123` |
+| Planning | `planning-{taskID}` | `planning-ENG-123` |
+| Preflight | `preflight-{taskID}` | `preflight-ENG-123` |
+| Execute | `execute-{taskID}` | `execute-ENG-123` |
+| Test | `test-{taskID}` | `test-ENG-123` |
+| Review | `review-{N}-{taskID}` | `review-1-ENG-123` |
+| Refactor | `refactor-{N}-{taskID}` | `refactor-2-ENG-123` |
+| Commit | `commit-{taskID}` | `commit-ENG-123` |
+| PR | `pr-{taskID}` | `pr-ENG-123` |
+
+---
+
+## Integration Pipeline
+
+```
+┌─────────────────┐
+│  BoatmanMode CLI │
+│                 │
+│  Emits JSON to  │
+│  stdout         │
+└────────┬────────┘
+         │ {"type": "agent_started", ...}
+         ▼
+┌─────────────────────────────┐
+│  boatmanmode/integration.go │
+│                             │
+│  bufio.Scanner              │
+│  json.Unmarshal             │
+│  Emits Wails event          │
+└────────┬────────────────────┘
+         │ runtime.EventsEmit("boatmanmode:event", ...)
+         ▼
+┌─────────────────────────────┐
+│  useAgent.ts (React hook)   │
+│                             │
+│  EventsOn("boatmanmode:event")
+│  HandleBoatmanModeEvent()   │
+└────────┬────────────────────┘
+         │ Updates session tasks
+         ▼
+┌─────────────────────────────┐
+│  Tasks Tab (React component)│
+│                             │
+│  Displays agent progress    │
+│  Icons: in_progress/done/fail│
+└─────────────────────────────┘
+```
+
+---
+
+## Adding a New Event Type
+
+### 1. Define in CLI
+
+```go
+// cli/internal/events/emitter.go
+func MyNewEvent(id, name string) {
+    Emit(Event{
+        Type: "my_new_event",
+        ID:   id,
+        Name: name,
+    })
+}
+```
+
+### 2. Emit in CLI
+
+```go
+// cli/internal/agent/agent.go
+events.MyNewEvent("agent-123", "My Agent")
+```
+
+### 3. Handle in Desktop Backend
+
+```go
+// desktop/app.go
+case "my_new_event":
+    id, _ := eventData["id"].(string)
+    name, _ := eventData["name"].(string)
+    // Handle the event
+```
+
+### 4. Update Desktop Frontend
+
+```typescript
+// desktop/frontend/src/hooks/useAgent.ts
+const eventHandler = (data: BoatmanModeEventPayload) => {
+    if (data.event.type === 'my_new_event') {
+        // Handle in React
+    }
+}
+```
+
+### 5. Document
+
+Update event protocol docs in both components.
+
+---
+
+## Best Practices
+
+- Always emit `agent_completed` after `agent_started` (use `defer`)
+- Include task ID in agent IDs for uniqueness
+- Use descriptive names and descriptions
+- Emit progress events for long-running operations
+- Keep the `data` field minimal (only phase-specific metadata)

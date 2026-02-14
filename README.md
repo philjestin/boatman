@@ -158,6 +158,34 @@ The CLI and desktop are tightly coupled:
 - Features often span both components (e.g., adding metadata to events)
 - Single source of truth for integration contracts
 - Atomic commits for cross-cutting changes
+- **Hybrid architecture**: Desktop can use subprocess OR direct imports
+
+## Hybrid Architecture
+
+The desktop app uses a **hybrid approach** for maximum flexibility:
+
+### Subprocess (Traditional)
+- User-facing execution with streaming output
+- Process isolation and control (can kill/restart)
+- Full boatmanmode workflows
+
+### Direct Import (New)
+- Fast UI queries (diff analysis, validation)
+- Type-safe operations
+- No subprocess overhead
+
+**Example:**
+```go
+// Fast diff stats for task detail modal (direct import)
+import "github.com/philjestin/boatmanmode/pkg/diff"
+hybrid := services.NewHybrid(projectPath)
+stats := hybrid.GetDiffStats(diff)
+
+// Full execution with streaming (subprocess)
+bmIntegration.StreamExecution(ctx, sessionID, prompt, "prompt", outputChan)
+```
+
+See [HYBRID_ARCHITECTURE.md](./HYBRID_ARCHITECTURE.md) for details.
 
 ## Release Strategy
 

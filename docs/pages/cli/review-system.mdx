@@ -1,0 +1,170 @@
+# Review System
+
+The review system controls how BoatmanMode evaluates code quality during the peer review phase. It can be tuned from strict to lenient depending on your team's needs.
+
+## How Reviews Work
+
+1. The **reviewer agent** analyzes the code diff using a Claude skill (default: `peer-review`)
+2. It produces a verdict: **Pass** or **Fail** with a list of issues
+3. Issues are categorized by severity: Critical, Major, Minor
+4. The pass/fail decision uses configurable thresholds
+5. If review fails, the **refactor agent** addresses the issues
+6. The **diff verifier** confirms issues were actually addressed
+
+---
+
+## Configuration
+
+```yaml
+review:
+  max_critical_issues: 1           # Max critical issues to still pass
+  max_major_issues: 3              # Max major issues to still pass
+  min_verification_confidence: 50  # Min confidence % for diff verification
+  strict_parsing: false            # Strict keyword parsing for reviews
+```
+
+---
+
+## Review Profiles
+
+### Strict (High Quality Bar)
+
+```yaml
+max_iterations: 3
+review:
+  max_critical_issues: 0
+  max_major_issues: 1
+  min_verification_confidence: 70
+  strict_parsing: true
+```
+
+- Zero tolerance for critical issues
+- Only 1 major issue allowed
+- High confidence required for verification
+- Strict natural language parsing (triggers on "must be addressed", "needs work")
+
+### Balanced (Default)
+
+```yaml
+max_iterations: 5
+review:
+  max_critical_issues: 1
+  max_major_issues: 3
+  min_verification_confidence: 50
+  strict_parsing: false
+```
+
+- Allows 1 critical and 3 major issues
+- Moderate confidence threshold
+- Relaxed parsing focuses on truly blocking language
+
+### Lenient (Fast Iteration)
+
+```yaml
+max_iterations: 7
+review:
+  max_critical_issues: 2
+  max_major_issues: 5
+  min_verification_confidence: 40
+  strict_parsing: false
+```
+
+- Higher tolerance for issues
+- Lower confidence bar
+- More iterations allowed
+- Good for rapid prototyping
+
+---
+
+## Natural Language Parsing
+
+The review system parses Claude's review output to determine pass/fail.
+
+### Relaxed Mode (Default)
+
+Only truly blocking language triggers failure:
+- "cannot be merged"
+- "blocking issue"
+
+Constructive feedback does **not** trigger failure:
+- "must be addressed" (normal review language)
+- "needs work" (descriptive, not blocking)
+- "issues that need to be addressed" (constructive feedback)
+
+### Strict Mode
+
+Additional phrases trigger failure:
+- "must be addressed"
+- "needs work"
+- "issues that need to be addressed"
+- "significant problems"
+
+---
+
+## Diff Verification
+
+After refactoring, the diff verifier confirms fixes were applied:
+
+### Detection Heuristics
+
+| Issue Severity | Fix Detection Criteria |
+|---------------|----------------------|
+| Critical | 3+ additions or 2+ removals in relevant files |
+| Major | 1+ additions or any removals |
+| Minor | Any file modification counts |
+
+### Confidence Calculation
+
+```
+confidence = 70% base + 30% * (addressed_issues / total_issues)
+```
+
+Penalties:
+- -5 points per concerning new issue (FIXME, XXX markers, debugger statements)
+
+### Patterns NOT Flagged
+
+The following are not flagged as concerning:
+- TODO comments (development artifacts)
+- console.log statements (normal debugging)
+- Debug print statements
+
+### Patterns Flagged
+
+- FIXME markers
+- XXX markers
+- `debugger` statements
+
+---
+
+## Issue Deduplication
+
+The issue tracker prevents the same issue from being re-reported across review iterations:
+
+- Detects similar issues via text similarity
+- Tracks persistent vs addressed issues
+- Provides iteration statistics
+- Prevents review feedback loops
+
+---
+
+## Custom Review Skills
+
+Use a custom Claude skill for reviews:
+
+```bash
+boatman work ENG-123 --review-skill my-custom-review
+```
+
+Or in config:
+
+```yaml
+review_skill: my-custom-review
+```
+
+The skill should output:
+- A pass/fail verdict
+- A list of issues with severity levels
+- Guidance for the refactor agent
+
+Falls back to built-in review if the specified skill is not found.

@@ -1,0 +1,144 @@
+# Security Best Practices
+
+Guidelines for using Boatman safely in development and production environments.
+
+## API Keys
+
+### Storage
+- **Never** commit API keys to version control
+- Use environment variables or encrypted secret managers
+- Store keys in `~/.boatman.yaml` (user-only permissions)
+
+```bash
+# Set file permissions
+chmod 600 ~/.boatman.yaml
+```
+
+### Rotation
+- Rotate API keys regularly
+- Use separate keys for development and production
+- Use the minimum required scopes
+
+### Alternatives to API Keys
+- **Google Cloud OAuth**: Use Vertex AI with service account authentication
+- **Okta SSO**: Use OAuth tokens for Datadog and Bugsnag access
+- Both eliminate the need for long-lived API keys
+
+---
+
+## Approval Modes
+
+### Suggest Mode (Production Codebases)
+- Claude proposes all changes
+- You review and approve each edit and command
+- **Recommended** for production codebases
+
+### Auto-Edit Mode (Trusted Environments)
+- Claude edits files directly
+- Still asks for bash command approval
+- Good for development environments
+
+### Full Auto Mode (Sandboxed Only)
+- Claude has complete autonomy
+- Use **only** in:
+  - Disposable VMs
+  - Docker containers
+  - CI/CD environments with limited permissions
+  - Test repositories
+
+---
+
+## Git Worktree Isolation
+
+BoatmanMode creates isolated worktrees for all code changes:
+
+```bash
+# Changes happen here, not in your main working directory
+.worktrees/<branch-name>/
+```
+
+Benefits:
+- No interference with your main branch
+- Easy to review before merging
+- Easy to discard if something goes wrong
+
+---
+
+## MCP Server Security
+
+### Only Install Trusted Servers
+- Review server source code before enabling
+- Use official `@modelcontextprotocol` packages when available
+- Audit custom MCP servers for data handling
+
+### Environment Variables
+- Use environment variables for secrets (never hardcode)
+- Don't log environment variable values
+- Restrict MCP server permissions to minimum required
+
+### OAuth-Based Authentication
+- Prefer OAuth over API keys for enterprise services
+- Tokens auto-expire, reducing risk of compromise
+- Revoke OAuth access when no longer needed
+
+---
+
+## Data Privacy
+
+### Code Sent to Claude
+- Code sent to Claude API follows [Anthropic's privacy policy](https://www.anthropic.com/privacy)
+- Anthropic does not train on API inputs by default
+- For maximum privacy, use Google Cloud Vertex AI with a private VPC
+
+### Local Storage
+- Session data stored in `~/.boatman/sessions/`
+- Configuration in `~/.boatman/config.json`
+- MCP config in `~/.claude/claude_mcp_config.json`
+- All local, no telemetry sent by default
+
+### Sensitive Files
+- Don't include `.env`, `credentials.json`, or secret files in prompts
+- Configure `.gitignore` to exclude sensitive files
+- Review git diffs before committing
+
+---
+
+## Production Incident Investigation
+
+When using Firefighter Mode with production data:
+
+- Limit OAuth scopes to read-only access
+- Review auto-fixes before merging PRs
+- Don't expose production credentials in ticket descriptions
+- Use Datadog/Bugsnag APIs through Okta SSO (no direct API keys)
+- Clean up worktrees after investigation
+
+---
+
+## Network Security
+
+### API Communication
+- All Claude API calls use HTTPS
+- Linear, GitHub APIs use HTTPS
+- MCP servers communicate locally (localhost)
+- Okta OAuth uses HTTPS with PKCE flow
+
+### Firewall Considerations
+- BoatmanMode needs outbound access to:
+  - `api.anthropic.com` (or Vertex AI endpoints)
+  - `api.linear.app`
+  - `api.github.com`
+  - Your Okta domain (for OAuth)
+  - `datadoghq.com`, `app.bugsnag.com` (for Firefighter mode)
+
+---
+
+## Checklist
+
+- [ ] API keys stored securely (not in version control)
+- [ ] File permissions on config files set correctly (600)
+- [ ] Approval mode appropriate for the environment
+- [ ] MCP servers reviewed and trusted
+- [ ] Git worktrees used for code isolation
+- [ ] Production credentials not exposed in tickets
+- [ ] OAuth preferred over API keys where possible

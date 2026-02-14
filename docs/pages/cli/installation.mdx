@@ -1,0 +1,125 @@
+# Installation
+
+BoatmanMode can be installed as a pre-built binary, via `go install`, or built from source.
+
+## Prerequisites
+
+| Tool | Purpose | How to Install |
+|------|---------|----------------|
+| `claude` | AI code generation & review | [Claude CLI docs](https://docs.anthropic.com) |
+| `gh` | Pull request creation | `brew install gh` then `gh auth login` |
+| `git` | Version control | Pre-installed on most systems |
+| `tmux` | Agent session management | `brew install tmux` |
+
+### Claude CLI Setup (Vertex AI)
+
+```bash
+# Authenticate with Google Cloud
+gcloud auth login
+gcloud auth application-default login
+
+# Set environment variables
+export CLAUDE_CODE_USE_VERTEX=1
+export CLOUD_ML_REGION=us-east5
+export ANTHROPIC_VERTEX_PROJECT_ID=your-project-id
+```
+
+Or use an Anthropic API key directly:
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-xxxxx
+```
+
+---
+
+## Option 1: Pre-built Binary (Recommended)
+
+Download the latest release for your platform from the [releases page](https://github.com/philjestin/boatmanmode/releases), or use the install script:
+
+```bash
+# macOS/Linux one-liner
+curl -fsSL https://raw.githubusercontent.com/philjestin/boatmanmode/main/install.sh | bash
+
+# Specific version
+curl -fsSL https://raw.githubusercontent.com/philjestin/boatmanmode/main/install.sh | bash -s -- --version v1.0.0
+
+# Custom install directory
+curl -fsSL https://raw.githubusercontent.com/philjestin/boatmanmode/main/install.sh | bash -s -- --dir ~/bin
+```
+
+### Supported Platforms
+
+| OS | Architecture | Binary |
+|----|-------------|--------|
+| macOS | Intel (amd64) | `boatmanmode_vX.Y.Z_Darwin_x86_64.tar.gz` |
+| macOS | Apple Silicon (arm64) | `boatmanmode_vX.Y.Z_Darwin_arm64.tar.gz` |
+| Linux | x86_64 | `boatmanmode_vX.Y.Z_Linux_x86_64.tar.gz` |
+| Linux | ARM64 | `boatmanmode_vX.Y.Z_Linux_arm64.tar.gz` |
+| Windows | x86_64 | `boatmanmode_vX.Y.Z_Windows_x86_64.zip` |
+
+---
+
+## Option 2: Install with Go
+
+```bash
+go install github.com/philjestin/boatmanmode/cmd/boatman@latest
+```
+
+---
+
+## Option 3: Build from Source
+
+```bash
+git clone https://github.com/philjestin/boatmanmode
+cd boatmanmode
+go build -o boatman ./cmd/boatman
+
+# Add to PATH
+sudo mv boatman /usr/local/bin/
+```
+
+### Building from the Monorepo
+
+```bash
+git clone https://github.com/philjestin/boatman-ecosystem
+cd boatman-ecosystem
+make build-cli
+
+# The binary is at cli/boatman
+# Install to ~/bin:
+make install-cli
+```
+
+---
+
+## Verify Installation
+
+```bash
+boatman version
+```
+
+Expected output:
+
+```
+boatman version v1.0.0
+  commit: abc123def
+  built:  2026-02-13T00:00:00Z
+  go:     go1.24.1
+  os/arch: darwin/arm64
+```
+
+Use `boatman version --verbose` for detailed build information.
+
+---
+
+## Verifying Binary Integrity
+
+Each release includes SHA256 checksums:
+
+```bash
+# Download checksums
+curl -LO https://github.com/philjestin/boatmanmode/releases/download/v1.0.0/checksums.txt
+
+# Verify
+sha256sum -c checksums.txt --ignore-missing
+```

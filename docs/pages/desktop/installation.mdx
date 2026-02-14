@@ -1,0 +1,105 @@
+# Installation
+
+## Prerequisites
+
+### Required
+- **macOS** (currently only darwin/arm64 supported)
+- **Go 1.18+**: Build the application
+- **Node.js 16+**: Frontend development
+- **Wails CLI**: `go install github.com/wailsapp/wails/v2/cmd/wails@latest`
+- **Claude API Access** via one of:
+  - Anthropic API key (from https://console.anthropic.com)
+  - Google Cloud account with Vertex AI enabled
+  - Okta SSO (for firefighter mode)
+
+### For Firefighter Mode
+- **Okta account** with admin access
+- **Linear API token** (from https://linear.app/settings/api)
+- **Slack workspace** with bot token
+- **Datadog** and **Bugsnag** access via Okta SSO
+- **Git** installed for worktree-based fixes
+
+---
+
+## Build from Source
+
+```bash
+# Clone the monorepo
+git clone https://github.com/philjestin/boatman-ecosystem
+cd boatman-ecosystem
+
+# Build CLI first (desktop depends on it)
+make build-cli
+
+# Install frontend dependencies
+cd desktop/frontend && npm install && cd ../..
+
+# Build the application
+cd desktop && wails build
+
+# The app will be at: desktop/build/bin/boatman.app
+```
+
+### Using the Makefile
+
+```bash
+# From monorepo root
+make build-cli        # Build CLI binary
+make build-desktop    # Build desktop app (includes CLI)
+make build-all        # Build both
+
+# Start dev mode
+make dev              # Hot reload for frontend
+```
+
+---
+
+## Development Build
+
+```bash
+cd desktop
+wails build
+```
+
+## Production Build
+
+```bash
+cd desktop
+wails build -clean -production
+```
+
+## Platform-Specific Builds
+
+```bash
+# macOS
+wails build -platform darwin/universal
+
+# Windows
+wails build -platform windows/amd64
+
+# Linux
+wails build -platform linux/amd64
+```
+
+Built applications will be in `desktop/build/bin/`.
+
+---
+
+## Verify Dependencies
+
+```bash
+wails doctor
+```
+
+This checks that all required dependencies are installed and configured.
+
+---
+
+## macOS Troubleshooting
+
+If the app won't launch:
+
+```bash
+# Remove quarantine attribute
+xattr -d com.apple.quarantine build/bin/boatman.app
+```

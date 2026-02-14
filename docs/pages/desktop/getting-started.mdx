@@ -1,0 +1,130 @@
+# Getting Started
+
+## First Run
+
+1. **Launch Boatman**
+   ```bash
+   open build/bin/boatman.app
+   # or double-click the app in Finder
+   ```
+
+2. **Complete Onboarding**
+   - Choose authentication method:
+     - **Anthropic API**: Enter your API key
+     - **Google Cloud**: Sign in with OAuth
+   - Select default model (recommended: Claude Sonnet 4.5)
+   - Choose approval mode:
+     - **Suggest Mode**: You approve all changes (safest)
+     - **Auto-Edit Mode**: Claude edits files, asks for bash commands
+     - **Full Auto**: Claude has full control (use with caution)
+
+3. **Create or Open a Project**
+   - Click "New Project" and select your codebase directory
+   - Or open a recent project from the sidebar
+
+4. **Start Chatting**
+   - Click "New Session" to start a conversation
+   - Ask questions about your code, request changes, or get explanations
+
+---
+
+## Sessions
+
+### Creating a Session
+
+1. Click "New Session" button
+2. Type your message in the input area
+3. Claude will respond with analysis, code suggestions, or actions
+
+### Session Features
+
+| Feature | Description |
+|---------|-------------|
+| Favorites | Star important sessions for quick access |
+| Tags | Organize sessions with custom tags (`#bug-fix`, `#refactor`, `#investigation`) |
+| Search | Find sessions by content or metadata |
+| History | View all past conversations and tasks |
+
+---
+
+## Agent Interactions
+
+Claude can:
+- **Read and analyze** your codebase
+- **Search** for files and code patterns
+- **Edit files** with your approval
+- **Run bash commands** (with approval in suggest/auto-edit modes)
+- **Create git commits and PRs**
+- **Spawn sub-agents** for complex tasks
+
+### Example Prompts
+
+```
+"Review this pull request and suggest improvements"
+"Find why the authentication is failing"
+"Refactor the payment service to use async/await"
+"Explain how the database migration system works"
+"Add unit tests for the user service"
+```
+
+---
+
+## Approval Modes
+
+### Suggest Mode (Safest)
+
+- Claude proposes all changes
+- You review and approve each edit/command
+- Best for production codebases
+- Full control over what gets changed
+
+### Auto-Edit Mode (Balanced)
+
+- Claude can edit files directly
+- Still asks permission for bash commands
+- Good for trusted environments
+- Saves time on file edits
+
+### Full Auto Mode (Risky)
+
+- Claude has complete autonomy
+- No approval required for any action
+- Use **only** in sandboxed/test environments
+- Maximum speed, minimum safety
+
+---
+
+## Keyboard Shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| `Cmd+N` | New session |
+| `Cmd+K` | Quick search |
+| `Cmd+,` | Settings |
+| `Cmd+\` | Toggle sidebar |
+| `Cmd+Enter` | Send message |
+| `Esc` | Cancel current operation |
+
+---
+
+## Git Integration
+
+Boatman can:
+- Create commits with proper messages
+- Generate PRs with descriptions
+- Create worktrees for parallel work (firefighter mode)
+- Run git blame for code ownership
+
+---
+
+## Live Development Mode
+
+For developing the desktop app itself:
+
+```bash
+wails dev
+```
+
+This starts:
+- A Vite development server for fast frontend hot reload
+- A dev server at `http://localhost:34115` for browser-based development

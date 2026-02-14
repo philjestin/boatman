@@ -1,0 +1,120 @@
+# Troubleshooting
+
+## Common Issues
+
+### App Won't Launch
+
+```bash
+# Remove macOS quarantine attribute
+xattr -d com.apple.quarantine build/bin/boatman.app
+
+# Check dependencies
+wails doctor
+```
+
+### "Claude CLI not found"
+
+```bash
+# Install Claude CLI globally
+npm install -g @anthropic/claude-cli
+
+# Or verify it's accessible
+which claude
+claude --version
+```
+
+### "Permission denied" errors
+
+Two options:
+1. Change approval mode: `Settings → Approval → Auto-Edit or Full Auto`
+2. Approve the bash command when prompted in Suggest mode
+
+### "MCP server failed to start"
+
+```bash
+# Test MCP server manually
+npx -y @package/name
+
+# Check logs
+tail -f ~/.claude/logs/mcp-server.log
+
+# Verify config
+cat ~/.claude/claude_mcp_config.json
+```
+
+### Okta OAuth "Authentication failed"
+
+1. Verify Okta domain is correct (without `https://`)
+2. Check redirect URI in Okta app: `http://localhost:8484/callback`
+3. Ensure client ID is correct
+4. Check if client secret is required (confidential clients)
+5. Verify your Okta account has access to Datadog/Bugsnag
+
+### Firefighter "No tickets found"
+
+1. Verify Linear API key has read permissions
+2. Check tickets have "firefighter" or "triage" labels
+3. Ensure tickets are in the correct project/workspace
+4. Test Linear MCP server: `npx -y @modelcontextprotocol/server-linear`
+
+### "Too many tokens" or context errors
+
+- `Settings → Memory → Reduce "Max messages per session"`
+- Enable "Archive old messages" to trim history
+- Start a new session for new topics
+
+### BoatmanMode "boatman binary not found"
+
+```bash
+# Check if in PATH
+which boatman
+
+# Build from monorepo
+cd ~/workspace/personal/boatman-ecosystem
+make build-cli
+
+# Or install
+make install-cli
+```
+
+---
+
+## Debug Mode
+
+Enable debug logging:
+
+```bash
+export BOATMAN_DEBUG=1
+open build/bin/boatman.app
+
+# View logs
+tail -f ~/Library/Logs/boatman/debug.log
+```
+
+---
+
+## Frontend Debugging
+
+In Wails dev mode, use the browser developer console:
+
+```bash
+wails dev
+# Open http://localhost:34115 in your browser
+# Use browser DevTools for debugging
+```
+
+Check for BoatmanMode events:
+```javascript
+EventsOn("boatmanmode:event", (data) => console.log("Event:", data))
+```
+
+---
+
+## Getting Help
+
+**When Reporting Bugs, include:**
+1. Boatman version (Settings → About)
+2. Operating system version
+3. Steps to reproduce
+4. Error messages / screenshots
+5. Relevant logs from `~/Library/Logs/boatman/`

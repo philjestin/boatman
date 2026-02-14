@@ -1,0 +1,141 @@
+# Releasing
+
+BoatmanMode uses automatic versioning. Releases are created automatically when you push to `main`.
+
+## How Automatic Versioning Works
+
+When you push to `main`, the auto-version workflow:
+
+1. Reads your latest commit message
+2. Determines the version bump type:
+   - `breaking:` or `major:` → **Major** version bump (v2.0.0)
+   - `feat:` or `feature:` or `minor:` → **Minor** version bump (v1.1.0)
+   - Everything else → **Patch** version bump (v1.0.1)
+3. Creates and pushes a new git tag
+4. The tag triggers the release workflow
+5. Binaries are built and released automatically
+
+### Examples
+
+```bash
+# Patch bump → v1.0.1
+git commit -m "fix: correct error handling in executor"
+git push origin main
+
+# Minor bump → v1.1.0
+git commit -m "feat: add support for file-based prompts"
+git push origin main
+
+# Major bump → v2.0.0
+git commit -m "breaking: change public API interface"
+git push origin main
+```
+
+---
+
+## What Gets Released
+
+For each version tag, GitHub Actions will:
+
+1. Run tests to ensure everything passes
+2. Build binaries for multiple platforms
+3. Create SHA256 checksums
+4. Generate a changelog from commit messages
+5. Create a GitHub release with all artifacts
+
+### Built Platforms
+
+| OS | Architecture |
+|----|-------------|
+| Linux | amd64, arm64 |
+| macOS (Darwin) | amd64 (Intel), arm64 (Apple Silicon) |
+| Windows | amd64 |
+
+---
+
+## Automatic Release (Recommended)
+
+Simply push to `main`:
+
+```bash
+git add .
+git commit -m "feat: add new feature"
+git push origin main
+```
+
+The workflow handles everything automatically.
+
+---
+
+## Manual Release
+
+If you prefer manual control:
+
+```bash
+VERSION="v1.0.0"
+git tag -a $VERSION -m "Release $VERSION"
+git push origin $VERSION
+```
+
+---
+
+## Pre-releases
+
+```bash
+git tag -a v1.0.0-beta.1 -m "Beta release v1.0.0-beta.1"
+git push origin v1.0.0-beta.1
+```
+
+GoReleaser marks releases containing `-alpha`, `-beta`, or `-rc` as pre-releases.
+
+---
+
+## Changelog Generation
+
+Changelogs are auto-generated using [Conventional Commits](https://www.conventionalcommits.org/):
+
+| Prefix | Changelog Section |
+|--------|------------------|
+| `feat:` | New Features |
+| `fix:` | Bug Fixes |
+| `perf:` | Performance Improvements |
+| `refactor:` | Refactors |
+| Other | Other Changes |
+
+---
+
+## Skipping CI
+
+To push without creating a release:
+
+```bash
+git commit -m "docs: update README [skip ci]"
+```
+
+---
+
+## Testing Locally
+
+```bash
+# Install GoReleaser
+brew install goreleaser/tap/goreleaser
+
+# Dry run (doesn't publish)
+goreleaser release --snapshot --clean
+
+# Check output
+ls -lh dist/
+```
+
+---
+
+## Configuration Files
+
+| File | Purpose |
+|------|---------|
+| `.github/workflows/auto-version.yml` | Auto-version workflow |
+| `.github/workflows/release.yml` | Release build workflow |
+| `.github/workflows/test.yml` | Test workflow |
+| `.goreleaser.yml` | GoReleaser configuration |
+| `cmd/boatman/main.go` | Version variable definitions |
+| `internal/cli/version.go` | Version command implementation |

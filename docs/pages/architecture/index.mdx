@@ -1,0 +1,120 @@
+# Architecture Overview
+
+The Boatman Ecosystem is composed of two main components that communicate through a structured JSON event protocol.
+
+## High-Level Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Boatman Ecosystem                             │
+│                                                                 │
+│  ┌─────────────────────┐         ┌─────────────────────┐       │
+│  │   BoatmanMode CLI   │         │   Boatman Desktop   │       │
+│  │   (cli/)            │ ──────▶ │   (desktop/)        │       │
+│  │                     │  JSON   │                     │       │
+│  │  Go CLI + Library   │ Events  │  Wails (Go+React)   │       │
+│  └─────────┬───────────┘         └──────────┬──────────┘       │
+│            │                                │                   │
+│            │                                │                   │
+│  ┌─────────▼───────────┐         ┌──────────▼──────────┐       │
+│  │  External Services  │         │   MCP Servers       │       │
+│  │  • Claude API       │         │   • Linear          │       │
+│  │  • Linear API       │         │   • Datadog         │       │
+│  │  • GitHub API       │         │   • Bugsnag         │       │
+│  │  • Git / tmux       │         │   • Slack           │       │
+│  └─────────────────────┘         └─────────────────────┘       │
+│                                                                 │
+│  ┌─────────────────────┐                                       │
+│  │   Shared (shared/)  │                                       │
+│  │   Common Go pkgs    │                                       │
+│  └─────────────────────┘                                       │
+│                                                                 │
+│  go.work ties modules together for development                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Design Principles
+
+### Subprocess Integration
+The Desktop app calls the CLI as a subprocess (`exec.Command`) rather than importing Go modules. This provides:
+- Clean separation of concerns (UI vs engine)
+- Independent versioning and releases
+- BoatmanMode's `internal/` packages stay encapsulated
+- CLI works standalone or through the GUI
+
+### Event-Driven Communication
+The CLI emits structured JSON events to stdout. The Desktop captures these events and updates the UI in real-time. This loose coupling means:
+- CLI has no knowledge of the Desktop
+- Desktop can handle any event-emitting process
+- Events are easily consumed by other tools (CI, dashboards)
+
+### Go Workspace
+The `go.work` file ties modules together for development while allowing independent `go.mod` files:
+
+```go
+go 1.24.1
+
+use (
+    ./cli
+    ./desktop
+    ./shared
+)
+```
+
+### Agent Isolation
+Each AI agent runs in its own context:
+- Fresh agent per workflow step (no context bloat)
+- Structured handoffs with token-aware compression
+- Git worktree isolation for file changes
+- tmux sessions for live observation
+
+---
+
+## Module Dependencies
+
+```
+cli/
+  module: github.com/philjestin/boatmanmode
+  deps: cobra, viper
+
+desktop/
+  module: boatman
+  deps: wails/v2, google/uuid, pkg/browser
+
+shared/
+  module: github.com/philjestin/boatman-ecosystem/shared
+  deps: (none yet)
+```
+
+The CLI and Desktop have independent dependency trees. The `shared/` module is reserved for common types that both need.
+
+---
+
+## Data Flow
+
+### CLI Workflow
+```
+User Input → Task Creation → Worktree Setup → Planning → Execution
+    → Testing → Review → Refactoring → Commit → PR Creation
+```
+
+Each step:
+1. Emits `agent_started` event
+2. Performs work (Claude AI, git operations, etc.)
+3. Saves checkpoint (git commit)
+4. Emits `agent_completed` event
+5. Hands off context to next step (compressed)
+
+### Desktop Integration Flow
+```
+User clicks "Boatman Mode" → Creates session → Spawns CLI subprocess
+    → Parses stdout events → Emits Wails events → React updates UI
+```
+
+### Firefighter Flow
+```
+User clicks "Investigate" → Claude uses MCP tools → Queries Linear/Bugsnag/Datadog
+    → Analyzes git history → Generates report → Optionally creates fix PR
+```

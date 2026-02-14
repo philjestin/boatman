@@ -1,0 +1,283 @@
+# API Reference
+
+Complete reference for BoatmanMode's internal packages and public interfaces.
+
+## Core Types
+
+### Task Interface
+
+```go
+// Task represents a unit of work for the agent
+type Task interface {
+    GetID() string
+    GetTitle() string
+    GetDescription() string
+    GetBranchName() string
+    GetLabels() []string
+    GetMetadata() TaskMetadata
+}
+```
+
+### TaskMetadata
+
+```go
+type TaskMetadata struct {
+    Source    TaskSource  // "linear", "prompt", "file"
+    CreatedAt time.Time
+    FilePath  string     // Only for file-based tasks
+}
+```
+
+### TaskSource
+
+```go
+type TaskSource string
+
+const (
+    TaskSourceLinear TaskSource = "linear"
+    TaskSourcePrompt TaskSource = "prompt"
+    TaskSourceFile   TaskSource = "file"
+)
+```
+
+---
+
+## Config Types
+
+### Config
+
+```go
+type Config struct {
+    LinearKey      string        // Linear API key
+    BaseBranch     string        // Base branch (default: "main")
+    MaxIterations  int           // Max review/refactor cycles (default: 5)
+    ReviewSkill    string        // Claude skill for review (default: "peer-review")
+    EnableTools    bool          // Enable Claude tools (default: true)
+    AutoPR         bool          // Auto-create PR (default: true)
+
+    // Feature toggles
+    EnablePreflight  bool
+    EnableTests      bool
+    EnableDiffVerify bool
+    EnableMemory     bool
+    CheckpointDir    string
+    MemoryDir        string
+
+    // Sub-configs
+    Claude      ClaudeConfig
+    Review      ReviewConfig
+    Coordinator CoordinatorConfig
+    Retry       RetryConfig
+    TokenBudget TokenBudgetConfig
+}
+```
+
+### ClaudeConfig
+
+```go
+type ClaudeConfig struct {
+    Command              string  // CLI command (default: "claude")
+    UseTmux              bool    // Use tmux for large prompts
+    LargePromptThreshold int     // Character count for tmux
+    Timeout              int     // Timeout in seconds (0 = no timeout)
+    EnablePromptCaching  bool    // Enable prompt caching
+
+    Models struct {
+        Planner    string  // Model for planning
+        Executor   string  // Model for execution
+        Reviewer   string  // Model for review
+        Refactor   string  // Model for refactoring
+        Preflight  string  // Model for preflight validation
+        TestRunner string  // Model for test parsing
+    }
+}
+```
+
+### ReviewConfig
+
+```go
+type ReviewConfig struct {
+    MaxCriticalIssues         int   // Max critical issues to pass (default: 1)
+    MaxMajorIssues            int   // Max major issues to pass (default: 3)
+    MinVerificationConfidence int   // Min confidence % (default: 50)
+    StrictParsing             bool  // Strict keyword parsing (default: false)
+}
+```
+
+### CoordinatorConfig
+
+```go
+type CoordinatorConfig struct {
+    MessageBufferSize    int  // Main channel buffer (default: 1000)
+    SubscriberBufferSize int  // Per-agent buffer (default: 100)
+}
+```
+
+### RetryConfig
+
+```go
+type RetryConfig struct {
+    MaxAttempts  int           // Number of attempts (default: 3)
+    InitialDelay time.Duration // Initial delay (default: 500ms)
+    MaxDelay     time.Duration // Max delay (default: 30s)
+}
+```
+
+---
+
+## Agent Types
+
+### Agent
+
+```go
+type Agent struct {
+    Config *config.Config
+}
+
+func New(cfg *config.Config) (*Agent, error)
+func (a *Agent) Work(ctx context.Context, t task.Task) (*WorkResult, error)
+```
+
+### WorkResult
+
+```go
+type WorkResult struct {
+    PRCreated bool   // Whether a PR was created
+    PRURL     string // URL of the created PR
+    Message   string // Status message
+}
+```
+
+---
+
+## Event Types
+
+### Event
+
+```go
+type Event struct {
+    Type        string                 `json:"type"`
+    ID          string                 `json:"id,omitempty"`
+    Name        string                 `json:"name,omitempty"`
+    Description string                 `json:"description,omitempty"`
+    Status      string                 `json:"status,omitempty"`
+    Message     string                 `json:"message,omitempty"`
+    Data        map[string]interface{} `json:"data,omitempty"`
+}
+```
+
+### Event Functions
+
+```go
+func Emit(event Event)
+func AgentStarted(id, name, description string)
+func AgentCompleted(id, name, status string)
+func AgentCompletedWithData(id, name, status string, data map[string]interface{})
+func TaskCreated(id, name, description string)
+func TaskUpdated(id, status string)
+func Progress(message string)
+```
+
+---
+
+## Coordinator Types
+
+### Coordinator
+
+```go
+type Coordinator struct{}
+
+func NewCoordinator(cfg *config.CoordinatorConfig) *Coordinator
+func (c *Coordinator) Start()
+func (c *Coordinator) Stop()
+func (c *Coordinator) ClaimWork(agentID string, claim *WorkClaim) error
+func (c *Coordinator) LockFiles(agentID string, files []string) error
+func (c *Coordinator) UnlockFiles(agentID string) error
+func (c *Coordinator) SetContext(key string, value interface{})
+func (c *Coordinator) GetContext(key string) (interface{}, bool)
+```
+
+### WorkClaim
+
+```go
+type WorkClaim struct {
+    WorkID string
+    Files  []string
+}
+```
+
+---
+
+## Checkpoint Types
+
+### Checkpoint
+
+```go
+type Checkpoint struct {
+    TaskID    string
+    Step      string
+    Iteration int
+    State     []byte // Serialized agent state
+}
+
+func Save(cp *Checkpoint) error
+func Load(taskID string) (*Checkpoint, error)
+func Rollback(taskID string, step string) error
+func Squash(message string) error
+func Snapshot(name string) error
+```
+
+---
+
+## Retry Functions
+
+```go
+func Do(ctx context.Context, fn func() error, opts ...Option) error
+func WithMaxAttempts(n int) Option
+func WithInitialDelay(d time.Duration) Option
+func WithMaxDelay(d time.Duration) Option
+func IsPermanent(err error) bool
+func NewPermanentError(err error) error
+```
+
+---
+
+## Health Check Functions
+
+```go
+func CheckAll() (*HealthReport, error)
+func CheckGit() error
+func CheckGH() error
+func CheckClaude() error
+func CheckTmux() error
+```
+
+### HealthReport
+
+```go
+type HealthReport struct {
+    Passed  []string
+    Failed  []string
+    Warnings []string
+}
+```
+
+---
+
+## CLI Commands
+
+| Command | Description |
+|---------|-------------|
+| `boatman work <ticket\|--prompt\|--file>` | Execute a task |
+| `boatman watch` | Watch agent activity live |
+| `boatman sessions list` | List active sessions |
+| `boatman sessions kill [-f]` | Kill sessions |
+| `boatman sessions cleanup` | Clean up idle sessions |
+| `boatman worktree list` | List all worktrees |
+| `boatman worktree commit [name] [msg]` | Commit worktree changes |
+| `boatman worktree push` | Push worktree branch |
+| `boatman worktree clean` | Remove all worktrees |
+| `boatman checkpoint snapshot <name>` | Create checkpoint snapshot |
+| `boatman checkpoint squash <msg>` | Squash checkpoint commits |
+| `boatman checkpoint rollback --step <step>` | Rollback to step |
+| `boatman version [--verbose]` | Show version information |

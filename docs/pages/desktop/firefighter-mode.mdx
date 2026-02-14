@@ -1,0 +1,263 @@
+# Firefighter Mode
+
+Firefighter Mode is a specialized agent for **investigating production incidents** using Linear tickets, Bugsnag errors, and Datadog monitoring. It's designed for on-call engineers handling production incidents.
+
+## How It Works
+
+```
+Linear Ticket → Extract Context → Query Bugsnag/Datadog
+    → Analyze Git History → Generate Report → Auto-Fix → Update Ticket
+```
+
+### Dual Workflow
+
+1. **Ticket-Based Investigation** (Priority)
+   - Monitors Linear triage queue for "firefighter" labeled tickets
+   - Click "Investigate" on any ticket
+   - Gathers context from Bugsnag and Datadog
+   - Generates comprehensive investigation report
+   - Attempts fix for High/Urgent tickets
+
+2. **Proactive Monitoring** (Secondary)
+   - Polls Bugsnag/Datadog every 5 minutes for NEW errors
+   - Auto-investigates HIGH/Urgent severity issues
+   - Creates Linear tickets for new incidents
+   - Updates you with findings
+
+---
+
+## Investigation Workflow
+
+When you click "Investigate" on a ticket:
+
+1. **Fetch ticket details** from Linear
+2. **Query Bugsnag** for error stacktraces and events
+3. **Query Datadog** for logs and metrics around error time
+4. **Analyze git history** for recent changes
+5. **Identify root cause** with evidence
+6. **Generate structured report**
+7. **Update Linear ticket** with findings
+8. **Attempt fix** in isolated git worktree (if High/Urgent)
+9. **Run tests** and create draft PR if fix succeeds
+
+---
+
+## Setup
+
+### Step 1: Configure Okta OAuth
+
+Firefighter Mode uses Okta SSO to access Datadog and Bugsnag APIs.
+
+**Prerequisites:**
+- Okta account with admin access
+- Datadog and Bugsnag integrated with Okta SSO
+
+**Configuration:**
+
+1. **Create Okta Application:**
+   - Go to Okta Admin Dashboard → Applications
+   - Click "Create App Integration"
+   - Choose "OIDC - OpenID Connect" → "Web Application"
+   - **Redirect URI**: `http://localhost:8484/callback`
+   - Note the **Client ID** and **Client Secret**
+
+2. **Configure in Boatman:**
+   ```
+   Settings → Firefighter Tab
+   - Okta Domain: your-org.okta.com
+   - Client ID: <from step 1>
+   - Client Secret: <from step 1> (optional for public clients)
+   - Click "Save Changes"
+   ```
+
+3. **Sign In:**
+   ```
+   Click "Sign In with Okta"
+   → Browser opens
+   → Sign in with your Okta credentials
+   → Grant permissions
+   → Return to Boatman (automatically authenticated)
+   ```
+
+### Step 2: Install Custom MCP Servers
+
+```bash
+cd desktop/mcp-servers
+make all
+make install
+```
+
+This installs:
+- `datadog-okta` — Datadog MCP server with OAuth support
+- `bugsnag-okta` — Bugsnag MCP server with OAuth support
+
+### Step 3: Configure MCP Servers
+
+**Linear MCP Server:**
+
+1. Get API key from https://linear.app/settings/api
+2. Add to `~/.claude/claude_mcp_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "linear": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-linear"],
+      "env": {
+        "LINEAR_API_KEY": "your-linear-api-key-here"
+      }
+    }
+  }
+}
+```
+
+**Datadog & Bugsnag (OAuth):**
+
+```json
+{
+  "mcpServers": {
+    "datadog-okta": {
+      "command": "/Users/YOUR_USERNAME/.claude/mcp-servers/datadog-okta",
+      "args": [],
+      "env": {
+        "OKTA_ACCESS_TOKEN": "[automatically-injected-by-boatman]",
+        "DD_SITE": "datadoghq.com"
+      }
+    },
+    "bugsnag-okta": {
+      "command": "/Users/YOUR_USERNAME/.claude/mcp-servers/bugsnag-okta",
+      "args": [],
+      "env": {
+        "OKTA_ACCESS_TOKEN": "[automatically-injected-by-boatman]"
+      }
+    }
+  }
+}
+```
+
+**Slack (Optional):**
+
+```json
+{
+  "mcpServers": {
+    "slack": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-slack"],
+      "env": {
+        "SLACK_BOT_TOKEN": "xoxb-your-token-here",
+        "SLACK_TEAM_ID": "your-workspace-id"
+      }
+    }
+  }
+}
+```
+
+### Step 4: Enable MCP Servers
+
+```
+Settings → MCP Servers Tab
+- Toggle "Enabled" for: linear, datadog-okta, bugsnag-okta, slack
+- Click "Save Changes"
+```
+
+---
+
+## Using Firefighter Mode
+
+### Starting a Session
+
+1. Click the **Firefighter** button (flame icon in header)
+2. Optionally set a **scope** to filter noise (e.g., "payment-service")
+3. Toggle **monitoring** for proactive alerts
+4. Click **"Start Investigation"**
+
+### Interface Layout
+
+**Left Sidebar — Linear Triage Queue:**
+- Shows tickets labeled "firefighter" or "triage"
+- Priority color-coding:
+  - Red = Urgent
+  - Orange = High
+  - Yellow = Medium
+  - Blue = Low
+- Click "Investigate" to start investigation
+
+**Right Panel — Chat Interface:**
+- Investigation reports appear here
+- Ask follow-up questions
+- Sub-agents may spawn for complex tasks
+
+**Top Bar — Monitoring Status:**
+- Green = Active Monitoring (checking every 5 minutes)
+- Paused = Manual investigation only
+- Shows last check time and issue count
+
+---
+
+## Investigation Report Format
+
+Each investigation generates a structured report:
+
+```markdown
+### Incident Summary
+- **Error**: NullPointerException in PaymentService.processRefund()
+- **First Seen**: 2026-02-13 14:23:45 UTC
+- **Frequency**: 47 occurrences in last hour
+- **Severity**: High
+
+### Affected Systems
+- **Services**: payment-service, billing-service
+- **Code Owners**: @payments-team
+- **Endpoints**: POST /api/v1/payments/refund
+
+### Timeline
+- 14:20 UTC - Deployment: v2.3.4 to production
+- 14:23 UTC - First error occurrence
+- 14:25 UTC - Error rate spike to 15%
+- 14:30 UTC - Datadog alert triggered
+
+### Root Cause Analysis
+Refund logic assumes transaction.customer is always present,
+but can be null for guest checkouts introduced in v2.3.0.
+
+### Recommended Actions
+1. Immediate: Add null check before accessing transaction.customer
+2. Short-term: Rollback to v2.3.3 if fix cannot deploy quickly
+3. Long-term: Add integration tests for guest checkout flows
+
+### Fix Attempted
+- Created worktree: ../worktrees/fix-emp-456
+- Applied fix: Added null guard in PaymentService.ts:142
+- Tests passed: All 234 tests passing
+- Draft PR created: #1234
+- Linear ticket updated with PR link
+```
+
+---
+
+## Best Practices
+
+### Label Your Tickets
+- Use "firefighter" or "triage" labels in Linear
+- Add service tags: "payment", "auth", "billing"
+- Include Bugsnag/Datadog links in ticket description
+
+### Set Monitoring Scope
+- Filter noise by specifying a service or team
+- Examples: "payment-service", "employer-activation", "production"
+
+### Priority Triage
+- Agent prioritizes Urgent/High tickets from Linear
+- AUTO-investigates HIGH severity from monitoring
+- Medium/Low: alert only, wait for approval
+
+### Git Worktrees
+- Agent creates isolated worktrees: `../worktrees/fix-<issue-id>`
+- Allows multiple simultaneous investigations
+- Clean up periodically: `git worktree remove ../worktrees/fix-old-issue`
+
+### Update Linear Tickets
+- Agent automatically updates tickets with findings
+- Moves to "In Progress" when investigating
+- Links PRs when fix is ready

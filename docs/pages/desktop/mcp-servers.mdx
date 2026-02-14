@@ -1,0 +1,213 @@
+# MCP Servers
+
+Model Context Protocol (MCP) servers extend Claude's capabilities by connecting to external tools and services.
+
+## Overview
+
+MCP servers are external processes that Claude communicates with to access data and perform actions beyond its built-in tools. Boatman Desktop manages MCP server lifecycle and injects credentials automatically.
+
+---
+
+## Available Preset Servers
+
+### Built-in Presets
+
+| Server | Purpose | Auth Method |
+|--------|---------|-------------|
+| `filesystem` | File system access | None |
+| `github` | GitHub API integration | GitHub token |
+| `postgres` | PostgreSQL database access | Connection string |
+| `datadog` | Datadog monitoring | API key |
+| `bugsnag` | Bugsnag error tracking | API key |
+| `linear` | Linear project management | API key |
+| `slack` | Slack workspace integration | Bot token |
+
+### Firefighter-Specific (OAuth)
+
+| Server | Purpose | Auth Method |
+|--------|---------|-------------|
+| `datadog-okta` | Datadog with Okta OAuth | Okta SSO |
+| `bugsnag-okta` | Bugsnag with Okta OAuth | Okta SSO |
+
+---
+
+## Adding MCP Servers
+
+### Via UI
+
+```
+Settings → MCP Servers → Add Server
+
+Option 1: Preset
+- Select from dropdown
+- Configure environment variables
+- Enable
+
+Option 2: Custom
+- Name: my-custom-server
+- Command: npx
+- Args: -y, @my-org/mcp-server
+- Environment variables:
+  - API_KEY: your-key-here
+- Enable
+```
+
+### Via Config File
+
+Edit `~/.claude/claude_mcp_config.json` directly:
+
+```json
+{
+  "mcpServers": {
+    "server-name": {
+      "command": "npx",
+      "args": ["-y", "@package/name"],
+      "env": {
+        "API_KEY": "your-key",
+        "OTHER_VAR": "value"
+      }
+    }
+  }
+}
+```
+
+Changes take effect immediately (no restart required).
+
+---
+
+## Server Configuration Examples
+
+### Linear
+
+```json
+{
+  "mcpServers": {
+    "linear": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-linear"],
+      "env": {
+        "LINEAR_API_KEY": "lin_api_xxxxx"
+      }
+    }
+  }
+}
+```
+
+### GitHub
+
+```json
+{
+  "mcpServers": {
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_TOKEN": "ghp_xxxxx"
+      }
+    }
+  }
+}
+```
+
+### Slack
+
+```json
+{
+  "mcpServers": {
+    "slack": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-slack"],
+      "env": {
+        "SLACK_BOT_TOKEN": "xoxb-xxxxx",
+        "SLACK_TEAM_ID": "T0000000"
+      }
+    }
+  }
+}
+```
+
+Required Slack Bot scopes:
+- `channels:history`
+- `channels:read`
+- `chat:write`
+- `users:read`
+
+### Datadog (API Key)
+
+```json
+{
+  "mcpServers": {
+    "datadog": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-datadog"],
+      "env": {
+        "DD_API_KEY": "xxxxx",
+        "DD_APP_KEY": "xxxxx",
+        "DD_SITE": "datadoghq.com"
+      }
+    }
+  }
+}
+```
+
+### Datadog (Okta OAuth)
+
+```json
+{
+  "mcpServers": {
+    "datadog-okta": {
+      "command": "/Users/YOUR_USERNAME/.claude/mcp-servers/datadog-okta",
+      "args": [],
+      "env": {
+        "OKTA_ACCESS_TOKEN": "[automatically-injected-by-boatman]",
+        "DD_SITE": "datadoghq.com"
+      }
+    }
+  }
+}
+```
+
+---
+
+## Building Custom MCP Servers
+
+For Firefighter Mode's OAuth-based servers:
+
+```bash
+cd desktop/mcp-servers
+make all       # Build all custom servers
+make install   # Install to ~/.claude/mcp-servers/
+```
+
+---
+
+## Enabling/Disabling Servers
+
+```
+Settings → MCP Servers Tab
+- Toggle each server on/off
+- Click "Save Changes"
+```
+
+---
+
+## Troubleshooting
+
+### "MCP server failed to start"
+
+```bash
+# Test MCP server manually
+npx -y @package/name
+
+# Check logs
+tail -f ~/.claude/logs/mcp-server.log
+
+# Verify environment variables
+cat ~/.claude/claude_mcp_config.json
+```
+
+### Server hangs or times out
+
+- Check if the server process is running: `ps aux | grep mcp`
+- Restart the server by toggling it off and on in settings
+- Check network connectivity for remote APIs

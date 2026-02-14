@@ -1,0 +1,170 @@
+# Integration Layer
+
+The integration layer in `desktop/boatmanmode/integration.go` bridges the Desktop application and the BoatmanMode CLI.
+
+## Design
+
+The integration uses a **subprocess pattern**: the Desktop app spawns the CLI as a child process, captures its stdout, and parses JSON events for real-time UI updates.
+
+```go
+type Integration struct {
+    boatmanmodePath string  // Path to boatman binary
+}
+
+func NewIntegration() (*Integration, error) {
+    // Finds boatman in PATH or default locations
+}
+```
+
+---
+
+## Binary Discovery
+
+The integration searches for the `boatman` binary in order:
+
+1. `exec.LookPath("boatman")` — in system PATH
+2. `~/workspace/personal/boatman-ecosystem/cli/boatman` — monorepo location
+3. `~/workspace/handshake/boatmanmode/boatman` — legacy location
+
+---
+
+## Methods
+
+### ExecuteTicket
+
+Runs a full ticket execution and returns the result:
+
+```go
+func (i *Integration) ExecuteTicket(
+    ctx context.Context,
+    linearAPIKey, ticketID, repoPath string,
+) (*ExecutionResult, error)
+```
+
+Calls: `boatman execute --ticket TICKET_ID --repo REPO_PATH`
+
+### StreamTicketExecution
+
+Streams execution with real-time event parsing:
+
+```go
+func (i *Integration) StreamTicketExecution(
+    ctx context.Context,
+    linearAPIKey, ticketID, repoPath string,
+    eventHandler func(BoatmanEvent),
+) error
+```
+
+Parses each line of stdout as a potential JSON event and calls the handler.
+
+### FetchTickets
+
+Retrieves Linear tickets suitable for automated execution:
+
+```go
+func (i *Integration) FetchTickets(
+    ctx context.Context,
+    linearAPIKey, repoPath string,
+) ([]LinearTicket, error)
+```
+
+Calls: `boatman list-tickets --repo REPO_PATH --labels firefighter,triage,boatmanmode`
+
+---
+
+## Event Parsing
+
+The integration parses stdout line-by-line:
+
+```go
+scanner := bufio.NewScanner(stdout)
+for scanner.Scan() {
+    line := scanner.Text()
+
+    var event BoatmanEvent
+    if err := json.Unmarshal([]byte(line), &event); err == nil {
+        if event.Type != "" {
+            eventHandler(event)
+        }
+    }
+    // Non-JSON lines are treated as regular output
+}
+```
+
+---
+
+## Wails Event Bridge
+
+The Desktop app bridges CLI events to the frontend:
+
+```go
+// app.go
+func (a *App) StreamLinearTicketExecution(sessionId, ticketId string) error {
+    bmIntegration, _ := bmintegration.NewIntegration(...)
+
+    return bmIntegration.StreamTicketExecution(ctx, apiKey, ticketId, projectPath,
+        func(event bmintegration.BoatmanEvent) {
+            // Emit to frontend
+            runtime.EventsEmit(a.ctx, "boatmanmode:event", map[string]interface{}{
+                "sessionId": sessionId,
+                "event":     event,
+            })
+        },
+    )
+}
+```
+
+### Frontend Handler
+
+```typescript
+// useAgent.ts
+useEffect(() => {
+    const unsubscribe = EventsOn("boatmanmode:event", (data) => {
+        const { sessionId, event } = data;
+        HandleBoatmanModeEvent(sessionId, event.type, event);
+    });
+    return unsubscribe;
+}, []);
+```
+
+### Backend Task Management
+
+```go
+// app.go
+func (a *App) HandleBoatmanModeEvent(sessionId, eventType string, eventData map[string]interface{}) {
+    switch eventType {
+    case "agent_started":
+        // Create task with status "in_progress"
+    case "agent_completed":
+        // Update task status to "completed" or "failed"
+    case "progress":
+        // Display in output stream
+    case "task_created":
+        // Create sub-task
+    case "task_updated":
+        // Update sub-task status
+    }
+}
+```
+
+---
+
+## Error Handling
+
+- If the CLI binary is not found, returns a clear error with search paths
+- If the CLI process exits with non-zero, the error is captured and reported
+- If JSON parsing fails for a line, the line is treated as regular output
+- Context cancellation is propagated to the subprocess via `exec.CommandContext`
+
+---
+
+## Environment Variables
+
+The integration passes API keys via environment:
+
+```go
+cmd.Env = append(os.Environ(),
+    "LINEAR_API_KEY="+linearAPIKey,
+    "CLAUDE_API_KEY="+claudeAPIKey,
+)
+```
