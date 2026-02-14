@@ -48,9 +48,6 @@ archives:
         format: zip
     files:
       - README.md
-      - LICENSE
-      - TASK_MODES.md
-      - example-task.txt
 
 checksum:
   name_template: 'checksums.txt'
