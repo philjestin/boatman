@@ -1,0 +1,513 @@
+// Package claude provides a wrapper around the Claude CLI.
+// Supports both direct exec and tmux-based execution for large prompts.
+package claude
+
+import (
+	"bufio"
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log/slog"
+	"os"
+	"os/exec"
+	"strings"
+
+	"github.com/philjestin/boatmanmode/internal/cost"
+	"github.com/philjestin/boatmanmode/internal/retry"
+	"github.com/philjestin/boatmanmode/internal/tmux"
+)
+
+// Client wraps the Claude CLI.
+type Client struct {
+	// Command is the claude command to use (default: "claude")
+	Command string
+
+	// WorkDir is the working directory for claude commands
+	WorkDir string
+
+	// Env is additional environment variables to set
+	Env map[string]string
+
+	// UseTmux enables tmux-based execution (better for large prompts)
+	UseTmux bool
+
+	// TmuxManager manages tmux sessions
+	TmuxManager *tmux.Manager
+
+	// SessionName is the name for tmux sessions
+	SessionName string
+
+	// Stream enables streaming output
+	Stream bool
+
+	// Debug enables debug output
+	Debug bool
+
+	// Model specifies which Claude model to use (e.g., "claude-sonnet-4.5", "claude-haiku-4")
+	Model string
+
+	// EnablePromptCaching enables prompt caching to reduce costs
+	EnablePromptCaching bool
+
+	// AllowedTools are the tools this client can use.
+	// Empty/nil means all tools allowed. Use []string{} to disable all tools.
+	AllowedTools []string
+
+	// EnableTools controls whether tools are enabled at all.
+	// If false, tools are explicitly disabled with --tools "".
+	EnableTools bool
+
+	// SkipPermissions automatically approves all tool uses without user confirmation.
+	// WARNING: This is a security risk - only enable for trusted, non-interactive environments.
+	SkipPermissions bool
+}
+
+// StreamChunk represents a chunk from Claude's stream-json output.
+type StreamChunk struct {
+	Type    string `json:"type"`
+	Content string `json:"content"`
+	Message struct {
+		Content []struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		} `json:"content"`
+	} `json:"message"`
+	// Usage data (present in "result" type chunks)
+	Usage struct {
+		InputTokens      int `json:"input_tokens"`
+		OutputTokens     int `json:"output_tokens"`
+		CacheReadTokens  int `json:"cache_read_input_tokens"`
+		CacheWriteTokens int `json:"cache_creation_input_tokens"`
+	} `json:"usage"`
+	TotalCostUSD float64 `json:"total_cost_usd"`
+}
+
+// New creates a new Claude CLI client.
+func New() *Client {
+	return &Client{
+		Command: "claude",
+		Env:     make(map[string]string),
+		Stream:  true,
+		UseTmux: false,
+		Debug:   os.Getenv("BOATMAN_DEBUG") == "1",
+	}
+}
+
+// NewWithWorkDir creates a client that runs in a specific directory.
+func NewWithWorkDir(workDir string) *Client {
+	return &Client{
+		Command: "claude",
+		WorkDir: workDir,
+		Env:     make(map[string]string),
+		Stream:  true,
+		UseTmux: false,
+		Debug:   os.Getenv("BOATMAN_DEBUG") == "1",
+	}
+}
+
+// NewWithTmux creates a client that uses tmux for execution.
+func NewWithTmux(workDir, sessionName string) *Client {
+	return &Client{
+		Command:     "claude",
+		WorkDir:     workDir,
+		Env:         make(map[string]string),
+		UseTmux:     true,
+		TmuxManager: tmux.NewManager("boatman"),
+		SessionName: sessionName,
+		Stream:      true,
+		Debug:       os.Getenv("BOATMAN_DEBUG") == "1",
+		EnableTools: false, // Backward compatibility - tools disabled by default
+	}
+}
+
+// NewWithTools creates a client with specific tool permissions.
+// tools: List of allowed tools (e.g., []string{"Read", "Grep", "Glob"})
+// Pass nil to allow all tools.
+// Pass []string{} to disable all tools.
+func NewWithTools(workDir, sessionName string, tools []string) *Client {
+	return &Client{
+		Command:      "claude",
+		WorkDir:      workDir,
+		Env:          make(map[string]string),
+		UseTmux:      true,
+		TmuxManager:  tmux.NewManager("boatman"),
+		SessionName:  sessionName,
+		Stream:       true,
+		Debug:        os.Getenv("BOATMAN_DEBUG") == "1",
+		EnableTools:  true,
+		AllowedTools: tools,
+	}
+}
+
+// Message sends a message to Claude and returns the response with usage data.
+func (c *Client) Message(ctx context.Context, systemPrompt, userPrompt string) (string, *cost.Usage, error) {
+	// Use tmux for large prompts or when explicitly enabled
+	if c.UseTmux || len(userPrompt) > 100000 || len(systemPrompt) > 50000 {
+		return c.messageTmux(ctx, systemPrompt, userPrompt)
+	}
+
+	if c.Stream {
+		return c.messageStreaming(ctx, systemPrompt, userPrompt)
+	}
+	return c.messageNonStreaming(ctx, systemPrompt, userPrompt)
+}
+
+// messageTmux sends a message using tmux session.
+func (c *Client) messageTmux(ctx context.Context, systemPrompt, userPrompt string) (string, *cost.Usage, error) {
+	if c.TmuxManager == nil {
+		c.TmuxManager = tmux.NewManager("boatman")
+	}
+
+	sessionName := c.SessionName
+	if sessionName == "" {
+		sessionName = "claude"
+	}
+
+	sess, err := c.TmuxManager.CreateSession(sessionName, c.WorkDir)
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to create tmux session: %w", err)
+	}
+
+	// Don't kill session on completion - let user inspect if needed
+	// defer c.TmuxManager.KillSession(sess)
+
+	opts := tmux.ClaudeOptions{
+		Model:               c.Model,
+		EnablePromptCaching: c.EnablePromptCaching,
+	}
+	return c.TmuxManager.RunClaudeStreamingWithOptions(ctx, sess, systemPrompt, userPrompt, opts)
+}
+
+// messageStreaming sends a message and streams the response with retry support.
+func (c *Client) messageStreaming(ctx context.Context, systemPrompt, userPrompt string) (string, *cost.Usage, error) {
+	var fullResponse string
+	var usage *cost.Usage
+
+	err := retry.Do(ctx, retry.CLIConfig(), "Claude CLI", func() error {
+		result, resultUsage, err := c.doStreamingRequest(ctx, systemPrompt, userPrompt)
+		if err != nil {
+			// Check for retryable error patterns
+			errStr := err.Error()
+			if strings.Contains(errStr, "rate limit") ||
+				strings.Contains(errStr, "overloaded") ||
+				strings.Contains(errStr, "temporarily") {
+				return err // Retryable
+			}
+			// Most CLI errors are permanent
+			return retry.Permanent(err)
+		}
+		fullResponse = result
+		usage = resultUsage
+		return nil
+	})
+
+	return fullResponse, usage, err
+}
+
+// streamResult holds the response and usage from streaming.
+type streamResult struct {
+	response string
+	usage    *cost.Usage
+	err      error
+}
+
+// doStreamingRequest performs a single streaming request to Claude.
+func (c *Client) doStreamingRequest(ctx context.Context, systemPrompt, userPrompt string) (string, *cost.Usage, error) {
+	args := []string{
+		"-p",
+		"--output-format", "stream-json",
+	}
+
+	// Auto-approve tool uses if configured (WARNING: security risk)
+	if c.SkipPermissions {
+		args = append(args, "--dangerously-skip-permissions")
+	}
+
+	// Handle tool permissions
+	if !c.EnableTools {
+		// Explicitly disable tools for backward compatibility
+		args = append(args, "--tools", "")
+	} else if len(c.AllowedTools) > 0 {
+		// Restrict to specific tools
+		args = append(args, "--tools", strings.Join(c.AllowedTools, ","))
+	}
+	// If EnableTools is true and AllowedTools is nil, omit --tools flag entirely (allows all tools)
+
+	// Add model selection if specified
+	if c.Model != "" {
+		args = append(args, "--model", c.Model)
+	}
+
+	// Note: Prompt caching is automatically handled by Claude CLI when using system prompts
+	// No explicit flag needed in current version (2.1.39+)
+
+	if systemPrompt != "" {
+		args = append(args, "--system-prompt", systemPrompt)
+	}
+
+	args = append(args, userPrompt)
+
+	cmd := exec.CommandContext(ctx, c.Command, args...)
+
+	if c.WorkDir != "" {
+		cmd.Dir = c.WorkDir
+	}
+
+	// Get parent environment but filter out CLAUDECODE to allow nested Claude sessions
+	cmd.Env = filterParentEnv()
+	for k, v := range c.Env {
+		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
+	}
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to get stdout pipe: %w", err)
+	}
+
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	if err := cmd.Start(); err != nil {
+		return "", nil, fmt.Errorf("failed to start claude: %w", err)
+	}
+
+	// Stream and collect the response
+	var fullResponse strings.Builder
+	var resultUsage *cost.Usage
+
+	fmt.Println("   ┌─────────────────────────────────────────────────────────────")
+
+	// Create a done channel to signal when reading is complete
+	readDone := make(chan streamResult, 1)
+
+	go func() {
+		lineBuffer := ""
+		var usage *cost.Usage
+		reader := bufio.NewReader(stdout)
+		for {
+			// Check for context cancellation between reads
+			select {
+			case <-ctx.Done():
+				readDone <- streamResult{err: ctx.Err()}
+				return
+			default:
+			}
+
+			line, err := reader.ReadString('\n')
+			if err != nil {
+				if err == io.EOF {
+					// Print any remaining content
+					if lineBuffer != "" {
+						fmt.Printf("   │ %s\n", lineBuffer)
+					}
+					readDone <- streamResult{response: fullResponse.String(), usage: usage}
+					return
+				}
+				readDone <- streamResult{err: fmt.Errorf("error reading stream: %w", err)}
+				return
+			}
+
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+
+			var chunk StreamChunk
+			if err := json.Unmarshal([]byte(line), &chunk); err != nil {
+				if c.Debug {
+					slog.Debug("failed to parse chunk", "chunk", line, "error", err)
+				}
+				continue
+			}
+
+			// Handle different chunk types
+			var text string
+			switch chunk.Type {
+			case "content_block_delta":
+				text = chunk.Content
+			case "message_stop":
+				continue
+			case "result":
+				// Extract usage data from result chunk
+				usage = &cost.Usage{
+					InputTokens:      chunk.Usage.InputTokens,
+					OutputTokens:     chunk.Usage.OutputTokens,
+					CacheReadTokens:  chunk.Usage.CacheReadTokens,
+					CacheWriteTokens: chunk.Usage.CacheWriteTokens,
+					TotalCostUSD:     chunk.TotalCostUSD,
+				}
+				for _, content := range chunk.Message.Content {
+					if content.Type == "text" {
+						text = content.Text
+					}
+				}
+			}
+
+			if text != "" {
+				fullResponse.WriteString(text)
+
+				// Stream to terminal with formatting
+				lineBuffer += text
+				for {
+					idx := strings.Index(lineBuffer, "\n")
+					if idx == -1 {
+						break
+					}
+					fmt.Printf("   │ %s\n", lineBuffer[:idx])
+					lineBuffer = lineBuffer[idx+1:]
+				}
+			}
+		}
+	}()
+
+	// Wait for either context cancellation or read completion
+	select {
+	case <-ctx.Done():
+		// Context cancelled - process will be killed by CommandContext
+		<-readDone // Wait for reader goroutine to finish
+		return "", nil, ctx.Err()
+	case result := <-readDone:
+		if result.err != nil {
+			return "", nil, result.err
+		}
+		resultUsage = result.usage
+	}
+
+	if err := cmd.Wait(); err != nil {
+		return "", nil, fmt.Errorf("claude command failed: %w\nstderr: %s", err, stderr.String())
+	}
+
+	fmt.Println("   └─────────────────────────────────────────────────────────────")
+	fmt.Printf("   📄 Total: %d chars\n", fullResponse.Len())
+
+	// Display usage if available
+	if resultUsage != nil && !resultUsage.IsEmpty() {
+		fmt.Printf("   💰 Cost: $%.4f (in: %d, out: %d, cache: %d)\n",
+			resultUsage.TotalCostUSD, resultUsage.InputTokens, resultUsage.OutputTokens, resultUsage.CacheReadTokens)
+	}
+
+	return fullResponse.String(), resultUsage, nil
+}
+
+// messageNonStreaming sends a message without streaming.
+// Note: Non-streaming text output doesn't include usage data.
+func (c *Client) messageNonStreaming(ctx context.Context, systemPrompt, userPrompt string) (string, *cost.Usage, error) {
+	args := []string{
+		"-p",
+		"--output-format", "text",
+	}
+
+	// Add model selection if specified
+	if c.Model != "" {
+		args = append(args, "--model", c.Model)
+	}
+
+	// Note: Prompt caching is automatically handled by Claude CLI when using system prompts
+	// No explicit flag needed in current version (2.1.39+)
+
+	if systemPrompt != "" {
+		args = append(args, "--system-prompt", systemPrompt)
+	}
+
+	args = append(args, userPrompt)
+
+	cmd := exec.CommandContext(ctx, c.Command, args...)
+
+	if c.WorkDir != "" {
+		cmd.Dir = c.WorkDir
+	}
+
+	// Get parent environment but filter out CLAUDECODE to allow nested Claude sessions
+	cmd.Env = filterParentEnv()
+	for k, v := range c.Env {
+		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
+	}
+
+	if c.Debug {
+		fmt.Printf("[DEBUG] Running: %s %v\n", c.Command, args[:min(3, len(args))])
+		fmt.Printf("[DEBUG] WorkDir: %s\n", c.WorkDir)
+	}
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		return "", nil, fmt.Errorf("claude command failed: %w\nstderr: %s\nstdout: %s", err, stderr.String(), stdout.String()[:min(500, stdout.Len())])
+	}
+
+	// Non-streaming text output doesn't include usage data
+	return strings.TrimSpace(stdout.String()), nil, nil
+}
+
+// MessageWithFiles sends a message with file context to Claude.
+// Note: This uses text output format, so usage data is not available.
+func (c *Client) MessageWithFiles(ctx context.Context, systemPrompt, userPrompt string, files []string) (string, *cost.Usage, error) {
+	args := []string{
+		"-p",
+		"--output-format", "text",
+	}
+
+	// Add model selection if specified
+	if c.Model != "" {
+		args = append(args, "--model", c.Model)
+	}
+
+	// Note: Prompt caching is automatically handled by Claude CLI when using system prompts
+	// No explicit flag needed in current version (2.1.39+)
+
+	if systemPrompt != "" {
+		args = append(args, "--system-prompt", systemPrompt)
+	}
+
+	for _, f := range files {
+		args = append(args, "--add-dir", f)
+	}
+
+	args = append(args, userPrompt)
+
+	cmd := exec.CommandContext(ctx, c.Command, args...)
+
+	if c.WorkDir != "" {
+		cmd.Dir = c.WorkDir
+	}
+
+	// Get parent environment but filter out CLAUDECODE to allow nested Claude sessions
+	cmd.Env = filterParentEnv()
+	for k, v := range c.Env {
+		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
+	}
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		return "", nil, fmt.Errorf("claude command failed: %w\nstderr: %s\nstdout: %s", err, stderr.String(), stdout.String()[:min(500, stdout.Len())])
+	}
+
+	// Text output format doesn't include usage data
+	return strings.TrimSpace(stdout.String()), nil, nil
+}
+
+// filterParentEnv returns a filtered copy of the parent environment,
+// removing CLAUDECODE variables to allow nested Claude Code sessions.
+func filterParentEnv() []string {
+	filtered := make([]string, 0, len(os.Environ()))
+	for _, env := range os.Environ() {
+		// Skip CLAUDECODE and CLAUDE_CODE_ENTRYPOINT to allow running inside another Claude Code session
+		if !strings.HasPrefix(env, "CLAUDECODE=") && !strings.HasPrefix(env, "CLAUDE_CODE_ENTRYPOINT=") {
+			filtered = append(filtered, env)
+		}
+	}
+	return filtered
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}

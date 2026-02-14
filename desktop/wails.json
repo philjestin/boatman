@@ -1,0 +1,21 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "boatman",
+  "outputfilename": "boatman",
+  "frontend:install": "npm install",
+  "frontend:build": "npm run build",
+  "frontend:dev:watcher": "npm run dev",
+  "frontend:dev:serverUrl": "http://127.0.0.1:5173",
+  "watcher": {
+    "ignoreDirectories": [
+      ".worktrees",
+      "node_modules",
+      "build",
+      "frontend/dist"
+    ]
+  },
+  "author": {
+    "name": "Philip Middleton",
+    "email": "middleton.philip.pm@gmail.com"
+  }
+}
