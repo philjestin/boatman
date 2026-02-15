@@ -13,7 +13,7 @@ jobs:
     strategy:
       matrix:
         platform:
-          - os: ubuntu-latest
+          - os: ubuntu-22.04
             target: linux
           - os: macos-latest
             target: darwin
