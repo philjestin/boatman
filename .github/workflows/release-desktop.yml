@@ -55,7 +55,7 @@ jobs:
         if: matrix.platform.target == 'linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev
 
       - name: Build CLI
         shell: bash
