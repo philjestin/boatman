@@ -402,6 +402,26 @@ func (m *Manager) RemoveTag(sessionID, tag string) error {
 	return SaveSession(session)
 }
 
+// SetSessionModel updates the model for a session
+func (m *Manager) SetSessionModel(sessionID, model string) error {
+	session, err := m.GetSession(sessionID)
+	if err != nil {
+		return err
+	}
+	session.SetModel(model)
+	return nil
+}
+
+// SetSessionReasoningEffort updates the reasoning effort for a session
+func (m *Manager) SetSessionReasoningEffort(sessionID, effort string) error {
+	session, err := m.GetSession(sessionID)
+	if err != nil {
+		return err
+	}
+	session.SetReasoningEffort(effort)
+	return nil
+}
+
 // SetFavorite sets the favorite status of a session
 func (m *Manager) SetFavorite(sessionID string, favorite bool) error {
 	session, err := m.GetSession(sessionID)

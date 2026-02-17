@@ -57,8 +57,7 @@ func NewIntegration(linearAPIKey, claudeAPIKey, repoPath string) (*Integration, 
 // ExecuteTicket runs the full boatmanmode workflow for a Linear ticket
 func (i *Integration) ExecuteTicket(ctx context.Context, ticketID string) (map[string]interface{}, error) {
 	cmd := exec.CommandContext(ctx, i.boatmanmodePath,
-		"execute",
-		"--ticket", ticketID,
+		"work", ticketID,
 	)
 	cmd.Dir = i.repoPath
 
@@ -124,8 +123,7 @@ func (i *Integration) StreamExecution(ctx context.Context, sessionID string, inp
 	var cmd *exec.Cmd
 	if mode == "ticket" {
 		cmd = exec.CommandContext(ctx, i.boatmanmodePath,
-			"execute",
-			"--ticket", input,
+			"work", input,
 		)
 	} else {
 		// prompt mode

@@ -223,5 +223,15 @@ func GetPresetServers() []Server {
 			},
 			Enabled: false,
 		},
+		{
+			Name:        "figma",
+			Description: "Figma design file access and manipulation",
+			Command:     "npx",
+			Args:        []string{"-y", "@modelcontextprotocol/server-figma"},
+			Env: map[string]string{
+				"FIGMA_PERSONAL_ACCESS_TOKEN": "",
+			},
+			Enabled: false,
+		},
 	}
 }

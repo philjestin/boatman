@@ -22,6 +22,8 @@ import {
   IsFirefighterMonitoringActive,
   HandleBoatmanModeEvent,
   StreamBoatmanModeExecution,
+  SetSessionModel,
+  SetSessionReasoningEffort,
 } from '../../wailsjs/go/main/App';
 import { EventsOn, EventsOff } from '../../wailsjs/runtime/runtime';
 
@@ -71,11 +73,49 @@ export function useAgent() {
       }
     };
 
+    // Handle streaming output from boatmanmode CLI
+    const boatmanOutputHandler = (data: { sessionId: string; message: string }) => {
+      if (data.message && data.message.trim()) {
+        addMessage(data.sessionId, {
+          id: `bm-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          role: 'assistant',
+          content: data.message.trim(),
+          timestamp: new Date().toISOString(),
+        });
+      }
+    };
+
+    // Handle boatmanmode execution errors
+    const boatmanErrorHandler = (data: { sessionId: string; error: string }) => {
+      console.error('[FRONTEND] Boatmanmode error:', data.error);
+      addMessage(data.sessionId, {
+        id: `bm-err-${Date.now()}`,
+        role: 'system',
+        content: `Error: ${data.error}`,
+        timestamp: new Date().toISOString(),
+      });
+      updateSessionStatus(data.sessionId, 'error');
+    };
+
+    // Handle boatmanmode execution completion
+    const boatmanCompleteHandler = (data: { sessionId: string }) => {
+      addMessage(data.sessionId, {
+        id: `bm-done-${Date.now()}`,
+        role: 'system',
+        content: 'Boatman mode execution completed.',
+        timestamp: new Date().toISOString(),
+      });
+      updateSessionStatus(data.sessionId, 'stopped');
+    };
+
     console.log('[FRONTEND] Subscribing to agent events...');
     EventsOn('agent:message', messageHandler);
     EventsOn('agent:task', taskHandler);
     EventsOn('agent:status', statusHandler);
     EventsOn('boatmanmode:event', boatmanModeEventHandler);
+    EventsOn('boatmanmode:output', boatmanOutputHandler);
+    EventsOn('boatmanmode:error', boatmanErrorHandler);
+    EventsOn('boatmanmode:complete', boatmanCompleteHandler);
 
     return () => {
       console.log('[FRONTEND] Unsubscribing from agent events...');
@@ -83,6 +123,9 @@ export function useAgent() {
       EventsOff('agent:task');
       EventsOff('agent:status');
       EventsOff('boatmanmode:event');
+      EventsOff('boatmanmode:output');
+      EventsOff('boatmanmode:error');
+      EventsOff('boatmanmode:complete');
     };
   }, [addMessage, updateTask, updateSessionStatus]);
 
@@ -109,6 +152,8 @@ export function useAgent() {
             tasks: [],
             tags: info.tags || [],
             isFavorite: info.isFavorite || false,
+            model: info.model || 'sonnet',
+            reasoningEffort: info.reasoningEffort || 'medium',
           });
         });
       } catch (err) {
@@ -137,6 +182,8 @@ export function useAgent() {
         tasks: [],
         tags: info.tags || [],
         isFavorite: info.isFavorite || false,
+        model: info.model || 'sonnet',
+        reasoningEffort: info.reasoningEffort || 'medium',
       };
 
       addSession(session);
@@ -359,6 +406,36 @@ export function useAgent() {
     }
   }, [setError]);
 
+  // Set session model
+  const setModel = useCallback(async (sessionId: string, model: string) => {
+    try {
+      // Optimistic update
+      const updatedSessions = sessions.map((s) =>
+        s.id === sessionId ? { ...s, model } : s
+      );
+      useStore.setState({ sessions: updatedSessions });
+      await SetSessionModel(sessionId, model);
+    } catch (err) {
+      console.error('Failed to set session model:', err);
+      setError('Failed to set model');
+    }
+  }, [sessions, setError]);
+
+  // Set session reasoning effort
+  const setReasoningEffort = useCallback(async (sessionId: string, effort: string) => {
+    try {
+      // Optimistic update
+      const updatedSessions = sessions.map((s) =>
+        s.id === sessionId ? { ...s, reasoningEffort: effort } : s
+      );
+      useStore.setState({ sessions: updatedSessions });
+      await SetSessionReasoningEffort(sessionId, effort);
+    } catch (err) {
+      console.error('Failed to set reasoning effort:', err);
+      setError('Failed to set reasoning effort');
+    }
+  }, [sessions, setError]);
+
   // Check if monitoring is active
   const isMonitoringActive = useCallback(async (sessionId: string): Promise<boolean> => {
     try {
@@ -387,5 +464,7 @@ export function useAgent() {
     loadMessagesPaginated,
     toggleFirefighterMonitoring,
     isMonitoringActive,
+    setSessionModel: setModel,
+    setSessionReasoningEffort: setReasoningEffort,
   };
 }

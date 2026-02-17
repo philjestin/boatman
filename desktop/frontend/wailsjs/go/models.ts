@@ -454,6 +454,8 @@ export namespace main {
 	    createdAt: string;
 	    tags?: string[];
 	    isFavorite?: boolean;
+	    model?: string;
+	    reasoningEffort?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new AgentSessionInfo(source);
@@ -467,6 +469,8 @@ export namespace main {
 	        this.createdAt = source["createdAt"];
 	        this.tags = source["tags"];
 	        this.isFavorite = source["isFavorite"];
+	        this.model = source["model"];
+	        this.reasoningEffort = source["reasoningEffort"];
 	    }
 	}
 	export class GitStatus {

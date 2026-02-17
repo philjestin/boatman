@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { GetGitDiff, ParseDiff, GetSideBySideDiff } from '../../wailsjs/go/main/App';
+import { GetGitDiff, GetWorktreeDiff, ParseDiff, GetSideBySideDiff } from '../../wailsjs/go/main/App';
 import { diff } from '../../wailsjs/go/models';
 import { useStore } from '../store';
 
@@ -23,6 +23,24 @@ export function useDiff() {
     } catch (err) {
       console.error('Failed to load diffs:', err);
       setError('Failed to load changes');
+      setDiffs([]);
+    }
+  }, [setError]);
+
+  // Load diffs from a worktree (for boatman mode - changes are committed, so diff against base branch)
+  const loadWorktreeDiffs = useCallback(async (worktreePath: string, baseBranch: string) => {
+    try {
+      const diffText = await GetWorktreeDiff(worktreePath, baseBranch || 'main');
+
+      if (diffText && diffText.trim()) {
+        const parsedDiffs = await ParseDiff(diffText);
+        setDiffs(parsedDiffs);
+      } else {
+        setDiffs([]);
+      }
+    } catch (err) {
+      console.error('Failed to load worktree diffs:', err);
+      setError('Failed to load worktree changes');
       setDiffs([]);
     }
   }, [setError]);
@@ -135,6 +153,7 @@ export function useDiff() {
     diffs,
     sideBySideData,
     loadDiffs,
+    loadWorktreeDiffs,
     loadSideBySide,
     acceptFile,
     rejectFile,

@@ -55,6 +55,8 @@ function App() {
     loadMessagesPaginated,
     toggleFirefighterMonitoring,
     isMonitoringActive,
+    setSessionModel,
+    setSessionReasoningEffort,
   } = useAgent();
 
   const {
@@ -86,6 +88,7 @@ function App() {
     diffs,
     sideBySideData,
     loadDiffs,
+    loadWorktreeDiffs,
     loadSideBySide,
     acceptFile,
     rejectFile,
@@ -102,9 +105,16 @@ function App() {
   // Load diffs when active project changes or when switching to diff tab
   useEffect(() => {
     if (activeProject && activeTab === 'diff') {
-      loadDiffs(activeProject.path);
+      // For boatman mode sessions, diff against base branch in the worktree
+      if (activeSession?.mode === 'boatmanmode' && activeSession.modeConfig?.worktreePath) {
+        const worktreePath = activeSession.modeConfig.worktreePath as string;
+        const baseBranch = (activeSession.modeConfig.baseBranch as string) || 'main';
+        loadWorktreeDiffs(worktreePath, baseBranch);
+      } else {
+        loadDiffs(activeProject.path);
+      }
     }
-  }, [activeProject, activeTab, loadDiffs]);
+  }, [activeProject, activeTab, activeSession, loadDiffs, loadWorktreeDiffs]);
 
   // Dismiss error after 5 seconds
   useEffect(() => {
@@ -252,6 +262,20 @@ function App() {
     }
   };
 
+  // Handle model change
+  const handleModelChange = async (model: string) => {
+    if (activeSession) {
+      await setSessionModel(activeSession.id, model);
+    }
+  };
+
+  // Handle reasoning effort change
+  const handleReasoningEffortChange = async (effort: string) => {
+    if (activeSession) {
+      await setSessionReasoningEffort(activeSession.id, effort);
+    }
+  };
+
   // Handle toggle firefighter monitoring
   const handleToggleMonitoring = async (active: boolean) => {
     if (activeSession) {
@@ -341,10 +365,10 @@ function App() {
         projectPath={activeProject?.path || ''}
       />
 
-      {/* Task Detail Modal */}
+      {/* Task Detail Modal - look up latest task from store to get updated metadata */}
       {selectedTask && (
         <TaskDetailModal
-          task={selectedTask}
+          task={activeSession?.tasks.find(t => t.id === selectedTask.id) || selectedTask}
           onClose={() => setSelectedTask(null)}
         />
       )}
@@ -439,6 +463,10 @@ function App() {
                     onSendMessage={handleSendMessage}
                     hasMoreMessages={currentPagination?.hasMore ?? false}
                     onLoadMore={handleLoadMore}
+                    model={activeSession.model}
+                    reasoningEffort={activeSession.reasoningEffort}
+                    onModelChange={handleModelChange}
+                    onReasoningEffortChange={handleReasoningEffortChange}
                   />
                 )}
                 {activeTab === 'tasks' && (

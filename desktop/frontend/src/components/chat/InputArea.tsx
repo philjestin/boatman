@@ -1,13 +1,27 @@
 import { useState, useRef, useEffect, KeyboardEvent } from 'react';
-import { Send, Paperclip, Loader2 } from 'lucide-react';
+import { Send, Paperclip, Loader2, Bot, Zap } from 'lucide-react';
+import { PillDropdown } from './PillDropdown';
+import { MODEL_OPTIONS, REASONING_EFFORT_OPTIONS } from '../../types';
 
 interface InputAreaProps {
   onSend: (message: string) => void;
   disabled?: boolean;
   placeholder?: string;
+  model?: string;
+  reasoningEffort?: string;
+  onModelChange?: (model: string) => void;
+  onReasoningEffortChange?: (effort: string) => void;
 }
 
-export function InputArea({ onSend, disabled = false, placeholder = 'Type a message...' }: InputAreaProps) {
+export function InputArea({
+  onSend,
+  disabled = false,
+  placeholder = 'Type a message...',
+  model,
+  reasoningEffort,
+  onModelChange,
+  onReasoningEffortChange,
+}: InputAreaProps) {
   const [message, setMessage] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -72,10 +86,32 @@ export function InputArea({ onSend, disabled = false, placeholder = 'Type a mess
             )}
           </button>
         </div>
-        <p className="mt-2 text-xs text-slate-500 text-center">
-          Press <kbd className="px-1.5 py-0.5 bg-slate-700 rounded text-slate-400">Enter</kbd> to send,{' '}
-          <kbd className="px-1.5 py-0.5 bg-slate-700 rounded text-slate-400">Shift+Enter</kbd> for new line
-        </p>
+
+        {/* Model & Reasoning Effort pills */}
+        <div className="flex items-center gap-2 mt-2">
+          {model && onModelChange && (
+            <PillDropdown
+              options={MODEL_OPTIONS}
+              value={model}
+              onChange={onModelChange}
+              disabled={disabled}
+              icon={Bot}
+            />
+          )}
+          {reasoningEffort && onReasoningEffortChange && (
+            <PillDropdown
+              options={REASONING_EFFORT_OPTIONS}
+              value={reasoningEffort}
+              onChange={onReasoningEffortChange}
+              disabled={disabled}
+              icon={Zap}
+            />
+          )}
+          <p className="ml-auto text-xs text-slate-500">
+            <kbd className="px-1.5 py-0.5 bg-slate-700 rounded text-slate-400">Enter</kbd> send{' '}
+            <kbd className="px-1.5 py-0.5 bg-slate-700 rounded text-slate-400">Shift+Enter</kbd> new line
+          </p>
+        </div>
       </div>
     </div>
   );

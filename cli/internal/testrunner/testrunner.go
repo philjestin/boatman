@@ -117,7 +117,7 @@ func (a *Agent) DetectFramework() (*Framework, error) {
 			return &Framework{
 				Name:        "jest",
 				Command:     "npx",
-				Args:        []string{"jest", "--coverage", "--passWithNoTests"},
+				Args:        []string{"jest", "--coverage", "--passWithNoTests", "--watchAll=false"},
 				FilePattern: "*.test.{js,ts,jsx,tsx}",
 			}, nil
 		}
@@ -146,7 +146,7 @@ func (a *Agent) DetectFramework() (*Framework, error) {
 		return &Framework{
 			Name:    "npm",
 			Command: "npm",
-			Args:    []string{"test", "--", "--passWithNoTests"},
+			Args:    []string{"test", "--", "--passWithNoTests", "--watchAll=false"},
 		}, nil
 	}
 
@@ -357,6 +357,10 @@ func (a *Agent) runTests(ctx context.Context, framework *Framework, args []strin
 
 	cmd := exec.CommandContext(ctx, framework.Command, args...)
 	cmd.Dir = a.worktreePath
+
+	// Set CI=true to prevent test runners (Jest, Vitest, CRA) from entering
+	// interactive/watch mode. Inherit the parent environment first.
+	cmd.Env = append(os.Environ(), "CI=true")
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

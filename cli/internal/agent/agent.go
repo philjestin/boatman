@@ -204,7 +204,11 @@ func (a *Agent) stepSetupWorktree(ctx context.Context, wc *workContext) error {
 	wc.pinner = contextpin.New(wt.Path)
 	wc.pinner.SetCoordinator(a.coordinator)
 
-	events.AgentCompleted(agentID, "Setup Worktree", "success")
+	events.AgentCompletedWithData(agentID, "Setup Worktree", "success", map[string]any{
+		"worktree_path": wt.Path,
+		"branch":        branchName,
+		"base_branch":   a.config.BaseBranch,
+	})
 	return nil
 }
 
@@ -351,13 +355,19 @@ func (a *Agent) stepTestAndReview(ctx context.Context, wc *workContext) error {
 	var wg sync.WaitGroup
 	wg.Add(2)
 
-	// Run tests in parallel
+	// Run tests in parallel with a timeout to prevent hanging
 	go func() {
 		defer wg.Done()
 		events.AgentStarted(testAgentID, "Running Tests", "Running unit tests for changed files")
+		testCtx, testCancel := context.WithTimeout(ctx, 5*time.Minute)
+		defer testCancel()
 		testAgent := testrunner.New(wc.worktree.Path)
 		testAgent.SetCoordinator(a.coordinator)
-		wc.testResult, _ = testAgent.RunForFiles(ctx, wc.execResult.FilesChanged)
+		var testErr error
+		wc.testResult, testErr = testAgent.RunForFiles(testCtx, wc.execResult.FilesChanged)
+		if testErr != nil {
+			fmt.Printf("   ⚠️  Test runner error: %v\n", testErr)
+		}
 		if wc.testResult != nil && wc.testResult.Passed {
 			events.AgentCompleted(testAgentID, "Running Tests", "success")
 		} else {

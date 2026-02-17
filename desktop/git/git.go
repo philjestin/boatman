@@ -100,6 +100,21 @@ func (r *Repository) GetDiff(filePath string) (string, error) {
 	return string(output), nil
 }
 
+// GetDiffAgainstBase returns the diff of all changes on the current branch relative to a base branch.
+// Uses `git diff <base>...HEAD` to show changes introduced on the current branch.
+func (r *Repository) GetDiffAgainstBase(baseBranch string) (string, error) {
+	if baseBranch == "" {
+		baseBranch = "main"
+	}
+	cmd := exec.Command("git", "diff", baseBranch+"...HEAD")
+	cmd.Dir = r.path
+	output, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return string(output), nil
+}
+
 // GetStagedDiff returns the diff for staged changes
 func (r *Repository) GetStagedDiff() (string, error) {
 	cmd := exec.Command("git", "diff", "--cached")

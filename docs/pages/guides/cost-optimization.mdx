@@ -11,10 +11,10 @@ The single most impactful optimization is choosing the right model per agent:
 ```yaml
 claude:
   models:
-    planner: claude-sonnet-4.5
-    executor: claude-sonnet-4.5
-    reviewer: claude-sonnet-4.5
-    refactor: claude-sonnet-4.5
+    planner: claude-sonnet-4-5
+    executor: claude-sonnet-4-5
+    reviewer: claude-sonnet-4-5
+    refactor: claude-sonnet-4-5
     preflight: claude-haiku-4      # 90% cheaper
     test_runner: claude-haiku-4    # 90% cheaper
 ```
@@ -24,8 +24,8 @@ claude:
 ```yaml
 claude:
   models:
-    planner: claude-sonnet-4.5     # Needs good planning
-    executor: claude-sonnet-4.5    # Needs good code generation
+    planner: claude-sonnet-4-5     # Needs good planning
+    executor: claude-sonnet-4-5    # Needs good code generation
     reviewer: claude-haiku-4       # Simple pass/fail + issues
     refactor: claude-haiku-4       # Targeted fixes
     preflight: claude-haiku-4      # Fast validation
@@ -127,7 +127,7 @@ enable_diff_verify: false
 claude:
   models:
     planner: claude-haiku-4
-    executor: claude-sonnet-4.5
+    executor: claude-sonnet-4-5
     reviewer: claude-haiku-4
     refactor: claude-haiku-4
     preflight: claude-haiku-4
@@ -142,10 +142,10 @@ enable_tests: true
 enable_diff_verify: true
 claude:
   models:
-    planner: claude-sonnet-4.5
-    executor: claude-sonnet-4.5
-    reviewer: claude-sonnet-4.5
-    refactor: claude-sonnet-4.5
+    planner: claude-sonnet-4-5
+    executor: claude-sonnet-4-5
+    reviewer: claude-sonnet-4-5
+    refactor: claude-sonnet-4-5
     preflight: claude-haiku-4
     test_runner: claude-haiku-4
 ```

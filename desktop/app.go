@@ -113,12 +113,14 @@ func (a *App) CompleteOnboarding() error {
 
 // AgentSessionInfo represents session info for the frontend
 type AgentSessionInfo struct {
-	ID          string              `json:"id"`
-	ProjectPath string              `json:"projectPath"`
-	Status      agent.SessionStatus `json:"status"`
-	CreatedAt   string              `json:"createdAt"`
-	Tags        []string            `json:"tags,omitempty"`
-	IsFavorite  bool                `json:"isFavorite,omitempty"`
+	ID              string              `json:"id"`
+	ProjectPath     string              `json:"projectPath"`
+	Status          agent.SessionStatus `json:"status"`
+	CreatedAt       string              `json:"createdAt"`
+	Tags            []string            `json:"tags,omitempty"`
+	IsFavorite      bool                `json:"isFavorite,omitempty"`
+	Model           string              `json:"model,omitempty"`
+	ReasoningEffort string              `json:"reasoningEffort,omitempty"`
 }
 
 // CreateAgentSession creates a new agent session
@@ -129,10 +131,12 @@ func (a *App) CreateAgentSession(projectPath string) (*AgentSessionInfo, error) 
 	}
 
 	return &AgentSessionInfo{
-		ID:          session.ID,
-		ProjectPath: session.ProjectPath,
-		Status:      session.Status,
-		CreatedAt:   session.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		ID:              session.ID,
+		ProjectPath:     session.ProjectPath,
+		Status:          session.Status,
+		CreatedAt:       session.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		Model:           session.Model,
+		ReasoningEffort: session.ReasoningEffort,
 	}, nil
 }
 
@@ -144,11 +148,13 @@ func (a *App) CreateFirefighterSession(projectPath string, scope string) (*Agent
 	}
 
 	return &AgentSessionInfo{
-		ID:          session.ID,
-		ProjectPath: session.ProjectPath,
-		Status:      session.Status,
-		CreatedAt:   session.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
-		Tags:        session.Tags,
+		ID:              session.ID,
+		ProjectPath:     session.ProjectPath,
+		Status:          session.Status,
+		CreatedAt:       session.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		Tags:            session.Tags,
+		Model:           session.Model,
+		ReasoningEffort: session.ReasoningEffort,
 	}, nil
 }
 
@@ -161,11 +167,13 @@ func (a *App) CreateBoatmanModeSession(projectPath string, input string, mode st
 	}
 
 	return &AgentSessionInfo{
-		ID:          session.ID,
-		ProjectPath: session.ProjectPath,
-		Status:      session.Status,
-		CreatedAt:   session.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
-		Tags:        session.Tags,
+		ID:              session.ID,
+		ProjectPath:     session.ProjectPath,
+		Status:          session.Status,
+		CreatedAt:       session.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		Tags:            session.Tags,
+		Model:           session.Model,
+		ReasoningEffort: session.ReasoningEffort,
 	}, nil
 }
 
@@ -273,12 +281,14 @@ func (a *App) ListAgentSessions() []AgentSessionInfo {
 	infos := make([]AgentSessionInfo, len(sessions))
 	for i, s := range sessions {
 		infos[i] = AgentSessionInfo{
-			ID:          s.ID,
-			ProjectPath: s.ProjectPath,
-			Status:      s.Status,
-			CreatedAt:   s.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
-			Tags:        s.Tags,
-			IsFavorite:  s.IsFavorite,
+			ID:              s.ID,
+			ProjectPath:     s.ProjectPath,
+			Status:          s.Status,
+			CreatedAt:       s.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+			Tags:            s.Tags,
+			IsFavorite:      s.IsFavorite,
+			Model:           s.Model,
+			ReasoningEffort: s.ReasoningEffort,
 		}
 	}
 	return infos
@@ -372,6 +382,22 @@ func (a *App) GetGitStatus(projectPath string) (*GitStatus, error) {
 func (a *App) GetGitDiff(projectPath, filePath string) (string, error) {
 	repo := gitpkg.NewRepository(projectPath)
 	return repo.GetDiff(filePath)
+}
+
+// GetWorktreeDiff returns the diff of all changes on the worktree branch relative to the base branch.
+// This is used for boatman mode sessions where changes are committed in a worktree.
+func (a *App) GetWorktreeDiff(worktreePath, baseBranch string) (string, error) {
+	repo := gitpkg.NewRepository(worktreePath)
+	return repo.GetDiffAgainstBase(baseBranch)
+}
+
+// GetBoatmanModeSessionConfig returns the worktree path and base branch for a boatman mode session.
+func (a *App) GetBoatmanModeSessionConfig(sessionID string) (map[string]interface{}, error) {
+	session, err := a.agentManager.GetSession(sessionID)
+	if err != nil {
+		return nil, err
+	}
+	return session.ModeConfig, nil
 }
 
 // =============================================================================
@@ -594,6 +620,16 @@ func (a *App) RemoveSessionTag(sessionID, tag string) error {
 // SetSessionFavorite sets the favorite status of a session
 func (a *App) SetSessionFavorite(sessionID string, favorite bool) error {
 	return a.agentManager.SetFavorite(sessionID, favorite)
+}
+
+// SetSessionModel updates the model for a session
+func (a *App) SetSessionModel(sessionID, model string) error {
+	return a.agentManager.SetSessionModel(sessionID, model)
+}
+
+// SetSessionReasoningEffort updates the reasoning effort for a session
+func (a *App) SetSessionReasoningEffort(sessionID, effort string) error {
+	return a.agentManager.SetSessionReasoningEffort(sessionID, effort)
 }
 
 // GetAllTags returns all unique tags across all sessions
@@ -927,6 +963,14 @@ func (a *App) HandleBoatmanModeEvent(sessionID string, eventType string, eventDa
 				if k != "diff" && k != "feedback" && k != "issues" && k != "plan" && k != "refactor_diff" {
 					metadata[k] = v
 				}
+			}
+
+			// Store worktree path in session ModeConfig for the Changes tab
+			if worktreePath, ok := data["worktree_path"].(string); ok {
+				session.SetModeConfigValue("worktreePath", worktreePath)
+			}
+			if baseBranch, ok := data["base_branch"].(string); ok {
+				session.SetModeConfigValue("baseBranch", baseBranch)
 			}
 		}
 		if len(metadata) > 0 {

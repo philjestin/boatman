@@ -88,7 +88,8 @@ type Session struct {
 	Tasks       []Task                 `json:"tasks"`
 	CreatedAt   time.Time              `json:"createdAt"`
 	UpdatedAt   time.Time              `json:"updatedAt"`
-	Model       string                 `json:"model"`
+	Model            string                 `json:"model"`
+	ReasoningEffort  string                 `json:"reasoningEffort,omitempty"`
 	Tags        []string               `json:"tags,omitempty"`
 	IsFavorite  bool                   `json:"isFavorite,omitempty"`
 	Mode        string                 `json:"mode"` // "standard", "firefighter", "boatmanmode"
@@ -186,9 +187,28 @@ func (s *Session) Start(model string) error {
 
 	s.ctx, s.cancel = context.WithCancel(context.Background())
 	s.Model = model
+	if s.ReasoningEffort == "" {
+		s.ReasoningEffort = "medium"
+	}
 	s.setStatus(SessionStatusIdle)
 
 	return nil
+}
+
+// SetModel updates the session model
+func (s *Session) SetModel(model string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.Model = model
+	s.UpdatedAt = time.Now()
+}
+
+// SetReasoningEffort updates the session reasoning effort
+func (s *Session) SetReasoningEffort(effort string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.ReasoningEffort = effort
+	s.UpdatedAt = time.Now()
 }
 
 // Stop terminates the agent session
@@ -294,6 +314,10 @@ func (s *Session) runClaudeCommand(prompt string, authConfig AuthConfig) {
 
 	if s.Model != "" {
 		args = append(args, "--model", s.Model)
+	}
+
+	if s.ReasoningEffort != "" {
+		args = append(args, "--reasoning-effort", s.ReasoningEffort)
 	}
 
 	// MCP servers are automatically loaded from ~/.claude/claude_mcp_config.json
@@ -723,6 +747,17 @@ func (s *Session) UpdateTaskMetadata(id string, metadata map[string]interface{})
 			return
 		}
 	}
+}
+
+// SetModeConfigValue sets a key-value pair in the session's ModeConfig
+func (s *Session) SetModeConfigValue(key string, value interface{}) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.ModeConfig == nil {
+		s.ModeConfig = make(map[string]interface{})
+	}
+	s.ModeConfig[key] = value
 }
 
 func (s *Session) addAssistantMessage(content string) {

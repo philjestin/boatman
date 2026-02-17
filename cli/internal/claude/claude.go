@@ -45,7 +45,7 @@ type Client struct {
 	// Debug enables debug output
 	Debug bool
 
-	// Model specifies which Claude model to use (e.g., "claude-sonnet-4.5", "claude-haiku-4")
+	// Model specifies which Claude model to use (e.g., "claude-sonnet-4-5", "claude-haiku-4")
 	Model string
 
 	// EnablePromptCaching enables prompt caching to reduce costs

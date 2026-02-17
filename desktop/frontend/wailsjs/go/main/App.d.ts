@@ -61,7 +61,11 @@ export function GetFirefighterMonitorStatus(arg1:string):Promise<Record<string, 
 
 export function GetGCloudAuthInfo():Promise<Record<string, any>>;
 
+export function GetBoatmanModeSessionConfig(arg1:string):Promise<Record<string, any>>;
+
 export function GetGitDiff(arg1:string,arg2:string):Promise<string>;
+
+export function GetWorktreeDiff(arg1:string,arg2:string):Promise<string>;
 
 export function GetGitStatus(arg1:string):Promise<main.GitStatus>;
 
@@ -142,6 +146,10 @@ export function SendNotification(arg1:string,arg2:string):Promise<void>;
 export function SetPreferences(arg1:config.UserPreferences):Promise<void>;
 
 export function SetSessionFavorite(arg1:string,arg2:boolean):Promise<void>;
+
+export function SetSessionModel(arg1:string,arg2:string):Promise<void>;
+
+export function SetSessionReasoningEffort(arg1:string,arg2:string):Promise<void>;
 
 export function StartAgentSession(arg1:string):Promise<void>;
 

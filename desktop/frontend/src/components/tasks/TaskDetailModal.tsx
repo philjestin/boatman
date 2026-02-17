@@ -1,4 +1,4 @@
-import { X, FileText, AlertCircle, GitBranch, Lightbulb } from 'lucide-react';
+import { X, FileText, AlertCircle, GitBranch, Lightbulb, CheckCircle, Loader2, Clock } from 'lucide-react';
 import type { Task } from '../../types';
 
 interface TaskDetailModalProps {
@@ -17,16 +17,46 @@ export function TaskDetailModal({ task, onClose }: TaskDetailModalProps) {
 
   const hasContent = hasDiff || hasFeedback || hasIssues || hasPlan || hasRefactorDiff;
 
+  const statusIcon = () => {
+    switch (task.status) {
+      case 'completed':
+        return <CheckCircle className="w-5 h-5 text-green-500" />;
+      case 'in_progress':
+        return <Loader2 className="w-5 h-5 text-blue-400 animate-spin" />;
+      default:
+        return <Clock className="w-5 h-5 text-slate-500" />;
+    }
+  };
+
+  const statusLabel = () => {
+    switch (task.status) {
+      case 'completed':
+        return 'Completed';
+      case 'in_progress':
+        return 'In Progress';
+      default:
+        return 'Pending';
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
       <div className="w-full max-w-4xl max-h-[90vh] bg-slate-900 rounded-lg border border-slate-700 shadow-2xl flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-slate-700">
           <div className="flex-1">
-            <h2 className="text-lg font-semibold text-slate-100">{task.subject}</h2>
-            {task.description && (
-              <p className="mt-1 text-sm text-slate-400">{task.description}</p>
-            )}
+            <div className="flex items-center gap-2">
+              {statusIcon()}
+              <h2 className="text-lg font-semibold text-slate-100">{task.subject}</h2>
+            </div>
+            <div className="mt-1 flex items-center gap-2">
+              <span className="text-xs px-2 py-0.5 rounded-full bg-slate-700 text-slate-300">
+                {statusLabel()}
+              </span>
+              {task.description && (
+                <p className="text-sm text-slate-400">{task.description}</p>
+              )}
+            </div>
           </div>
           <button
             onClick={onClose}
@@ -39,10 +69,25 @@ export function TaskDetailModal({ task, onClose }: TaskDetailModalProps) {
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {!hasContent && (
+          {!hasContent && task.status === 'in_progress' && (
             <div className="text-center py-12 text-slate-500">
-              <FileText className="w-12 h-12 mx-auto mb-3 opacity-50" />
-              <p>No details available for this task yet.</p>
+              <Loader2 className="w-12 h-12 mx-auto mb-3 opacity-50 animate-spin" />
+              <p>This task is currently running.</p>
+              <p className="text-xs mt-1">Details will appear when the step completes.</p>
+            </div>
+          )}
+
+          {!hasContent && task.status === 'pending' && (
+            <div className="text-center py-12 text-slate-500">
+              <Clock className="w-12 h-12 mx-auto mb-3 opacity-50" />
+              <p>This task is waiting to start.</p>
+            </div>
+          )}
+
+          {!hasContent && task.status === 'completed' && (
+            <div className="text-center py-12 text-slate-500">
+              <CheckCircle className="w-12 h-12 mx-auto mb-3 opacity-50" />
+              <p>This step completed successfully.</p>
             </div>
           )}
 

@@ -110,8 +110,16 @@ export function GetGCloudAuthInfo() {
   return window['go']['main']['App']['GetGCloudAuthInfo']();
 }
 
+export function GetBoatmanModeSessionConfig(arg1) {
+  return window['go']['main']['App']['GetBoatmanModeSessionConfig'](arg1);
+}
+
 export function GetGitDiff(arg1, arg2) {
   return window['go']['main']['App']['GetGitDiff'](arg1, arg2);
+}
+
+export function GetWorktreeDiff(arg1, arg2) {
+  return window['go']['main']['App']['GetWorktreeDiff'](arg1, arg2);
 }
 
 export function GetGitStatus(arg1) {
@@ -272,6 +280,14 @@ export function SetPreferences(arg1) {
 
 export function SetSessionFavorite(arg1, arg2) {
   return window['go']['main']['App']['SetSessionFavorite'](arg1, arg2);
+}
+
+export function SetSessionModel(arg1, arg2) {
+  return window['go']['main']['App']['SetSessionModel'](arg1, arg2);
+}
+
+export function SetSessionReasoningEffort(arg1, arg2) {
+  return window['go']['main']['App']['SetSessionReasoningEffort'](arg1, arg2);
 }
 
 export function StartAgentSession(arg1) {

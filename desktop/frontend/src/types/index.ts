@@ -63,7 +63,21 @@ export interface AgentSession {
   isFavorite?: boolean;
   mode?: string;
   modeConfig?: Record<string, any>;
+  model?: string;
+  reasoningEffort?: string;
 }
+
+export const MODEL_OPTIONS = [
+  { value: 'sonnet', label: 'Claude Sonnet 4' },
+  { value: 'opus', label: 'Claude Opus 4' },
+  { value: 'haiku', label: 'Claude Haiku 3.5' },
+] as const;
+
+export const REASONING_EFFORT_OPTIONS = [
+  { value: 'low', label: 'Low' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'high', label: 'High' },
+] as const;
 
 // =============================================================================
 // Project Types

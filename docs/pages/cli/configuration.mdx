@@ -36,10 +36,10 @@ claude:
 
   # Multi-model strategy per agent type
   models:
-    planner: claude-sonnet-4.5
-    executor: claude-sonnet-4.5
-    reviewer: claude-sonnet-4.5
-    refactor: claude-sonnet-4.5
+    planner: claude-sonnet-4-5
+    executor: claude-sonnet-4-5
+    reviewer: claude-sonnet-4-5
+    refactor: claude-sonnet-4-5
     preflight: claude-haiku-4
     test_runner: claude-haiku-4
 
@@ -96,7 +96,7 @@ Each agent in the workflow can use a different Claude model for cost optimizatio
 | Model | ID | Best For |
 |-------|----|----------|
 | Claude Opus 4.6 | `claude-opus-4-6` | Highest quality: complex planning, nuanced code generation |
-| Claude Sonnet 4.5 | `claude-sonnet-4.5` | Good balance of quality and cost |
+| Claude Sonnet 4.5 | `claude-sonnet-4-5` | Good balance of quality and cost |
 | Claude Haiku 4 | `claude-haiku-4` | Fast and cheap: validation and parsing tasks |
 
 ### Configuration Profiles
@@ -117,10 +117,10 @@ claude:
 ```yaml
 claude:
   models:
-    planner: claude-sonnet-4.5
-    executor: claude-sonnet-4.5
-    reviewer: claude-sonnet-4.5
-    refactor: claude-sonnet-4.5
+    planner: claude-sonnet-4-5
+    executor: claude-sonnet-4-5
+    reviewer: claude-sonnet-4-5
+    refactor: claude-sonnet-4-5
     preflight: claude-haiku-4
     test_runner: claude-haiku-4
 ```
@@ -129,8 +129,8 @@ claude:
 ```yaml
 claude:
   models:
-    planner: claude-sonnet-4.5
-    executor: claude-sonnet-4.5
+    planner: claude-sonnet-4-5
+    executor: claude-sonnet-4-5
     reviewer: claude-haiku-4
     refactor: claude-haiku-4
     preflight: claude-haiku-4

@@ -13,6 +13,10 @@ interface ChatViewProps {
   hasMoreMessages?: boolean;
   onLoadMore?: () => void;
   isLoadingMore?: boolean;
+  model?: string;
+  reasoningEffort?: string;
+  onModelChange?: (model: string) => void;
+  onReasoningEffortChange?: (effort: string) => void;
 }
 
 export function ChatView({
@@ -23,6 +27,10 @@ export function ChatView({
   hasMoreMessages = false,
   onLoadMore,
   isLoadingMore = false,
+  model,
+  reasoningEffort,
+  onModelChange,
+  onReasoningEffortChange,
 }: ChatViewProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -124,6 +132,10 @@ export function ChatView({
             ? 'Claude is thinking...'
             : 'Type a message...'
         }
+        model={model}
+        reasoningEffort={reasoningEffort}
+        onModelChange={onModelChange}
+        onReasoningEffortChange={onReasoningEffortChange}
       />
     </div>
   );
