@@ -62,6 +62,10 @@ type Client struct {
 	// SkipPermissions automatically approves all tool uses without user confirmation.
 	// WARNING: This is a security risk - only enable for trusted, non-interactive environments.
 	SkipPermissions bool
+
+	// EventForwarder, if set, is called for each raw stream-json line before parsing.
+	// This allows the desktop app to receive Claude's raw events for UI streaming.
+	EventForwarder func(rawLine string)
 }
 
 // StreamChunk represents a chunk from Claude's stream-json output.
@@ -312,6 +316,11 @@ func (c *Client) doStreamingRequest(ctx context.Context, systemPrompt, userPromp
 			line = strings.TrimSpace(line)
 			if line == "" {
 				continue
+			}
+
+			// Forward raw line to event forwarder before parsing
+			if c.EventForwarder != nil {
+				c.EventForwarder(line)
 			}
 
 			var chunk StreamChunk

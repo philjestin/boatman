@@ -116,10 +116,14 @@ type BoatmanEvent struct {
 	Data        map[string]interface{} `json:"data,omitempty"`
 }
 
+// MessageCallback is called for non-JSON output lines to route them as session messages
+type MessageCallback func(role, content string)
+
 // StreamExecution runs the workflow with live streaming output
 // It parses structured JSON events for agent/task tracking and emits them via Wails runtime
 // mode can be "ticket" or "prompt"
-func (i *Integration) StreamExecution(ctx context.Context, sessionID string, input string, mode string, outputChan chan<- string) (map[string]interface{}, error) {
+// onMessage, if non-nil, receives non-JSON output lines as messages for the session
+func (i *Integration) StreamExecution(ctx context.Context, sessionID string, input string, mode string, outputChan chan<- string, onMessage MessageCallback) (map[string]interface{}, error) {
 	var cmd *exec.Cmd
 	if mode == "ticket" {
 		cmd = exec.CommandContext(ctx, i.boatmanmodePath,
@@ -207,6 +211,9 @@ func (i *Integration) StreamExecution(ctx context.Context, sessionID string, inp
 			} else {
 				// Regular output line (not JSON event)
 				outputChan <- line + "\n"
+				if onMessage != nil {
+					onMessage("assistant", line)
+				}
 			}
 		}
 

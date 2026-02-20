@@ -839,6 +839,9 @@ func (a *App) StreamBoatmanModeExecution(sessionID, input, mode, linearAPIKey, p
 		"sessionId": sessionID,
 	})
 
+	// Get the session so we can route messages through it
+	session, sessionErr := a.agentManager.GetSession(sessionID)
+
 	// Run execution in background to avoid blocking the frontend
 	go func() {
 		defer func() {
@@ -887,8 +890,16 @@ func (a *App) StreamBoatmanModeExecution(sessionID, input, mode, linearAPIKey, p
 			}
 		}()
 
+		// Create message callback to route messages through the session
+		var onMessage bmintegration.MessageCallback
+		if sessionErr == nil && session != nil {
+			onMessage = func(role, content string) {
+				session.AddBoatmanMessage(role, content)
+			}
+		}
+
 		// Execute with streaming (use app context for Wails events)
-		_, err := bmIntegration.StreamExecution(a.ctx, sessionID, input, mode, outputChan)
+		_, err := bmIntegration.StreamExecution(a.ctx, sessionID, input, mode, outputChan, onMessage)
 		close(outputChan)
 
 		if err != nil {
@@ -924,6 +935,11 @@ func (a *App) HandleBoatmanModeEvent(sessionID string, eventType string, eventDa
 		description, _ := eventData["description"].(string)
 		session.AddOrUpdateTask(id, name, description, "in_progress")
 
+		// Register and switch to the new boatmanmode agent
+		session.RegisterBoatmanAgent(id, name, description)
+		session.SetCurrentAgent(id)
+		session.AddBoatmanMessage("system", fmt.Sprintf("Started: %s", name))
+
 	case "agent_completed":
 		// Update task status and capture metadata
 		id, _ := eventData["id"].(string)
@@ -935,6 +951,10 @@ func (a *App) HandleBoatmanModeEvent(sessionID string, eventType string, eventDa
 			status = "failed"
 		}
 		session.AddOrUpdateTask(id, name, "", status)
+
+		// Add completion message and restore parent agent
+		session.AddBoatmanMessage("system", fmt.Sprintf("Completed: %s (%s)", name, status))
+		session.CompleteCurrentAgent()
 
 		// Store phase-specific metadata (diffs, feedback, etc.)
 		metadata := make(map[string]interface{})
@@ -976,6 +996,13 @@ func (a *App) HandleBoatmanModeEvent(sessionID string, eventType string, eventDa
 		}
 		if len(metadata) > 0 {
 			session.UpdateTaskMetadata(id, metadata)
+		}
+
+	case "progress":
+		// Route progress messages through the session
+		message, _ := eventData["message"].(string)
+		if message != "" {
+			session.AddBoatmanMessage("system", message)
 		}
 
 	case "task_created":

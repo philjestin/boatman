@@ -20,8 +20,8 @@ func TestTypeAliases(t *testing.T) {
 	// Verify StepRecord alias
 	var _ StepRecord = harnesscp.StepRecord{}
 
-	// Verify Manager alias
-	var _ Manager = (*harnesscp.Manager)(nil)
+	// Verify Manager alias (pointer type since Manager is a struct)
+	var _ *Manager = (*harnesscp.Manager)(nil)
 
 	t.Log("All type aliases verified successfully")
 }
@@ -102,9 +102,6 @@ func TestNewManager(t *testing.T) {
 
 // TestPackageBackwardCompatibility verifies the package maintains backward compatibility
 func TestPackageBackwardCompatibility(t *testing.T) {
-	// This test ensures that code using the old import path still works
-	// by verifying all exported types and functions are available
-
 	// Types
 	var _ Step
 	var _ Status

@@ -77,6 +77,12 @@ export const MessageBubble = memo(function MessageBubble({ message }: MessageBub
           <span className={`text-xs font-medium ${getHeaderStyles()}`}>
             {isUser ? 'You' : isToolUse ? `Tool: ${message.metadata?.toolUse?.toolName}` : 'Claude'}
           </span>
+          {message.metadata?.agent && message.metadata.agent.agentId !== 'main' && (
+            <span className="text-xs px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-400 border border-purple-500/30">
+              {message.metadata.agent.agentType || 'agent'}
+              {message.metadata.agent.description ? `: ${message.metadata.agent.description.substring(0, 30)}` : ''}
+            </span>
+          )}
           <span className="text-xs text-slate-500">
             {new Date(message.timestamp).toLocaleTimeString()}
           </span>

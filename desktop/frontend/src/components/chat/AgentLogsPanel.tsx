@@ -106,6 +106,12 @@ export function AgentLogsPanel({ messages, isActive }: AgentLogsPanelProps) {
       case 'Explore': return 'text-green-400 border-green-500';
       case 'Plan': return 'text-amber-400 border-amber-500';
       case 'general-purpose': return 'text-cyan-400 border-cyan-500';
+      // Boatmanmode phase types
+      case 'Execution': return 'text-orange-400 border-orange-500';
+      case 'Planning': return 'text-yellow-400 border-yellow-500';
+      case 'Review': return 'text-pink-400 border-pink-500';
+      case 'Refactor': return 'text-indigo-400 border-indigo-500';
+      case 'Testing': return 'text-teal-400 border-teal-500';
       default: return 'text-slate-400 border-slate-500';
     }
   };
@@ -233,19 +239,25 @@ export function AgentLogsPanel({ messages, isActive }: AgentLogsPanelProps) {
         <div className="flex gap-1 px-2 py-2 bg-slate-900 border-b border-slate-700 overflow-x-auto">
           {Array.from(agentsWithActivity.entries()).map(([agentId, data]) => {
             const color = getAgentColor(data.info.agentType);
-            const isActive = agentId === activeAgentId;
+            const isActiveTab = agentId === activeAgentId;
+            const agentStatus = data.info.status;
             return (
               <button
                 key={agentId}
                 onClick={() => setActiveAgentId(agentId)}
-                className={`px-3 py-1 text-xs rounded transition-colors border ${
-                  isActive
+                className={`px-3 py-1 text-xs rounded transition-colors border flex items-center gap-1.5 ${
+                  isActiveTab
                     ? `${color} bg-opacity-10`
                     : 'text-slate-500 border-slate-700 hover:border-slate-600'
                 }`}
               >
-                {data.info.agentType === 'main' ? '⭐ Main' : `🤖 ${data.info.agentType || 'Agent'}`}
-                <span className="ml-1 text-slate-600">({data.logs.length})</span>
+                {agentStatus === 'completed' ? (
+                  <span className="inline-block w-2 h-2 bg-green-500 rounded-full" title="Completed" />
+                ) : agentStatus === 'active' ? (
+                  <span className="inline-block w-2 h-2 bg-cyan-400 rounded-full animate-pulse" title="Active" />
+                ) : null}
+                {data.info.agentType === 'main' ? 'Main' : data.info.agentType || 'Agent'}
+                <span className="text-slate-600">({data.logs.length})</span>
               </button>
             );
           })}

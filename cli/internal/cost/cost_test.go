@@ -14,8 +14,8 @@ func TestTypeAliases(t *testing.T) {
 	// Verify StepUsage alias
 	var _ StepUsage = harnesscost.StepUsage{}
 
-	// Verify Tracker alias
-	var _ Tracker = (*harnesscost.Tracker)(nil)
+	// Verify Tracker alias (pointer type since Tracker is a struct)
+	var _ *Tracker = (*harnesscost.Tracker)(nil)
 
 	t.Log("All type aliases verified successfully")
 }
@@ -156,9 +156,6 @@ func TestMultipleStepTracking(t *testing.T) {
 
 // TestPackageBackwardCompatibility verifies the package maintains backward compatibility
 func TestPackageBackwardCompatibility(t *testing.T) {
-	// This test ensures that code using the old import path still works
-	// by verifying all exported types and functions are available
-
 	// Types
 	var _ Usage
 	var _ StepUsage

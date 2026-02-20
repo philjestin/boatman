@@ -2,6 +2,7 @@ package memory
 
 import (
 	"testing"
+	"time"
 
 	harnessmem "github.com/philjestin/boatman-ecosystem/harness/memory"
 )
@@ -26,19 +27,22 @@ func TestTypeAliases(t *testing.T) {
 	// Verify SessionStats alias
 	var _ SessionStats = harnessmem.SessionStats{}
 
-	// Verify Store alias
-	var _ Store = (*harnessmem.Store)(nil)
+	// Verify Store alias (pointer type since Store is a struct)
+	var _ *Store = (*harnessmem.Store)(nil)
 
-	// Verify Analyzer alias
-	var _ Analyzer = (*harnessmem.Analyzer)(nil)
+	// Verify Analyzer alias (pointer type since Analyzer is a struct)
+	var _ *Analyzer = (*harnessmem.Analyzer)(nil)
 
 	t.Log("All type aliases verified successfully")
 }
 
 // TestNewStore verifies NewStore function alias works
 func TestNewStore(t *testing.T) {
-	// Verify function exists and is callable
-	store := NewStore("/test/path")
+	// NewStore returns (*Store, error)
+	store, err := NewStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewStore failed: %v", err)
+	}
 	if store == nil {
 		t.Fatal("NewStore returned nil")
 	}
@@ -51,10 +55,19 @@ func TestNewStore(t *testing.T) {
 
 // TestNewAnalyzer verifies NewAnalyzer function alias works
 func TestNewAnalyzer(t *testing.T) {
-	store := NewStore("/test/path")
+	store, err := NewStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewStore failed: %v", err)
+	}
 
-	// Verify function exists and is callable
-	analyzer := NewAnalyzer(store)
+	// Get a Memory instance to pass to NewAnalyzer
+	mem, err := store.Get("/test/project")
+	if err != nil {
+		t.Fatalf("store.Get failed: %v", err)
+	}
+
+	// NewAnalyzer takes *Memory, not *Store
+	analyzer := NewAnalyzer(mem)
 	if analyzer == nil {
 		t.Fatal("NewAnalyzer returned nil")
 	}
@@ -89,15 +102,16 @@ func TestPatternStruct(t *testing.T) {
 	pattern := &Pattern{
 		Type:        "test-pattern",
 		Description: "A test pattern",
-		Frequency:   5,
+		UsageCount:  5,
+		Weight:      0.8,
 	}
 
 	if pattern.Type != "test-pattern" {
 		t.Errorf("Expected Type = 'test-pattern', got %s", pattern.Type)
 	}
 
-	if pattern.Frequency != 5 {
-		t.Errorf("Expected Frequency = 5, got %d", pattern.Frequency)
+	if pattern.UsageCount != 5 {
+		t.Errorf("Expected UsageCount = 5, got %d", pattern.UsageCount)
 	}
 
 	t.Log("Pattern struct works through alias")
@@ -108,15 +122,15 @@ func TestCommonIssueStruct(t *testing.T) {
 	issue := &CommonIssue{
 		Description: "Common test issue",
 		Solution:    "Test solution",
-		Count:       3,
+		Frequency:   3,
 	}
 
 	if issue.Description != "Common test issue" {
 		t.Errorf("Expected Description = 'Common test issue', got %s", issue.Description)
 	}
 
-	if issue.Count != 3 {
-		t.Errorf("Expected Count = 3, got %d", issue.Count)
+	if issue.Frequency != 3 {
+		t.Errorf("Expected Frequency = 3, got %d", issue.Frequency)
 	}
 
 	t.Log("CommonIssue struct works through alias")
@@ -125,17 +139,17 @@ func TestCommonIssueStruct(t *testing.T) {
 // TestPromptRecordStruct tests the PromptRecord struct through alias
 func TestPromptRecordStruct(t *testing.T) {
 	record := &PromptRecord{
-		Prompt:   "Test prompt",
-		Response: "Test response",
-		Success:  true,
+		Prompt:       "Test prompt",
+		Result:       "Test result",
+		SuccessScore: 85,
 	}
 
 	if record.Prompt != "Test prompt" {
 		t.Errorf("Expected Prompt = 'Test prompt', got %s", record.Prompt)
 	}
 
-	if !record.Success {
-		t.Error("Expected Success = true")
+	if record.SuccessScore != 85 {
+		t.Errorf("Expected SuccessScore = 85, got %d", record.SuccessScore)
 	}
 
 	t.Log("PromptRecord struct works through alias")
@@ -144,17 +158,17 @@ func TestPromptRecordStruct(t *testing.T) {
 // TestPreferencesStruct tests the Preferences struct through alias
 func TestPreferencesStruct(t *testing.T) {
 	prefs := &Preferences{
-		CodingStyle:    "golang-standard",
-		TestFramework:  "testing",
-		PreferredTools: []string{"go", "git"},
+		PreferredTestFramework: "testing",
+		NamingConventions:      map[string]string{"go": "camelCase"},
+		CodeStyle:              map[string]string{"indent": "tabs"},
 	}
 
-	if prefs.CodingStyle != "golang-standard" {
-		t.Errorf("Expected CodingStyle = 'golang-standard', got %s", prefs.CodingStyle)
+	if prefs.PreferredTestFramework != "testing" {
+		t.Errorf("Expected PreferredTestFramework = 'testing', got %s", prefs.PreferredTestFramework)
 	}
 
-	if len(prefs.PreferredTools) != 2 {
-		t.Errorf("Expected 2 preferred tools, got %d", len(prefs.PreferredTools))
+	if len(prefs.NamingConventions) != 1 {
+		t.Errorf("Expected 1 naming convention, got %d", len(prefs.NamingConventions))
 	}
 
 	t.Log("Preferences struct works through alias")
@@ -163,17 +177,17 @@ func TestPreferencesStruct(t *testing.T) {
 // TestSessionStatsStruct tests the SessionStats struct through alias
 func TestSessionStatsStruct(t *testing.T) {
 	stats := &SessionStats{
-		TotalPrompts:     10,
-		SuccessfulPrompts: 8,
-		FailedPrompts:    2,
+		TotalSessions:      10,
+		SuccessfulSessions: 8,
+		TotalIterations:    20,
 	}
 
-	if stats.TotalPrompts != 10 {
-		t.Errorf("Expected TotalPrompts = 10, got %d", stats.TotalPrompts)
+	if stats.TotalSessions != 10 {
+		t.Errorf("Expected TotalSessions = 10, got %d", stats.TotalSessions)
 	}
 
-	if stats.SuccessfulPrompts != 8 {
-		t.Errorf("Expected SuccessfulPrompts = 8, got %d", stats.SuccessfulPrompts)
+	if stats.SuccessfulSessions != 8 {
+		t.Errorf("Expected SuccessfulSessions = 8, got %d", stats.SuccessfulSessions)
 	}
 
 	t.Log("SessionStats struct works through alias")
@@ -181,22 +195,45 @@ func TestSessionStatsStruct(t *testing.T) {
 
 // TestStoreBasicOperations tests basic store operations through aliases
 func TestStoreBasicOperations(t *testing.T) {
-	// Create store with temp directory
-	store := NewStore(t.TempDir())
+	store, err := NewStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewStore failed: %v", err)
+	}
 
-	// Test recording a prompt
-	store.RecordPrompt("test prompt", "test response", true)
+	// Get memory for a project
+	mem, err := store.Get("/test/project")
+	if err != nil {
+		t.Fatalf("store.Get failed: %v", err)
+	}
+	if mem == nil {
+		t.Fatal("Expected Get to return non-nil memory")
+	}
 
-	// Test recording a pattern
-	store.RecordPattern("test-pattern", "description")
+	// Learn a pattern
+	mem.LearnPattern(Pattern{
+		ID:          "test-pattern",
+		Type:        "naming",
+		Description: "test description",
+		Weight:      0.8,
+	})
 
-	// Test recording a common issue
-	store.RecordCommonIssue("issue description", "solution")
+	// Learn an issue
+	mem.LearnIssue(CommonIssue{
+		ID:          "test-issue",
+		Type:        "style",
+		Description: "test issue description",
+		Solution:    "test solution",
+	})
 
-	// Test getting memory (will be empty in basic test)
-	memory := store.GetMemory()
-	if memory == nil {
-		t.Error("Expected GetMemory to return non-nil memory")
+	// Learn a prompt
+	mem.LearnPrompt("feature", "test prompt", "test result", 80)
+
+	// Update stats
+	mem.UpdateStats(true, 2, time.Minute)
+
+	// Save
+	if err := store.Save(mem); err != nil {
+		t.Fatalf("store.Save failed: %v", err)
 	}
 
 	t.Log("Store basic operations work through aliases")
@@ -204,34 +241,28 @@ func TestStoreBasicOperations(t *testing.T) {
 
 // TestAnalyzerBasicOperations tests basic analyzer operations through aliases
 func TestAnalyzerBasicOperations(t *testing.T) {
-	store := NewStore(t.TempDir())
-	analyzer := NewAnalyzer(store)
-
-	// Record some test data
-	store.RecordPrompt("test prompt 1", "response 1", true)
-	store.RecordPrompt("test prompt 2", "response 2", false)
-	store.RecordPattern("pattern1", "desc1")
-	store.RecordCommonIssue("issue1", "solution1")
-
-	// Test getting session stats
-	stats := analyzer.GetSessionStats()
-	if stats == nil {
-		t.Fatal("Expected GetSessionStats to return non-nil stats")
+	store, err := NewStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewStore failed: %v", err)
 	}
 
-	t.Logf("Session stats: total=%d, successful=%d, failed=%d",
-		stats.TotalPrompts, stats.SuccessfulPrompts, stats.FailedPrompts)
+	mem, err := store.Get("/test/project")
+	if err != nil {
+		t.Fatalf("store.Get failed: %v", err)
+	}
 
-	// Test getting patterns
-	patterns := analyzer.GetTopPatterns(10)
+	analyzer := NewAnalyzer(mem)
+
+	// Test analyzing a success
+	analyzer.AnalyzeSuccess([]string{"main.go", "main_test.go"}, 90)
+
+	// Test analyzing an issue
+	analyzer.AnalyzeIssue("warning", "style issue description", "use gofmt", "main.go")
+
+	// Verify patterns were learned
+	patterns := mem.GetPatternsForFile("main.go")
 	if patterns == nil {
-		t.Error("Expected GetTopPatterns to return non-nil slice")
-	}
-
-	// Test getting common issues
-	issues := analyzer.GetCommonIssues(10)
-	if issues == nil {
-		t.Error("Expected GetCommonIssues to return non-nil slice")
+		t.Error("Expected GetPatternsForFile to return non-nil slice")
 	}
 
 	t.Log("Analyzer basic operations work through aliases")
@@ -239,9 +270,6 @@ func TestAnalyzerBasicOperations(t *testing.T) {
 
 // TestPackageBackwardCompatibility verifies the package maintains backward compatibility
 func TestPackageBackwardCompatibility(t *testing.T) {
-	// This test ensures that code using the old import path still works
-	// by verifying all exported types and functions are available
-
 	// Types
 	var _ Memory
 	var _ Pattern

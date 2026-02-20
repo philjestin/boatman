@@ -102,8 +102,10 @@ type Session struct {
 	onTask         func(Task)
 	onStatus       func(SessionStatus)
 	conversationID string
-	currentAgentID string // Tracks which agent is currently active
-	agents         map[string]*AgentInfo // All known agents in this session
+	currentAgentID  string // Tracks which agent is currently active
+	agents          map[string]*AgentInfo // All known agents in this session
+	toolIDToAgentID map[string]string     // Maps Task tool_use ID -> spawned agent ID
+	agentStack      []string              // Stack of active agent IDs for nested subagents
 
 	// Message trimming settings
 	maxMessages int
@@ -129,17 +131,19 @@ func NewSession(id, projectPath string) *Session {
 	agents["main"] = mainAgent
 
 	return &Session{
-		ID:             id,
-		ProjectPath:    projectPath,
-		Status:         SessionStatusIdle,
-		Messages:       []Message{},
-		Tasks:          []Task{},
-		CreatedAt:      time.Now(),
-		UpdatedAt:      time.Now(),
-		currentAgentID: "main",
-		agents:         agents,
-		Tags:           []string{},
-		IsFavorite:     false,
+		ID:              id,
+		ProjectPath:     projectPath,
+		Status:          SessionStatusIdle,
+		Messages:        []Message{},
+		Tasks:           []Task{},
+		CreatedAt:       time.Now(),
+		UpdatedAt:       time.Now(),
+		currentAgentID:  "main",
+		agents:          agents,
+		toolIDToAgentID: make(map[string]string),
+		agentStack:      []string{"main"},
+		Tags:            []string{},
+		IsFavorite:      false,
 	}
 }
 
@@ -472,7 +476,20 @@ func (s *Session) parseStreamLine(line string, responseBuilder *strings.Builder,
 	case "user":
 		// User message event - extract content and display in UI
 		fmt.Println("[user event] Received user message event")
+
+		// Check for parent_tool_use_id to detect subagent context
 		if message, ok := event["message"].(map[string]any); ok {
+			if parentToolUseID, ok := message["parent_tool_use_id"].(string); ok && parentToolUseID != "" {
+				s.mu.Lock()
+				if agentID, exists := s.toolIDToAgentID[parentToolUseID]; exists {
+					// Push current agent onto stack and switch to subagent
+					s.agentStack = append(s.agentStack, s.currentAgentID)
+					s.currentAgentID = agentID
+					fmt.Printf("[user event] Switched to subagent %s (parent tool: %s)\n", agentID, parentToolUseID)
+				}
+				s.mu.Unlock()
+			}
+
 			if content, ok := message["content"].([]any); ok {
 				var textParts []string
 				for _, block := range content {
@@ -997,7 +1014,7 @@ func (s *Session) handleToolUse(event map[string]any) {
 
 	// Check if this is a Task tool spawning a new agent
 	if toolName == "Task" {
-		s.handleTaskSpawn(inputRaw)
+		s.handleTaskSpawn(inputRaw, toolID)
 	}
 
 	msg := Message{
@@ -1087,6 +1104,24 @@ func (s *Session) handleToolResult(event map[string]any) {
 		toolID, _ = event["tool_id"].(string)
 	}
 
+	// Check if this tool result completes a subagent
+	if agentID, exists := s.toolIDToAgentID[toolID]; exists {
+		// Mark the subagent as completed
+		if agent, ok := s.agents[agentID]; ok {
+			agent.Status = "completed"
+			agent.CompletedAt = time.Now()
+			fmt.Printf("[handleToolResult] Subagent %s completed (tool: %s)\n", agentID, toolID)
+		}
+		// Pop the agent stack to restore parent as currentAgentID
+		if len(s.agentStack) > 0 {
+			s.currentAgentID = s.agentStack[len(s.agentStack)-1]
+			s.agentStack = s.agentStack[:len(s.agentStack)-1]
+			fmt.Printf("[handleToolResult] Restored agent to %s\n", s.currentAgentID)
+		}
+		// Clean up the mapping
+		delete(s.toolIDToAgentID, toolID)
+	}
+
 	// Handle different content formats
 	var content string
 	if contentStr, ok := event["content"].(string); ok {
@@ -1147,7 +1182,7 @@ func (s *Session) handleToolResult(event map[string]any) {
 	}
 }
 
-func (s *Session) handleTaskSpawn(input any) {
+func (s *Session) handleTaskSpawn(input any, toolID string) {
 	inputMap, ok := input.(map[string]any)
 	if !ok {
 		return
@@ -1166,6 +1201,11 @@ func (s *Session) handleTaskSpawn(input any) {
 		ParentAgentID: s.currentAgentID,
 		Description:   description,
 		Status:        "active",
+	}
+
+	// Map the tool_use ID to the agent ID for later context switching
+	if toolID != "" {
+		s.toolIDToAgentID[toolID] = agentID
 	}
 }
 
@@ -1326,6 +1366,86 @@ func (s *Session) MarkAgentCompleted(agentID string) {
 		agent.Status = "completed"
 		agent.CompletedAt = time.Now()
 	}
+}
+
+// RegisterBoatmanAgent creates a new agent entry for a boatmanmode phase
+func (s *Session) RegisterBoatmanAgent(agentID, agentType, description string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.agents[agentID] = &AgentInfo{
+		AgentID:       agentID,
+		AgentType:     agentType,
+		ParentAgentID: "main",
+		Description:   description,
+		Status:        "active",
+	}
+}
+
+// SetCurrentAgent pushes the current agent and switches to the given agent
+func (s *Session) SetCurrentAgent(agentID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.agentStack = append(s.agentStack, s.currentAgentID)
+	s.currentAgentID = agentID
+}
+
+// CompleteCurrentAgent marks the current agent as completed and pops the stack
+func (s *Session) CompleteCurrentAgent() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Mark current agent as completed
+	if agent, ok := s.agents[s.currentAgentID]; ok {
+		agent.Status = "completed"
+		agent.CompletedAt = time.Now()
+	}
+
+	// Pop the stack to restore the parent agent
+	if len(s.agentStack) > 0 {
+		s.currentAgentID = s.agentStack[len(s.agentStack)-1]
+		s.agentStack = s.agentStack[:len(s.agentStack)-1]
+	}
+}
+
+// AddBoatmanMessage adds a message attributed to the current agent
+func (s *Session) AddBoatmanMessage(role, content string) {
+	if strings.TrimSpace(content) == "" {
+		return
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	agentInfo := s.agents[s.currentAgentID]
+	agentCopy := *agentInfo
+
+	msg := Message{
+		ID:        fmt.Sprintf("msg-%d", time.Now().UnixNano()),
+		Role:      role,
+		Content:   content,
+		Timestamp: time.Now(),
+		Metadata: &MessageMetadata{
+			Agent: &agentCopy,
+		},
+	}
+
+	s.Messages = append(s.Messages, msg)
+	s.UpdatedAt = time.Now()
+
+	_ = s.TrimMessagesIfNeeded(s.maxMessages, s.archive)
+
+	if s.onMessage != nil {
+		s.onMessage(msg)
+	}
+}
+
+// ProcessExternalStreamLine processes a raw stream-json line from an external source
+// (e.g., boatmanmode CLI forwarding Claude events). It maintains persistent stream
+// state per caller via the provided responseBuilder and currentMessageID pointers.
+func (s *Session) ProcessExternalStreamLine(line string, responseBuilder *strings.Builder, currentMessageID *string) {
+	s.parseStreamLine(line, responseBuilder, currentMessageID)
 }
 
 // CleanupCompletedAgents removes old completed agents, keeping max N agents

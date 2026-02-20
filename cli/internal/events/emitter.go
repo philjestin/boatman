@@ -82,3 +82,13 @@ func Progress(message string) {
 		Message: message,
 	})
 }
+
+// ClaudeStream emits a raw stream-json line from Claude for a given phase.
+// The desktop app uses this to show Claude's streaming activity in the UI.
+func ClaudeStream(phaseID string, rawLine string) {
+	Emit(Event{
+		Type:    "claude_stream",
+		ID:      phaseID,
+		Message: rawLine,
+	})
+}

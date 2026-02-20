@@ -73,16 +73,11 @@ export function useAgent() {
       }
     };
 
-    // Handle streaming output from boatmanmode CLI
+    // Handle streaming output from boatmanmode CLI (fallback for raw text not routed through session)
     const boatmanOutputHandler = (data: { sessionId: string; message: string }) => {
-      if (data.message && data.message.trim()) {
-        addMessage(data.sessionId, {
-          id: `bm-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-          role: 'assistant',
-          content: data.message.trim(),
-          timestamp: new Date().toISOString(),
-        });
-      }
+      // Messages now primarily flow through agent:message via session routing.
+      // This handler is a fallback for any raw text that bypasses the session.
+      console.log('[FRONTEND] Boatmanmode raw output (fallback):', data.message?.substring(0, 100));
     };
 
     // Handle boatmanmode execution errors

@@ -17,6 +17,7 @@ export interface AgentInfo {
   agentType: string; // "main", "task", "explore", etc.
   parentAgentId?: string;
   description?: string;
+  status?: 'active' | 'completed';
 }
 
 export interface MessageMetadata {

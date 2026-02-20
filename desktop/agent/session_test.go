@@ -1635,7 +1635,7 @@ func TestAgentTracking(t *testing.T) {
 		}
 
 		initialCount := len(session.agents)
-		session.handleTaskSpawn(input)
+		session.handleTaskSpawn(input, "toolu_test123")
 		newCount := len(session.agents)
 
 		if newCount != initialCount+1 {
@@ -1666,13 +1666,18 @@ func TestAgentTracking(t *testing.T) {
 		if newAgent.Description != "Analyze code structure" {
 			t.Errorf("Expected description 'Analyze code structure', got %s", newAgent.Description)
 		}
+
+		// Verify tool-to-agent mapping was created
+		if _, exists := session.toolIDToAgentID["toolu_test123"]; !exists {
+			t.Error("Expected toolIDToAgentID mapping for toolu_test123")
+		}
 	})
 
 	t.Run("task spawn with invalid input", func(t *testing.T) {
 		session := NewSession("test-session", "/path/to/project")
 
 		// Invalid input (not a map)
-		session.handleTaskSpawn("not a map")
+		session.handleTaskSpawn("not a map", "toolu_invalid")
 
 		// Should not crash, should not add agent
 		if len(session.agents) != 1 {
