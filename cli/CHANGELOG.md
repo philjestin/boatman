@@ -10,7 +10,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Monorepo structure with shared types
 - Public utilities in `pkg/` for desktop integration
+  - `pkg/diff`: Diff parsing and analysis utilities
+  - `pkg/validation`: Plan and code validation
+  - Available for direct import by desktop app
 - Event metadata support (diffs, feedback, plans, issues)
+  - `agent_completed` events include full context
+  - Diffs embedded in event payloads
+  - Feedback and issues from review phases
+  - Plans and refactor changes tracked
+- Automatic environment variable filtering for nested Claude sessions
+  - Prevents Claude-in-Claude confusion
+  - Filters `ANTHROPIC_*`, `CLAUDE_*` environment variables
+  - Ensures clean execution context
 
 ## [1.0.0] - 2026-02-14
 

@@ -2,6 +2,8 @@
 
 A monorepo containing the Boatman CLI tool and desktop application for AI-powered autonomous software development.
 
+> 🆕 **[What's New in February 2026](./WHATS_NEW.md)** - See recent enhancements: monorepo architecture, advanced search, batch diff approval, BoatmanMode integration, agent logs, and more!
+
 ## Repository Structure
 
 ```
@@ -41,6 +43,10 @@ The command-line interface and core autonomous agent.
 - Claude AI integration for code generation and review
 - Structured JSON event emission for integration
 - Linear ticket integration
+- **Event metadata** including diffs, feedback, plans, and issues
+- **Public utilities** in `pkg/` for desktop integration (diff analysis, validation)
+- **Automatic environment filtering** for secure nested Claude sessions
+- **Multiple input modes**: Linear tickets, inline prompts, or file-based tasks
 
 **Quick start:**
 ```bash
@@ -61,6 +67,14 @@ A cross-platform desktop application built with Wails that provides a GUI for th
 - Session management and history
 - Project-based organization
 - Event-driven architecture with live updates
+- **Smart search** with filters (tags, dates, favorites, projects)
+- **Batch diff approval** for reviewing multiple file changes at once
+- **Inline diff comments** for code review discussions
+- **BoatmanMode integration** for autonomous Linear ticket execution
+- **Firefighter mode** for production incident investigation
+- **Agent logs panel** for real-time visibility into AI actions
+- **Onboarding wizard** for first-time setup
+- **MCP server management** via UI dialog
 
 **Quick start:**
 ```bash
@@ -160,6 +174,35 @@ The CLI and desktop are tightly coupled:
 - Atomic commits for cross-cutting changes
 - **Hybrid architecture**: Desktop can use subprocess OR direct imports
 
+## Recent Enhancements
+
+### Monorepo Architecture (February 2026)
+The project has been restructured into a unified monorepo with shared types and utilities:
+- **Shared event types**: CLI and desktop use common event definitions
+- **Public utilities**: CLI exposes `pkg/` for desktop integration
+- **Hybrid architecture**: Desktop can use subprocess OR direct imports
+- **Independent versioning**: Components version independently (`cli/v1.x.x`, `desktop/v1.x.x`)
+
+### Desktop UI Improvements
+- ✅ **Advanced search** with filters for tags, favorites, dates, and projects
+- ✅ **Batch diff approval** for efficient code review
+- ✅ **Inline diff comments** for collaborative review discussions
+- ✅ **Agent logs panel** for real-time visibility into AI tool usage
+- ✅ **Task detail modals** showing diffs, plans, feedback, and issues
+- ✅ **Onboarding wizard** for guided first-time setup
+- ✅ **Session favorites and tags** for better organization
+
+### CLI Event System
+- ✅ **Rich event metadata**: Events now include diffs, feedback, plans, and issues
+- ✅ **Structured task tracking**: External tools can track agent progress via events
+- ✅ **Environment security**: Automatic filtering of sensitive env vars in nested sessions
+
+### BoatmanMode Integration
+- ✅ **Seamless ticket execution**: Click button, enter ticket ID, watch autonomous workflow
+- ✅ **Real-time event streaming**: See planning, execution, review, and refactor phases
+- ✅ **Task visibility**: All agent steps tracked as tasks with full metadata
+- ✅ **Purple session badges**: Visual distinction for boatmanmode sessions
+
 ## Hybrid Architecture
 
 The desktop app uses a **hybrid approach** for maximum flexibility:
@@ -215,11 +258,40 @@ GitHub Actions automatically:
 
 See [RELEASE_SUMMARY.md](./RELEASE_SUMMARY.md) for quick reference or [RELEASES.md](./RELEASES.md) for the complete guide.
 
+## Documentation
+
+### Getting Started
+- **[What's New](./WHATS_NEW.md)** - Recent enhancements and features (February 2026)
+- **[Quickstart Guide](./QUICKSTART.md)** - Get up and running in 5 minutes
+- **[Main README](./README.md)** - This file, project overview
+
+### CLI Documentation
+- **[CLI README](./cli/README.md)** - Complete CLI documentation
+- **[Task Modes](./cli/TASK_MODES.md)** - Linear tickets, prompts, and file-based tasks
+- **[Events](./cli/EVENTS.md)** - Event system specification
+- **[Library Usage](./cli/LIBRARY_USAGE.md)** - Using CLI as a Go library
+- **[CLI Changelog](./cli/CHANGELOG.md)** - CLI version history
+
+### Desktop Documentation
+- **[Desktop README](./desktop/README.md)** - Desktop app overview
+- **[Features Guide](./desktop/FEATURES.md)** - Comprehensive feature documentation
+- **[Getting Started](./desktop/GETTING_STARTED.md)** - Desktop setup and usage
+- **[BoatmanMode Integration](./desktop/BOATMANMODE_INTEGRATION.md)** - Autonomous execution
+- **[BoatmanMode Events](./desktop/BOATMANMODE_EVENTS.md)** - Event specification
+- **[Desktop Changelog](./desktop/CHANGELOG.md)** - Desktop version history
+
+### Architecture & Development
+- **[Hybrid Architecture](./HYBRID_ARCHITECTURE.md)** - Subprocess vs direct imports
+- **[Contributing](./CONTRIBUTING.md)** - Development guidelines
+- **[Releases](./RELEASES.md)** - Complete release guide
+- **[Release Summary](./RELEASE_SUMMARY.md)** - Quick reference
+- **[Versioning](./VERSIONING.md)** - Independent component versioning
+
 ## Contributing
 
 1. Make changes in the appropriate directory (`cli/` or `desktop/`)
 2. Run tests in both if you modify the event protocol
-3. Update documentation in component READMEs
+3. Update documentation in component READMEs and relevant guides
 4. Create a PR with a clear description of changes
 
 ## License

@@ -15,6 +15,8 @@ Boatman is a native desktop application built with Wails (Go + React) that provi
 - **Sub-Agents**: Spawns specialized agents for complex multi-step tasks
 - **Project Management**: Open and manage multiple coding projects
 - **Task Tracking**: View and monitor tasks created by the agent during sessions
+- **Agent Logs**: Real-time streaming logs panel to see agent activity and tool usage
+- **Task Detail Modal**: Clickable task cards showing diffs, feedback, plans, and issues
 
 ### 🔥 Firefighter Mode
 - **Linear Integration**: Automatically monitors triage queue for production incidents
@@ -29,6 +31,17 @@ Boatman is a native desktop application built with Wails (Go + React) that provi
 - **Built-in Servers**: GitHub, Datadog, Bugsnag, Linear, Slack, and more
 - **OAuth Support**: Authenticate via Okta SSO for enterprise integrations
 - **Custom Servers**: Build your own MCP servers for specialized workflows
+- **MCP Server Dialog**: Easy configuration and management of MCP servers via UI
+
+### 🔍 Advanced UI Features
+- **Smart Search**: Full-text search across sessions with filters (tags, dates, favorites, projects)
+- **Favorites & Tags**: Organize sessions with favorites and custom tags for easy retrieval
+- **Batch Diff Approval**: Select and approve/reject multiple file changes at once
+- **Inline Diff Comments**: Add threaded comments directly on diff lines for review discussions
+- **Diff Summary Cards**: Quick overview of file changes with stats (additions, deletions, modifications)
+- **Onboarding Wizard**: Guided first-run experience for setting up authentication and preferences
+- **Model Selection**: Choose between Claude Opus 4.6, Sonnet 4.5, Haiku 4, and Claude 3.5 Sonnet
+- **Session Modes**: Visual badges to distinguish standard, firefighter, and boatmanmode sessions
 
 ## Quick Start
 
@@ -157,6 +170,34 @@ Linear Ticket → Extract Context → Query Bugsnag/Datadog → Analyze Git Hist
    - Attempts fix (if High/Urgent)
    - Updates Linear ticket
 
+### BoatmanMode Integration
+
+**Autonomous ticket execution with full workflow:**
+
+1. Click "Boatman Mode" button (purple button in header)
+2. Enter Linear ticket ID
+3. Watch real-time execution with structured events:
+   - Planning phase with codebase analysis
+   - Implementation with code generation
+   - Test execution and validation
+   - Peer review with feedback
+   - Automated refactoring
+   - PR creation and ticket updates
+4. Track progress in Tasks tab with clickable task details
+5. Review diffs, feedback, and issues in task modals
+
+**Key Benefits:**
+- ✅ Full autonomous workflow (plan → execute → review → refactor → PR)
+- ✅ Git worktree isolation for safe parallel work
+- ✅ Real-time event streaming with structured task tracking
+- ✅ Task metadata includes diffs, plans, feedback, and issues
+- ✅ Integrated with CLI for subprocess execution
+
+**See documentation:**
+- [BoatmanMode Integration Guide](./BOATMANMODE_INTEGRATION.md)
+- [BoatmanMode Events Specification](./BOATMANMODE_EVENTS.md)
+- [BoatmanMode Implementation Details](./BOATMANMODE_IMPLEMENTATION.md)
+
 **For detailed usage**, see:
 - [Basic Usage Guide](./GETTING_STARTED.md#basic-usage)
 - [Firefighter Mode Guide](./GETTING_STARTED.md#firefighter-mode)
@@ -255,9 +296,13 @@ npx -y @package/mcp-server
 ## Documentation
 
 - **[Getting Started Guide](./GETTING_STARTED.md)** - Complete setup and usage
+- **[Features Guide](./FEATURES.md)** - Comprehensive feature documentation (NEW)
 - **[Firefighter Mode](./GETTING_STARTED.md#firefighter-mode)** - Production incident investigation
+- **[BoatmanMode Integration](./BOATMANMODE_INTEGRATION.md)** - Autonomous ticket execution
+- **[BoatmanMode Events](./BOATMANMODE_EVENTS.md)** - Event specification and integration
 - **[MCP Servers](./GETTING_STARTED.md#mcp-servers)** - Extending capabilities
 - **[Configuration](./GETTING_STARTED.md#configuration)** - Settings and customization
+- **[Changelog](./CHANGELOG.md)** - Version history and release notes
 
 ## FAQ
 
