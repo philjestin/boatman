@@ -76,6 +76,13 @@ type UserPreferences struct {
 
 	// Linear settings
 	LinearAPIKey string `json:"linearAPIKey,omitempty"`
+
+	// BoatmanMode settings
+	BoatmanMaxIterations int    `json:"boatmanMaxIterations,omitempty"` // Maximum review/refactor iterations (default: 3)
+	BoatmanBaseBranch    string `json:"boatmanBaseBranch,omitempty"`    // Base branch for worktree (default: "main")
+	BoatmanAutoPR        bool   `json:"boatmanAutoPR"`                  // Automatically create PR on success (default: true)
+	BoatmanReviewSkill   string `json:"boatmanReviewSkill,omitempty"`   // Claude skill for code review (default: "peer-review")
+	BoatmanTimeout       int    `json:"boatmanTimeout,omitempty"`       // Timeout in minutes for each agent (default: 60)
 }
 
 // ProjectPreferences stores project-specific overrides
@@ -125,6 +132,13 @@ func NewConfig() (*Config, error) {
 			AutoCleanupSessions:   true,
 			MaxAgentsPerSession:   20,
 			KeepCompletedAgents:   false,
+
+			// BoatmanMode defaults
+			BoatmanMaxIterations: 3,
+			BoatmanBaseBranch:    "main",
+			BoatmanAutoPR:        true,
+			BoatmanReviewSkill:   "peer-review",
+			BoatmanTimeout:       60,
 		},
 		projects: make(map[string]ProjectPreferences),
 	}

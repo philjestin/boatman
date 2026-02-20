@@ -36,6 +36,7 @@ func ExecuteUserPromptExample(sessionID, projectPath, prompt string) error {
 		"prompt",
 		outputChan,
 		nil,
+		nil, // config
 	)
 	return err
 }
@@ -126,6 +127,7 @@ func HybridExecutionExample(sessionID, projectPath, prompt string) error {
 			"prompt",
 			outputChan,
 			nil,
+			nil, // config
 		)
 	}()
 

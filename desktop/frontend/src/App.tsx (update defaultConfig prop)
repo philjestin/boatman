@@ -1,0 +1,15 @@
+      {/* Boatman Mode Dialog */}
+      <BoatmanModeDialog
+        isOpen={boatmanModeDialogOpen}
+        onClose={() => setBoatmanModeDialogOpen(false)}
+        onStart={handleStartBoatmanMode}
+        projectPath={activeProject?.path || ''}
+        defaultConfig={{
+          maxIterations: preferences?.boatmanMaxIterations,
+          baseBranch: preferences?.boatmanBaseBranch,
+          autoPR: preferences?.boatmanAutoPR,
+          reviewSkill: preferences?.boatmanReviewSkill,
+          timeout: preferences?.boatmanTimeout,
+          dryRun: preferences?.boatmanDryRun,
+        }}
+      />

@@ -237,6 +237,13 @@ export interface UserPreferences {
 
   // Linear settings
   linearAPIKey?: string;
+
+  // BoatmanMode settings
+  boatmanMaxIterations?: number; // Maximum review/refactor iterations (default: 3)
+  boatmanBaseBranch?: string;    // Base branch for worktree (default: "main")
+  boatmanAutoPR?: boolean;       // Automatically create PR on success (default: true)
+  boatmanReviewSkill?: string;   // Claude skill for code review (default: "peer-review")
+  boatmanTimeout?: number;       // Timeout in minutes for each agent (default: 60)
 }
 
 export interface ProjectPreferences {
