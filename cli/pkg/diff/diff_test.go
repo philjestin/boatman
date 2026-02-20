@@ -377,9 +377,20 @@ func setupTestRepo(t *testing.T) (string, func()) {
 		t.Fatalf("Failed to init git repo: %v", err)
 	}
 
-	// Configure git
-	exec.Command("git", "config", "user.email", "test@example.com").Dir = tempDir
-	exec.Command("git", "config", "user.name", "Test User").Dir = tempDir
+	// Configure git user for CI environments
+	cmd = exec.Command("git", "config", "user.email", "test@example.com")
+	cmd.Dir = tempDir
+	if err := cmd.Run(); err != nil {
+		os.RemoveAll(tempDir)
+		t.Fatalf("Failed to configure git email: %v", err)
+	}
+
+	cmd = exec.Command("git", "config", "user.name", "Test User")
+	cmd.Dir = tempDir
+	if err := cmd.Run(); err != nil {
+		os.RemoveAll(tempDir)
+		t.Fatalf("Failed to configure git name: %v", err)
+	}
 
 	// Create initial commit
 	testFile := filepath.Join(tempDir, "test.txt")
