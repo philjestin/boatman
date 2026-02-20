@@ -1027,6 +1027,8 @@ func (a *App) HandleBoatmanModeEvent(sessionID string, eventType string, eventDa
 		message, _ := eventData["message"].(string)
 		if message != "" {
 			session.AddBoatmanMessage("system", message)
+			// Also append to active task metadata for the task detail modal
+			session.AppendCurrentTaskLog(message)
 		}
 
 	case "task_created":

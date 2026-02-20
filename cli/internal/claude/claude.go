@@ -72,6 +72,10 @@ type Client struct {
 type StreamChunk struct {
 	Type    string `json:"type"`
 	Content string `json:"content"`
+	Delta   struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	} `json:"delta"`
 	Message struct {
 		Content []struct {
 			Type string `json:"type"`
@@ -226,6 +230,7 @@ func (c *Client) doStreamingRequest(ctx context.Context, systemPrompt, userPromp
 	args := []string{
 		"-p",
 		"--output-format", "stream-json",
+		"--verbose",
 	}
 
 	// Auto-approve tool uses if configured (WARNING: security risk)
@@ -349,7 +354,12 @@ func (c *Client) doStreamingRequest(ctx context.Context, systemPrompt, userPromp
 			var text string
 			switch chunk.Type {
 			case "content_block_delta":
-				text = chunk.Content
+				// With --verbose, text is in delta.text; without, it may be in content
+				if chunk.Delta.Text != "" {
+					text = chunk.Delta.Text
+				} else {
+					text = chunk.Content
+				}
 			case "message_stop":
 				continue
 			case "result":

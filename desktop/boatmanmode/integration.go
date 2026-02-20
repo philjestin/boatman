@@ -178,6 +178,10 @@ func (i *Integration) StreamExecution(ctx context.Context, sessionID string, inp
 		}()
 
 		scanner := bufio.NewScanner(stdout)
+		// Claude's stream-json lines (especially thinking blocks and signatures
+		// wrapped inside claude_stream events) can exceed the default 64KB buffer.
+		scanBuf := make([]byte, 0, 64*1024)
+		scanner.Buffer(scanBuf, 10*1024*1024) // 10MB max line size
 		for scanner.Scan() {
 			line := scanner.Text()
 

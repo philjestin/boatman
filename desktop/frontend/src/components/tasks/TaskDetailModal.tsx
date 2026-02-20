@@ -1,13 +1,16 @@
-import { X, FileText, AlertCircle, GitBranch, Lightbulb, CheckCircle, Loader2, Clock } from 'lucide-react';
-import type { Task } from '../../types';
+import { useRef, useEffect } from 'react';
+import { X, FileText, AlertCircle, GitBranch, Lightbulb, CheckCircle, Loader2, Clock, Terminal, MessageSquare, Wrench } from 'lucide-react';
+import type { Task, Message } from '../../types';
 
 interface TaskDetailModalProps {
   task: Task;
+  messages: Message[];
   onClose: () => void;
 }
 
-export function TaskDetailModal({ task, onClose }: TaskDetailModalProps) {
+export function TaskDetailModal({ task, messages, onClose }: TaskDetailModalProps) {
   const metadata = task.metadata || {};
+  const activityEndRef = useRef<HTMLDivElement>(null);
 
   const hasDiff = metadata.diff && typeof metadata.diff === 'string';
   const hasFeedback = metadata.feedback && typeof metadata.feedback === 'string';
@@ -15,7 +18,25 @@ export function TaskDetailModal({ task, onClose }: TaskDetailModalProps) {
   const hasPlan = metadata.plan && typeof metadata.plan === 'string';
   const hasRefactorDiff = metadata.refactor_diff && typeof metadata.refactor_diff === 'string';
 
-  const hasContent = hasDiff || hasFeedback || hasIssues || hasPlan || hasRefactorDiff;
+  const hasMetadataContent = hasDiff || hasFeedback || hasIssues || hasPlan || hasRefactorDiff;
+
+  // Filter messages by agent ID matching this task's ID
+  const taskMessages = messages.filter(
+    (m) => m.metadata?.agent?.agentId === task.id
+  );
+
+  // Get log entries from task metadata (backend fallback)
+  const logEntries: string[] = Array.isArray(metadata.log) ? metadata.log : [];
+
+  const hasActivity = taskMessages.length > 0 || logEntries.length > 0;
+  const hasContent = hasMetadataContent || hasActivity;
+
+  // Auto-scroll to bottom for in-progress tasks
+  useEffect(() => {
+    if (task.status === 'in_progress' && activityEndRef.current) {
+      activityEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [task.status, taskMessages.length, logEntries.length]);
 
   const statusIcon = () => {
     switch (task.status) {
@@ -37,6 +58,60 @@ export function TaskDetailModal({ task, onClose }: TaskDetailModalProps) {
       default:
         return 'Pending';
     }
+  };
+
+  const renderActivityEntry = (msg: Message, idx: number) => {
+    // Tool use messages
+    if (msg.metadata?.toolUse) {
+      return (
+        <div key={msg.id || idx} className="flex items-start gap-2 py-1.5 text-sm">
+          <Wrench className="w-3.5 h-3.5 text-blue-400 mt-0.5 shrink-0" />
+          <span className="text-slate-300">{msg.content}</span>
+        </div>
+      );
+    }
+
+    // Tool result messages
+    if (msg.metadata?.toolResult) {
+      const isError = msg.metadata.toolResult.isError;
+      return (
+        <div key={msg.id || idx} className="flex items-start gap-2 py-1.5 text-sm">
+          <Terminal className="w-3.5 h-3.5 text-slate-500 mt-0.5 shrink-0" />
+          <span className={`${isError ? 'text-red-400' : 'text-slate-500'} truncate`}>
+            {msg.content.length > 200 ? msg.content.slice(0, 200) + '...' : msg.content}
+          </span>
+        </div>
+      );
+    }
+
+    // Cost info messages — skip in activity log
+    if (msg.metadata?.costInfo) {
+      return null;
+    }
+
+    // System messages
+    if (msg.role === 'system') {
+      return (
+        <div key={msg.id || idx} className="flex items-start gap-2 py-1.5 text-sm">
+          <MessageSquare className="w-3.5 h-3.5 text-yellow-500 mt-0.5 shrink-0" />
+          <span className="text-slate-400">{msg.content}</span>
+        </div>
+      );
+    }
+
+    // Assistant messages
+    if (msg.role === 'assistant') {
+      const displayContent = msg.content.length > 300
+        ? msg.content.slice(0, 300) + '...'
+        : msg.content;
+      return (
+        <div key={msg.id || idx} className="py-1.5 text-sm">
+          <div className="text-slate-300 whitespace-pre-wrap">{displayContent}</div>
+        </div>
+      );
+    }
+
+    return null;
   };
 
   return (
@@ -73,7 +148,7 @@ export function TaskDetailModal({ task, onClose }: TaskDetailModalProps) {
             <div className="text-center py-12 text-slate-500">
               <Loader2 className="w-12 h-12 mx-auto mb-3 opacity-50 animate-spin" />
               <p>This task is currently running.</p>
-              <p className="text-xs mt-1">Details will appear when the step completes.</p>
+              <p className="text-xs mt-1">Details will appear when activity begins.</p>
             </div>
           )}
 
@@ -91,6 +166,7 @@ export function TaskDetailModal({ task, onClose }: TaskDetailModalProps) {
             </div>
           )}
 
+          {/* Metadata sections — shown above the activity log when present */}
           {hasPlan && (
             <div className="space-y-2">
               <div className="flex items-center gap-2 text-sm font-medium text-slate-300">
@@ -154,6 +230,31 @@ export function TaskDetailModal({ task, onClose }: TaskDetailModalProps) {
                     {typeof issue === 'string' ? issue : JSON.stringify(issue, null, 2)}
                   </div>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {/* Activity Log */}
+          {hasActivity && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-sm font-medium text-slate-300">
+                <Terminal className="w-4 h-4 text-slate-400" />
+                <span>Activity</span>
+                <span className="text-xs text-slate-500">
+                  ({taskMessages.length + logEntries.length} entries)
+                </span>
+              </div>
+              <div className="bg-slate-800 rounded-lg p-3 max-h-96 overflow-y-auto divide-y divide-slate-700/50">
+                {/* Backend fallback log entries (shown first as they're typically early progress) */}
+                {logEntries.map((entry, idx) => (
+                  <div key={`log-${idx}`} className="flex items-start gap-2 py-1.5 text-sm">
+                    <MessageSquare className="w-3.5 h-3.5 text-yellow-500 mt-0.5 shrink-0" />
+                    <span className="text-slate-400">{String(entry)}</span>
+                  </div>
+                ))}
+                {/* Agent-attributed messages */}
+                {taskMessages.map((msg, idx) => renderActivityEntry(msg, idx))}
+                <div ref={activityEndRef} />
               </div>
             </div>
           )}

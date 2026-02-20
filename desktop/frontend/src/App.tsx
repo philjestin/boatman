@@ -377,6 +377,7 @@ function App() {
       {selectedTask && (
         <TaskDetailModal
           task={activeSession?.tasks.find(t => t.id === selectedTask.id) || selectedTask}
+          messages={activeSession?.messages || []}
           onClose={() => setSelectedTask(null)}
         />
       )}

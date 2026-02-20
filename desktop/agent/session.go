@@ -400,7 +400,7 @@ func (s *Session) runClaudeCommand(prompt string, authConfig AuthConfig) {
 	var currentMessageID string // Track the current streaming message
 	scanner := bufio.NewScanner(stdout)
 	buf := make([]byte, 0, 64*1024)
-	scanner.Buffer(buf, 1024*1024)
+	scanner.Buffer(buf, 10*1024*1024) // 10MB max to handle large thinking blocks
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -498,12 +498,19 @@ func (s *Session) parseStreamLine(line string, responseBuilder *strings.Builder,
 			if content, ok := message["content"].([]any); ok {
 				var textParts []string
 				for _, block := range content {
-					if textBlock, ok := block.(map[string]any); ok {
-						if textBlock["type"] == "text" {
-							if text, ok := textBlock["text"].(string); ok {
-								textParts = append(textParts, text)
-							}
+					blockMap, ok := block.(map[string]any)
+					if !ok {
+						continue
+					}
+					blockType, _ := blockMap["type"].(string)
+					switch blockType {
+					case "text":
+						if text, ok := blockMap["text"].(string); ok {
+							textParts = append(textParts, text)
 						}
+					case "tool_result":
+						// Route through existing tool_result handler
+						s.handleToolResult(blockMap)
 					}
 				}
 				if len(textParts) > 0 {
@@ -514,17 +521,58 @@ func (s *Session) parseStreamLine(line string, responseBuilder *strings.Builder,
 		}
 
 	case "assistant":
-		// Full assistant message
+		// Full assistant message (verbose format from --verbose --output-format stream-json)
+		// Each event contains one or more content blocks that need individual handling.
 		if message, ok := event["message"].(map[string]any); ok {
 			if content, ok := message["content"].([]any); ok {
 				for _, block := range content {
-					if textBlock, ok := block.(map[string]any); ok {
-						if textBlock["type"] == "text" {
-							if text, ok := textBlock["text"].(string); ok {
-								responseBuilder.WriteString(text)
-							}
-						}
+					blockMap, ok := block.(map[string]any)
+					if !ok {
+						continue
 					}
+					blockType, _ := blockMap["type"].(string)
+					switch blockType {
+					case "text":
+						if text, ok := blockMap["text"].(string); ok && text != "" {
+							// Flush any pending content first
+							if responseBuilder.Len() > 0 && *currentMessageID != "" {
+								s.finalizeMessage(*currentMessageID, responseBuilder.String())
+								responseBuilder.Reset()
+								*currentMessageID = ""
+							}
+							responseBuilder.WriteString(text)
+							if *currentMessageID == "" {
+								*currentMessageID = s.createStreamingMessage()
+							}
+							s.updateStreamingMessage(*currentMessageID, responseBuilder.String())
+						}
+					case "thinking":
+						if thinking, ok := blockMap["thinking"].(string); ok && thinking != "" {
+							// Show a truncated summary of thinking as a system message
+							summary := thinking
+							if len(summary) > 200 {
+								summary = summary[:200] + "..."
+							}
+							s.addSystemMessage("💭 " + summary)
+						}
+					case "tool_use":
+						// Flush any pending text before tool use
+						if responseBuilder.Len() > 0 && *currentMessageID != "" {
+							s.finalizeMessage(*currentMessageID, responseBuilder.String())
+							responseBuilder.Reset()
+							*currentMessageID = ""
+						}
+						// Route through existing tool_use handler — block already has
+						// the right shape: {id, name, input, type}
+						s.handleToolUse(blockMap)
+					}
+				}
+				// In verbose format, each assistant event is a complete message.
+				// Finalize any accumulated text so it appears in the UI immediately.
+				if responseBuilder.Len() > 0 && *currentMessageID != "" {
+					s.finalizeMessage(*currentMessageID, responseBuilder.String())
+					responseBuilder.Reset()
+					*currentMessageID = ""
 				}
 			}
 		}
@@ -1443,6 +1491,28 @@ func (s *Session) AddBoatmanMessage(role, content string) {
 
 	if s.onMessage != nil {
 		s.onMessage(msg)
+	}
+}
+
+// AppendCurrentTaskLog finds the first in_progress task and appends a log entry
+// to its metadata.log array. This provides a fallback activity log for tasks
+// that don't have agent-attributed messages (e.g., early steps before Claude runs).
+func (s *Session) AppendCurrentTaskLog(entry string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, t := range s.Tasks {
+		if t.Status == "in_progress" {
+			if s.Tasks[i].Metadata == nil {
+				s.Tasks[i].Metadata = make(map[string]interface{})
+			}
+			log, _ := s.Tasks[i].Metadata["log"].([]interface{})
+			log = append(log, entry)
+			s.Tasks[i].Metadata["log"] = log
+			if s.onTask != nil {
+				s.onTask(s.Tasks[i])
+			}
+			return
+		}
 	}
 }
 
