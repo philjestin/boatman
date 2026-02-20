@@ -1,0 +1,105 @@
+# Harness Module
+
+The `harness/` module provides model-agnostic primitives for building AI agent harnesses. It has zero intra-monorepo dependencies (stdlib only) and can be used independently of the Boatman CLI.
+
+Implementations can plug in any LLM backend (Claude, OpenAI, Gemini, etc.) via the provided interfaces.
+
+## Installation
+
+```bash
+go get github.com/philjestin/boatman-ecosystem/harness
+```
+
+## Core Packages
+
+| Package | Purpose |
+|---------|---------|
+| **runner** | Composable pipeline orchestrator with execute-test-review-refactor loop |
+| **review** | Canonical review types and the `Reviewer` interface |
+| **checkpoint** | Progress saving with git integration for resumable workflows |
+| **memory** | Cross-session learning (patterns, preferences, issues) |
+| **cost** | Token usage and cost tracking across pipeline steps |
+| **filesummary** | Language-aware file summarization to save tokens |
+| **handoff** | Structured context passing between pipeline stages |
+| **issuetracker** | Issue deduplication across review iterations |
+| **diffverify** | Diff verification against review issues |
+| **contextpin** | File dependency tracking and pinning |
+| **testrunner** | Test framework detection and execution |
+| **scaffold** | Project generator for new harness-based projects |
+
+---
+
+## Architecture
+
+```
+harness/
+├── runner/          # Pipeline orchestration (the main entry point)
+│   └── Roles: Developer, Reviewer, Tester, Planner
+│
+├── review/          # Canonical types (Issue, ReviewResult, Reviewer)
+├── checkpoint/      # Save/resume workflow progress
+├── memory/          # Cross-session learning
+├── cost/            # Token tracking
+│
+├── filesummary/     # Smart file summarization
+├── handoff/         # Context compression & passing
+├── issuetracker/    # Issue deduplication
+├── diffverify/      # Diff verification
+├── contextpin/      # File dependency tracking
+├── testrunner/      # Test framework detection
+│
+└── scaffold/        # Project generator
+```
+
+---
+
+## Design Principles
+
+### Model Agnostic
+
+Every interface accepts and returns plain Go types. The harness never imports an LLM SDK directly. Your implementation decides which model to call:
+
+```go
+type Reviewer interface {
+    Review(ctx context.Context, diff string, context string) (*ReviewResult, error)
+}
+```
+
+### Composable Primitives
+
+Each package works standalone or together. Use only what you need:
+
+```go
+// Use just the issue tracker
+tracker := issuetracker.New()
+tracker.AddIteration(reviewResult.Issues)
+stats := tracker.Stats()
+
+// Or use the full runner pipeline
+result, err := runner.Run(ctx, cfg)
+```
+
+### Zero Dependencies
+
+The harness module depends only on the Go standard library. No external packages, no monorepo imports.
+
+---
+
+## How Boatman CLI Uses the Harness
+
+The CLI's `internal/` packages implement the harness interfaces with Claude-specific logic:
+
+```
+CLI internal/planner   → implements harness/runner.Planner
+CLI internal/executor   → implements harness/runner.Developer
+CLI internal/scottbott  → implements harness/runner.Reviewer (via review.Reviewer)
+CLI internal/testrunner → wraps harness/testrunner.Runner
+```
+
+The runner orchestrates them through the standard pipeline while checkpoint, memory, cost, and issuetracker primitives handle cross-cutting concerns.
+
+---
+
+## Quick Start
+
+See [Scaffolding](/harness/scaffold) to generate a new project, or [Pipeline Runner](/harness/runner) for the full orchestration API.

@@ -1,0 +1,320 @@
+# Primitives
+
+Each primitive is a standalone package in `harness/` that handles one cross-cutting concern. They work independently or together through the [Pipeline Runner](/harness/runner).
+
+---
+
+## review — Canonical Review Types
+
+Provides the core types that all other packages build on.
+
+```go
+// Issue represents a single code review finding
+type Issue struct {
+    Severity    string // "critical", "major", "minor"
+    File        string
+    Line        int
+    Description string
+    Suggestion  string
+}
+
+// ReviewResult is the outcome of a review
+type ReviewResult struct {
+    Passed   bool
+    Score    int       // 0-100
+    Summary  string
+    Issues   []Issue
+    Praise   []string
+    Guidance string
+}
+
+// Reviewer is the interface for pluggable review backends
+type Reviewer interface {
+    Review(ctx context.Context, diff string, context string) (*ReviewResult, error)
+}
+```
+
+---
+
+## checkpoint — Progress Saving & Resume
+
+Saves workflow state to disk for crash recovery and resumable workflows.
+
+**Storage location:** `~/.boatman/checkpoints/{ticketID}-{timestamp}.json`
+
+### Workflow Steps
+
+```go
+const (
+    StepFetchTicket   Step = "fetch_ticket"
+    StepCreateWorktree Step = "create_worktree"
+    StepPlanning      Step = "planning"
+    StepValidation    Step = "validation"
+    StepExecution     Step = "execution"
+    StepTesting       Step = "testing"
+    StepReview        Step = "review"
+    StepRefactor      Step = "refactor"
+    StepVerify        Step = "verify"
+    StepCommit        Step = "commit"
+    StepPush          Step = "push"
+    StepCreatePR      Step = "create_pr"
+    StepComplete      Step = "complete"
+)
+```
+
+### Usage
+
+```go
+mgr := checkpoint.NewManager("~/.boatman/checkpoints")
+
+// Start a new checkpoint
+cp, err := mgr.Start("ENG-123", "/tmp/worktree", "feature-branch")
+
+// Save progress at each step
+cp.SetStep(checkpoint.StepPlanning, checkpoint.StatusComplete)
+cp.SaveState("plan", planData)
+mgr.Save(cp)
+
+// Resume after crash
+cp, err = mgr.ResumeLatest("ENG-123")
+lastStep := cp.CurrentStep  // resume from here
+```
+
+---
+
+## memory — Cross-Session Learning
+
+Persists patterns, issues, and preferences learned from previous sessions.
+
+**Storage location:** `~/.boatman/memory/p{hash}.json` (hash of project path)
+
+### What Gets Stored
+
+| Category | Limit | Ranked By |
+|----------|-------|-----------|
+| Code patterns | 100 | Weight (usage * success rate) |
+| Common issues | 50 | Frequency |
+| Successful prompts | 20 | Score (0-100) |
+| Preferences | Unlimited | - |
+| Statistics | 1 per project | - |
+
+### Usage
+
+```go
+store := memory.NewStore("~/.boatman/memory")
+mem, err := store.Load("my-project")
+
+// Learn from success
+mem.LearnPattern(memory.Pattern{
+    Type:        "testing",
+    Description: "Use table-driven tests for Go",
+    Example:     "tests := []struct{...}",
+    Weight:      0.8,
+})
+
+// Query for current task
+patterns := mem.GetPatternsForFile("pkg/handler.go")
+issues := mem.GetCommonIssuesForFile("*.go")
+bestPrompt := mem.GetBestPromptForType("feature")
+
+// Format as agent context (token-bounded)
+contextStr := mem.ToContext(4000) // max 4000 tokens
+
+store.Save("my-project", mem)
+```
+
+---
+
+## cost — Token & Cost Tracking
+
+Tracks token usage and cost across pipeline steps.
+
+```go
+tracker := cost.NewTracker()
+
+// Record usage per step
+tracker.Add("planning", cost.Usage{
+    InputTokens:  12000,
+    OutputTokens: 3000,
+    TotalCost:    0.051,
+})
+
+tracker.Add("execution", cost.Usage{
+    InputTokens:  45000,
+    OutputTokens: 8000,
+    CacheReadTokens: 20000,
+    TotalCost:    0.159,
+})
+
+// Get totals
+total := tracker.Total()
+fmt.Printf("Total: $%.4f (%d input, %d output)\n",
+    total.TotalCost, total.InputTokens, total.OutputTokens)
+
+// Print formatted summary table
+tracker.PrintSummary()
+```
+
+---
+
+## handoff — Context Passing Between Agents
+
+Structured context passing with multiple sizing strategies for token efficiency.
+
+### Sizing Strategies
+
+| Method | Use Case |
+|--------|----------|
+| `Full()` | Complete context, no compression |
+| `Concise()` | Summarized version |
+| `ForTokenBudget(n)` | Fits within N tokens |
+
+### Token Budget
+
+```go
+budget := handoff.DefaultTokenBudget()
+// budget.System = 8000
+// budget.User = 50000
+// budget.Additional = 30000
+```
+
+### Compound Handoffs
+
+```go
+// Combine multiple handoffs with automatic budget distribution
+compound := handoff.NewCompound(planHandoff, contextHandoff, memoryHandoff)
+result := compound.ForTokenBudget(10000)
+```
+
+### Pipeline Handoffs
+
+```go
+// Track context through multi-agent pipeline
+pipeline := handoff.NewPipeline()
+pipeline.AddStep("planning", planOutput)
+pipeline.AddStep("execution", execOutput)
+history := pipeline.History() // debug-friendly
+```
+
+---
+
+## issuetracker — Issue Deduplication
+
+Tracks issues across review iterations to prevent duplicate feedback and detect resolution.
+
+### Deduplication Strategy
+
+- **Exact match**: SHA-256 hash on normalized description + file + line
+- **Similarity match**: Jaccard word similarity (0.7 threshold)
+- **Same-file heuristic**: Lower threshold for issues in the same file
+
+### Issue States
+
+| State | Meaning |
+|-------|---------|
+| New | First reported in current iteration |
+| Persistent | Reported in multiple iterations, not yet fixed |
+| Addressed | Previously reported, now resolved |
+
+```go
+tracker := issuetracker.New()
+
+// Add issues from each review iteration
+tracker.AddIteration(firstReviewIssues)
+tracker.AddIteration(secondReviewIssues)
+
+stats := tracker.Stats()
+fmt.Printf("Addressed: %d, Persistent: %d, New: %d\n",
+    stats.Addressed, stats.Persistent, stats.New)
+```
+
+---
+
+## diffverify — Diff Verification
+
+Verifies that code changes actually address the review issues raised.
+
+```go
+verifier := diffverify.NewVerifier()
+
+result := verifier.Verify(unifiedDiff, reviewIssues)
+fmt.Printf("Confidence: %d%%\n", result.Confidence)
+fmt.Printf("Addressed: %d, Unaddressed: %d\n",
+    len(result.Addressed), len(result.Unaddressed))
+```
+
+**Verification strategy:**
+1. Parse unified diffs into added/removed/context lines per file
+2. For each issue, check for keyword matches in additions and removal of problematic patterns
+3. Severity-based heuristics (critical issues require significant changes)
+4. Detect new problems: FIXME comments, debugger statements, etc.
+
+---
+
+## contextpin — File Dependency Tracking
+
+Tracks file dependencies to ensure related files stay in sync during multi-file changes.
+
+```go
+pinner := contextpin.NewContextPinner("/project/root")
+
+// Build dependency graph from imports
+graph := pinner.BuildGraph([]string{"pkg/handler.go"})
+
+// Pin files with checksums
+pin, err := pinner.Pin("agent-1", []string{"pkg/handler.go", "pkg/types.go"}, false)
+
+// Check if files changed since pinning
+valid := pinner.VerifyPin(pin)
+
+// Release pin
+pinner.Unpin(pin)
+```
+
+**Supported import parsing:** Go, Python, JavaScript/TypeScript, Ruby
+
+---
+
+## filesummary — Smart File Summarization
+
+Extracts key information from large files to save tokens.
+
+```go
+summarizer := filesummary.NewSummarizer(200) // threshold: 200 lines
+
+summary := summarizer.Summarize("pkg/handler.go", fileContent)
+// summary.Functions, summary.Classes, summary.Imports, etc.
+
+// Fit within token budget
+compact := summary.ToTokenBudget(2000)
+```
+
+**Strategy:**
+- Files under the threshold: return full content
+- Larger files: extract signatures, imports, type definitions (80% token savings typical)
+
+**Supported languages:** Go, Python, JavaScript, TypeScript, Ruby, Java, Rust, C, C++
+
+---
+
+## testrunner — Test Framework Detection
+
+Auto-detects the project's test framework and runs tests.
+
+```go
+runner := testrunner.NewRunner("/project/root")
+
+// Auto-detect framework
+framework := runner.Detect()
+// framework.Name = "go", framework.Command = "go", framework.Args = ["test", "./..."]
+
+// Run all tests
+result, err := runner.RunAll(ctx)
+fmt.Printf("Passed: %d, Failed: %d, Coverage: %.1f%%\n",
+    result.Passed, result.Failed, result.Coverage)
+
+// Run tests for specific changed files
+result, err = runner.RunForFiles(ctx, []string{"pkg/handler.go"})
+```
+
+**Detected frameworks:** Go (`go test`), Ruby (RSpec/Minitest), Node.js (Jest/Vitest), Python (pytest)

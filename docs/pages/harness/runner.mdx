@@ -1,0 +1,146 @@
+# Pipeline Runner
+
+The `runner` package provides a composable pipeline orchestrator for AI agent harnesses. It coordinates the execute-test-review-refactor loop using role-based interfaces.
+
+## Roles
+
+The runner is configured with role implementations. Two are required, two are optional:
+
+### Required Roles
+
+```go
+// Developer generates and refactors code
+type Developer interface {
+    Execute(ctx context.Context, plan string) error
+    Refactor(ctx context.Context, issues []review.Issue, guidance string) error
+}
+
+// Reviewer evaluates code changes
+type Reviewer interface {
+    Review(ctx context.Context, diff string, context string) (*review.ReviewResult, error)
+}
+```
+
+### Optional Roles
+
+```go
+// Planner creates an implementation strategy before execution
+type Planner interface {
+    Plan(ctx context.Context, task string) (string, error)
+}
+
+// Tester runs the project's test suite
+type Tester interface {
+    RunTests(ctx context.Context) (*testrunner.TestResult, error)
+}
+```
+
+---
+
+## Pipeline Flow
+
+```
+1. Plan (optional)     → Planner.Plan() produces strategy
+2. Execute             → Developer.Execute() generates code
+3. Review Loop (1..N):
+   a. Test (optional)  → Tester.RunTests()
+   b. Review           → Reviewer.Review()
+   c. If passed: break
+   d. Refactor          → Developer.Refactor()
+4. Finalize            → Return Result with metrics
+```
+
+The loop runs up to `MaxIterations` times (default: 3). Each iteration saves a checkpoint, tracks cost, and deduplicates issues.
+
+---
+
+## Configuration
+
+```go
+type Config struct {
+    // Required
+    Developer Developer
+    Reviewer  Reviewer
+
+    // Optional
+    Planner   Planner
+    Tester    Tester
+
+    // Pipeline settings
+    MaxIterations int           // Max review-refactor cycles (default: 3)
+    TaskID        string        // Identifier for checkpoints
+    WorktreePath  string        // Git worktree path
+
+    // Primitive integrations
+    Checkpoint *checkpoint.Manager
+    Cost       *cost.Tracker
+    Issues     *issuetracker.IssueTracker
+}
+```
+
+---
+
+## Usage
+
+```go
+cfg := runner.Config{
+    Developer:     myDeveloper,
+    Reviewer:      myReviewer,
+    Planner:       myPlanner,       // optional
+    Tester:        myTester,        // optional
+    MaxIterations: 3,
+    TaskID:        "ENG-123",
+    WorktreePath:  "/tmp/worktree",
+    Checkpoint:    checkpointMgr,
+    Cost:          costTracker,
+    Issues:        issueTracker,
+}
+
+result, err := runner.Run(ctx, cfg)
+if err != nil {
+    log.Fatal(err)
+}
+
+fmt.Printf("Status: %s\n", result.Status)
+fmt.Printf("Iterations: %d\n", result.Iterations)
+fmt.Printf("Cost: $%.4f\n", result.Cost.Total().TotalCost)
+```
+
+---
+
+## Result
+
+```go
+type Result struct {
+    Status     string              // "success", "failed", "error"
+    Iterations int                 // Number of review cycles completed
+    Steps      []StepRecord        // History of each step
+    Cost       *cost.Tracker       // Aggregated token usage
+    Issues     *issuetracker.Stats // Final issue statistics
+}
+
+type StepRecord struct {
+    Name     string
+    Duration time.Duration
+    Error    error
+    Output   string
+}
+```
+
+---
+
+## Integration with Primitives
+
+The runner integrates with harness primitives at each step:
+
+| Step | Primitives Used |
+|------|----------------|
+| Plan | Memory (best prompts for task type) |
+| Execute | ContextPin (lock related files), FileSummary (reduce token usage) |
+| Test | TestRunner (detect framework, run tests) |
+| Review | Review (canonical issues), Cost (track tokens) |
+| Refactor | IssueTracker (deduplicate), Memory (common issues) |
+| Verify | DiffVerify (check fixes), IssueTracker (track addressed) |
+| Each step | Checkpoint (save progress), Cost (aggregate) |
+
+Step-level primitives (contextpin, memory, filesummary) are used inside your role implementations, not by the runner directly. The runner manages checkpoint, cost, and issue tracking automatically.

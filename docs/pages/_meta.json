@@ -2,6 +2,7 @@
   "index": "Introduction",
   "cli": "BoatmanMode CLI",
   "desktop": "Boatman Desktop",
+  "harness": "Harness Module",
   "architecture": "Architecture",
   "guides": "Guides"
 }

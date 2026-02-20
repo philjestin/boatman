@@ -1,0 +1,84 @@
+# Storage & Data
+
+Boatman Desktop stores all data locally on your machine. No cloud sync is used unless explicitly configured.
+
+## Storage Locations
+
+| Path | Contents |
+|------|----------|
+| `~/.boatman/config.json` | User preferences and settings |
+| `~/.boatman/sessions/` | Chat sessions, tasks, and metadata |
+| `~/.boatman/checkpoints/` | Workflow checkpoints (used by CLI pipeline) |
+| `~/.boatman/memory/` | Per-project learning data (used by CLI pipeline) |
+| `~/.claude/claude_mcp_config.json` | MCP server configurations |
+
+---
+
+## Session Storage
+
+Each session is saved as a JSON file in `~/.boatman/sessions/`.
+
+### What's Stored
+
+- Full conversation history (all messages)
+- Task list with status and metadata (plan, diff, feedback, log)
+- Session state (idle, running, stopped)
+- Mode and mode config (standard, firefighter, boatmanmode)
+- Tags and favorite status
+- Model and reasoning effort settings
+
+### Automatic Persistence
+
+Sessions are saved automatically:
+- After each Claude command completes
+- After BoatmanMode execution finishes
+- When the app shuts down
+
+---
+
+## Storage Management
+
+### View Usage
+
+Go to **Settings > Memory** to see storage configuration.
+
+### Delete Sessions
+
+- **Single session:** Right-click in sidebar > Delete
+- **Bulk cleanup:** Configure auto-cleanup in Settings > Memory
+
+### Export / Import
+
+- **Export:** Right-click session > Export as JSON
+- **Import:** Settings > Import Sessions > Select JSON file
+
+Useful for sharing sessions with team members or moving between machines.
+
+### Auto-Cleanup
+
+Configure in Settings > Memory:
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| Max messages per session | 1000 | Older messages are trimmed |
+| Archive old messages | Enabled | Trimmed messages are archived, not deleted |
+| Auto-cleanup sessions | 30 days | Sessions older than this are removed |
+| Max total sessions | 100 | Oldest sessions pruned when exceeded |
+
+---
+
+## Data Privacy
+
+- All session data stays on your local machine
+- API keys are stored in `~/.boatman/config.json` but never included in session exports
+- Sessions contain your prompts and Claude's responses
+- No telemetry or usage data is sent externally
+
+---
+
+## CLI Storage
+
+The CLI pipeline (used by BoatmanMode) stores additional data. See [Harness Storage](/harness/storage) for details on:
+
+- **Checkpoints** (`~/.boatman/checkpoints/`) — workflow progress for crash recovery
+- **Memory** (`~/.boatman/memory/`) — learned patterns and preferences per project

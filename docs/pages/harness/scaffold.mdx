@@ -1,0 +1,67 @@
+# Scaffolding
+
+The `scaffold` package generates new Go projects with stub implementations of the harness runner interfaces. Generated projects compile immediately and include provider-specific guidance in comments.
+
+## Usage
+
+```bash
+# From the harness module
+go run ./scaffold -name myagent -out /path/to/output
+```
+
+## What Gets Generated
+
+```
+myagent/
+├── go.mod
+├── main.go            # Entry point with runner.Run()
+├── developer.go       # Developer interface stubs (Execute, Refactor)
+├── reviewer.go        # Reviewer interface stub (Review)
+├── planner.go         # Planner interface stub (Plan) [optional]
+├── tester.go          # Tester interface stub (RunTests) [optional]
+└── README.md          # Getting started instructions
+```
+
+### Generated Stubs
+
+Each file contains a working implementation with `TODO` comments indicating where to add your LLM-specific logic:
+
+```go
+// developer.go
+type MyDeveloper struct{}
+
+func (d *MyDeveloper) Execute(ctx context.Context, plan string) error {
+    // TODO: Call your LLM to generate code based on the plan.
+    // Example with Claude:
+    //   resp, err := claude.Complete(ctx, plan)
+    //   writeFiles(resp.Files)
+    return nil
+}
+
+func (d *MyDeveloper) Refactor(ctx context.Context, issues []review.Issue, guidance string) error {
+    // TODO: Call your LLM to fix the reported issues.
+    return nil
+}
+```
+
+## Integration
+
+The generated project imports the harness module and wires up the runner:
+
+```go
+func main() {
+    cfg := runner.Config{
+        Developer:     &MyDeveloper{},
+        Reviewer:      &MyReviewer{},
+        MaxIterations: 3,
+    }
+
+    result, err := runner.Run(context.Background(), cfg)
+    if err != nil {
+        log.Fatal(err)
+    }
+    fmt.Printf("Result: %s (%d iterations)\n", result.Status, result.Iterations)
+}
+```
+
+Add checkpoint, cost, memory, or any other primitives as needed. See [Primitives](/harness/primitives) for the full list.

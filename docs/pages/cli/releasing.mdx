@@ -129,6 +129,28 @@ ls -lh dist/
 
 ---
 
+## Deploy Documentation
+
+The documentation site (`docs/`) is hosted on Vercel. After any release that includes documentation changes, deploy the updated site:
+
+```bash
+# Production deploy
+cd docs
+npm install
+npx vercel --prod
+```
+
+For preview deployments (e.g., before merging a docs PR):
+
+```bash
+cd docs
+npx vercel
+```
+
+The Vercel project is already linked via `docs/.vercel/project.json`. If prompted, use the existing project settings.
+
+---
+
 ## Configuration Files
 
 | File | Purpose |
@@ -139,3 +161,4 @@ ls -lh dist/
 | `.goreleaser.yml` | GoReleaser configuration |
 | `cmd/boatman/main.go` | Version variable definitions |
 | `internal/cli/version.go` | Version command implementation |
+| `docs/.vercel/project.json` | Vercel project configuration |

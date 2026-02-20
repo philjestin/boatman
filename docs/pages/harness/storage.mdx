@@ -1,0 +1,142 @@
+# Storage & Persistence
+
+The harness module uses local file storage for checkpoints and memory. All data is stored under `~/.boatman/` by default.
+
+## Storage Layout
+
+```
+~/.boatman/
+├── checkpoints/                    # Resumable workflow state
+│   ├── ENG-123-1708300000.json
+│   └── ENG-456-1708301000.json
+├── memory/                         # Per-project learning
+│   ├── p3a7f2b1c.json             # Hash of project path
+│   └── p9e4d8a2f.json
+└── sessions/                       # Desktop app sessions (see below)
+```
+
+---
+
+## Checkpoint Storage
+
+Checkpoints save workflow progress so pipelines can resume after crashes or interruptions.
+
+**Location:** `~/.boatman/checkpoints/{ticketID}-{timestamp}.json`
+
+### What's Persisted
+
+| Field | Description |
+|-------|-------------|
+| `ticketID` | Task identifier |
+| `worktreePath` | Git worktree directory |
+| `branch` | Working branch name |
+| `currentStep` | Last completed pipeline step |
+| `stepHistory` | Timing and error info for each step |
+| `iteration` | Current review-refactor cycle number |
+| `state` | Arbitrary per-step JSON data |
+
+### Lifecycle
+
+```
+Pipeline starts → checkpoint.Start()
+  ↓
+Each step completes → checkpoint.Save()
+  ↓
+Pipeline crashes → (checkpoint persists on disk)
+  ↓
+Pipeline resumes → checkpoint.ResumeLatest(ticketID)
+  ↓
+Pipeline completes → checkpoint.Delete()
+```
+
+### Cleanup
+
+Old checkpoints can be removed manually or with:
+
+```go
+mgr.Cleanup(7 * 24 * time.Hour) // Remove checkpoints older than 7 days
+```
+
+---
+
+## Memory Storage
+
+Memory persists patterns, issues, and preferences learned across sessions for a given project.
+
+**Location:** `~/.boatman/memory/p{hash}.json` (SHA-256 hash of project path)
+
+### What's Persisted
+
+| Category | Max Entries | Ranked By | Description |
+|----------|------------|-----------|-------------|
+| Patterns | 100 | Weight | Code patterns from successful PRs |
+| Common Issues | 50 | Frequency | Frequently raised review issues |
+| Prompts | 20 | Score | Prompts that led to passing reviews |
+| Preferences | Unlimited | - | Test framework, naming conventions, style |
+| Statistics | 1 | - | Success rate, avg iterations, avg duration |
+
+### Learning Lifecycle
+
+```
+Session completes successfully
+  ↓
+Analyzer extracts patterns from changed files
+  ↓
+memory.LearnPattern() — adds/updates pattern with success rate
+memory.LearnIssue() — records common issues with frequency
+memory.LearnPrompt() — stores prompt with quality score
+memory.UpdateStats() — updates success metrics
+  ↓
+store.Save() — writes to disk
+  ↓
+Next session for same project
+  ↓
+store.Load() — reads from disk into cache
+  ↓
+mem.GetPatternsForFile() — returns relevant patterns
+mem.ToContext(budget) — formats as agent context
+```
+
+### Auto-Limiting
+
+Memory files are bounded to prevent unbounded growth:
+- Patterns exceeding 100 are pruned by lowest weight
+- Issues exceeding 50 are pruned by lowest frequency
+- Prompts exceeding 20 are pruned by lowest score
+
+---
+
+## Desktop Session Storage
+
+The desktop app stores session data separately from harness primitives.
+
+**Location:** `~/.boatman/sessions/{sessionID}.json`
+
+### What's Persisted
+
+| Field | Description |
+|-------|-------------|
+| `messages` | Full conversation history |
+| `tasks` | Task list with status and metadata |
+| `status` | Session state (idle, running, stopped) |
+| `tags` | User-applied tags |
+| `isFavorite` | Favorite flag |
+| `modeConfig` | Mode-specific config (worktree path, base branch) |
+
+### Management
+
+From the desktop app:
+
+- **View storage**: Settings > Storage shows total usage
+- **Export**: Right-click session > Export as JSON
+- **Import**: Settings > Import Sessions > Select JSON file
+- **Delete**: Right-click session > Delete
+- **Bulk cleanup**: Settings > Storage > Clean up by date range
+- **Auto-cleanup**: Configurable retention period (default: 30 days)
+
+### Data Privacy
+
+- All data is stored locally on your machine
+- No cloud sync unless explicitly configured
+- Sessions contain prompts and responses but never API keys
+- Export/import is useful for sharing sessions or moving between machines

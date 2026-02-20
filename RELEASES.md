@@ -98,9 +98,32 @@ cd frontend && npm test
 
 - [ ] Verify GitHub release created
 - [ ] Download and test release artifacts
-- [ ] Update documentation site
+- [ ] Deploy documentation site (see below)
 - [ ] Announce release
 - [ ] Close milestone (if using)
+
+### Deploy Documentation Site
+
+The documentation site (`docs/`) is hosted on Vercel. After any release that includes documentation changes, deploy the updated site:
+
+```bash
+# Install Vercel CLI if needed
+npm i -g vercel
+
+# Deploy from the docs directory
+cd docs
+npm install
+npx vercel --prod
+```
+
+For preview deployments (before merging):
+
+```bash
+cd docs
+npx vercel
+```
+
+The Vercel project is already linked via `docs/.vercel/project.json`. If prompted, use the existing project settings.
 
 ## Release Types
 
