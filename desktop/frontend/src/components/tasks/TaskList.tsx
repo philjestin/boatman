@@ -12,12 +12,15 @@ export function TaskList({ tasks, onTaskClick }: TaskListProps) {
   const inProgressTasks = tasks.filter((t) => t.status === 'in_progress');
   const completedTasks = tasks.filter((t) => t.status === 'completed');
 
+  // Only count tasks with recognized statuses (excludes deleted/hidden tasks)
+  const visibleTotal = pendingTasks.length + inProgressTasks.length + completedTasks.length;
+
   const progress =
-    tasks.length > 0
-      ? Math.round((completedTasks.length / tasks.length) * 100)
+    visibleTotal > 0
+      ? Math.round((completedTasks.length / visibleTotal) * 100)
       : 0;
 
-  if (tasks.length === 0) {
+  if (visibleTotal === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-8 text-center">
         <ClipboardList className="w-12 h-12 text-slate-600 mb-3" />
@@ -36,7 +39,7 @@ export function TaskList({ tasks, onTaskClick }: TaskListProps) {
         <div className="flex items-center justify-between text-xs">
           <span className="text-slate-400">Progress</span>
           <span className="text-slate-300">
-            {completedTasks.length} / {tasks.length} completed
+            {completedTasks.length} / {visibleTotal} completed
           </span>
         </div>
         <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
