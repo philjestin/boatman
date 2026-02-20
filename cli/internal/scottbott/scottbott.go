@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/philjestin/boatman-ecosystem/harness/review"
 	"github.com/philjestin/boatmanmode/internal/config"
 	"github.com/philjestin/boatmanmode/internal/cost"
 )
@@ -33,6 +34,28 @@ type Issue struct {
 	Line        int    `json:"line"`
 	Description string `json:"description"`
 	Suggestion  string `json:"suggestion"`
+}
+
+// IssueToReviewIssue converts a scottbott Issue to a review.Issue.
+func IssueToReviewIssue(issue Issue) review.Issue {
+	return review.Issue{
+		Severity:    issue.Severity,
+		File:        issue.File,
+		Line:        issue.Line,
+		Description: issue.Description,
+		Suggestion:  issue.Suggestion,
+	}
+}
+
+// ReviewIssueToIssue converts a review.Issue to a scottbott Issue.
+func ReviewIssueToIssue(issue review.Issue) Issue {
+	return Issue{
+		Severity:    issue.Severity,
+		File:        issue.File,
+		Line:        issue.Line,
+		Description: issue.Description,
+		Suggestion:  issue.Suggestion,
+	}
 }
 
 // ScottBott invokes the review skill.

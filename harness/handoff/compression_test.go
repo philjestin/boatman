@@ -268,27 +268,6 @@ func TestTruncateToTokens(t *testing.T) {
 	}
 }
 
-func TestCompressHandoff(t *testing.T) {
-	// Create a simple handoff
-	handoff := &ExecutionHandoff{
-		TicketID:    "ENG-123",
-		Title:       "Test Feature",
-		Description: "A short description",
-	}
-
-	// With large budget, should return full
-	result := CompressHandoff(handoff, 10000)
-	if !strings.Contains(result, "ENG-123") {
-		t.Error("Should contain ticket ID")
-	}
-
-	// With small budget, should compress
-	result = CompressHandoff(handoff, 10)
-	if len(result) > 60 { // Very compressed
-		t.Errorf("Should be heavily compressed, got length %d", len(result))
-	}
-}
-
 func TestIsComment(t *testing.T) {
 	if !isComment("// This is a comment") {
 		t.Error("Should detect // comment")

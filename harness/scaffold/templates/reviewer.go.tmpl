@@ -1,0 +1,22 @@
+package main
+
+import (
+	"context"
+
+	"{{.HarnessImport}}/review"
+)
+
+// Reviewer implements review.Reviewer using {{.ProviderMeta.Name}}.
+type Reviewer struct{}
+
+// Review implements review.Reviewer. It examines the diff in the context of
+// the task description and returns structured feedback.
+func (r *Reviewer) Review(ctx context.Context, diff string, reviewContext string) (*review.ReviewResult, error) {
+	{{.ProviderMeta.ReviewHint}}
+
+	return &review.ReviewResult{
+		Passed:  true,
+		Score:   0,
+		Summary: "TODO: implement Review",
+	}, nil
+}

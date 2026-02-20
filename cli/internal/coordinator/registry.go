@@ -4,6 +4,8 @@ package coordinator
 import (
 	"context"
 	"sync"
+
+	harnesshandoff "github.com/philjestin/boatman-ecosystem/harness/handoff"
 )
 
 // AgentCapability describes what an agent can do.
@@ -43,16 +45,8 @@ type Agent interface {
 }
 
 // Handoff is the interface for passing context between agents.
-type Handoff interface {
-	// Full returns the complete context
-	Full() string
-	// Concise returns a summary suitable for quick handoffs
-	Concise() string
-	// ForTokenBudget returns context sized to fit within token budget
-	ForTokenBudget(maxTokens int) string
-	// Type returns the handoff type for routing
-	Type() string
-}
+// This is a type alias for the harness handoff.Handoff interface.
+type Handoff = harnesshandoff.Handoff
 
 // Registry manages agent registration and lookup.
 type Registry struct {

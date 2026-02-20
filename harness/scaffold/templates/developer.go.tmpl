@@ -1,0 +1,38 @@
+package main
+
+import (
+	"context"
+
+	"{{.HarnessImport}}/review"
+	"{{.HarnessImport}}/runner"
+)
+
+// Developer implements runner.Developer using {{.ProviderMeta.Name}}.
+type Developer struct {
+	WorkDir string
+}
+
+// Execute implements runner.Developer. It receives the request and an optional
+// plan, then makes code changes and returns the result.
+func (d *Developer) Execute(ctx context.Context, req *runner.Request, plan *runner.Plan) (*runner.ExecuteResult, error) {
+	{{.ProviderMeta.ExecuteHint}}
+
+	return &runner.ExecuteResult{
+		FilesChanged: []string{},
+		Diff:         "",
+		Summary:      "TODO: implement Execute",
+	}, nil
+}
+
+// Refactor implements runner.Developer. It receives review feedback and the
+// previous result, then fixes issues and returns the updated result.
+func (d *Developer) Refactor(ctx context.Context, req *runner.Request, issues []review.Issue,
+	guidance string, prevResult *runner.ExecuteResult) (*runner.RefactorResult, error) {
+	{{.ProviderMeta.RefactorHint}}
+
+	return &runner.RefactorResult{
+		FilesChanged: []string{},
+		Diff:         "",
+		Summary:      "TODO: implement Refactor",
+	}, nil
+}

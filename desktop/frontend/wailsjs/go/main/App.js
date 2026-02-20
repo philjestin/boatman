@@ -98,6 +98,10 @@ export function GetAutoCleanupSessions() {
   return window['go']['main']['App']['GetAutoCleanupSessions']();
 }
 
+export function GetBoatmanModeSessionConfig(arg1) {
+  return window['go']['main']['App']['GetBoatmanModeSessionConfig'](arg1);
+}
+
 export function GetClaudeCLIVersion() {
   return window['go']['main']['App']['GetClaudeCLIVersion']();
 }
@@ -110,16 +114,8 @@ export function GetGCloudAuthInfo() {
   return window['go']['main']['App']['GetGCloudAuthInfo']();
 }
 
-export function GetBoatmanModeSessionConfig(arg1) {
-  return window['go']['main']['App']['GetBoatmanModeSessionConfig'](arg1);
-}
-
 export function GetGitDiff(arg1, arg2) {
   return window['go']['main']['App']['GetGitDiff'](arg1, arg2);
-}
-
-export function GetWorktreeDiff(arg1, arg2) {
-  return window['go']['main']['App']['GetWorktreeDiff'](arg1, arg2);
 }
 
 export function GetGitStatus(arg1) {
@@ -180,6 +176,10 @@ export function GetSideBySideDiff(arg1) {
 
 export function GetWorkspaceInfo(arg1) {
   return window['go']['main']['App']['GetWorkspaceInfo'](arg1);
+}
+
+export function GetWorktreeDiff(arg1, arg2) {
+  return window['go']['main']['App']['GetWorktreeDiff'](arg1, arg2);
 }
 
 export function HandleBoatmanModeEvent(arg1, arg2, arg3) {

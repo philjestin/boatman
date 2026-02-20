@@ -1,0 +1,27 @@
+package main
+
+import (
+	"context"
+
+	"{{.HarnessImport}}/runner"
+)
+
+// Tester implements runner.Tester.
+// It runs tests for {{.LangTestCommand}} projects.
+type Tester struct {
+	Lang string
+}
+
+// Test implements runner.Tester. It runs the project's test suite and
+// reports whether tests pass, along with coverage information.
+func (t *Tester) Test(ctx context.Context, req *runner.Request, changedFiles []string) (*runner.TestResult, error) {
+	{{.ProviderMeta.TestHint}}
+	// Suggested command: {{.LangTestCommand}}
+
+	return &runner.TestResult{
+		Passed:      true,
+		Output:      "TODO: implement Test",
+		FailedTests: nil,
+		Coverage:    0,
+	}, nil
+}

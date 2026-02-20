@@ -713,7 +713,6 @@ func TestConcurrentSessionAccess(t *testing.T) {
 // TestMultiSessionManagement tests managing multiple sessions
 func TestMultiSessionManagement(t *testing.T) {
 	m := NewManager()
-	m.SetContext(context.Background())
 
 	// Create sessions for different projects
 	projects := []string{"/project1", "/project2", "/project3"}

@@ -55,6 +55,7 @@ func NewApp() *App {
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	a.agentManager.SetContext(ctx)
+	a.agentManager.SetWailsReady()
 	a.agentManager.SetAuthConfigGetter(func() agent.AuthConfig {
 		prefs := a.config.GetPreferences()
 		gcpProjectID, gcpRegion := a.config.GetGCPConfig()

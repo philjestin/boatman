@@ -55,17 +55,15 @@ export function GetArchiveOldMessages():Promise<boolean>;
 
 export function GetAutoCleanupSessions():Promise<boolean>;
 
+export function GetBoatmanModeSessionConfig(arg1:string):Promise<Record<string, any>>;
+
 export function GetClaudeCLIVersion():Promise<string>;
 
 export function GetFirefighterMonitorStatus(arg1:string):Promise<Record<string, any>>;
 
 export function GetGCloudAuthInfo():Promise<Record<string, any>>;
 
-export function GetBoatmanModeSessionConfig(arg1:string):Promise<Record<string, any>>;
-
 export function GetGitDiff(arg1:string,arg2:string):Promise<string>;
-
-export function GetWorktreeDiff(arg1:string,arg2:string):Promise<string>;
 
 export function GetGitStatus(arg1:string):Promise<main.GitStatus>;
 
@@ -96,6 +94,8 @@ export function GetSessionStats():Promise<Record<string, any>>;
 export function GetSideBySideDiff(arg1:diff.FileDiff):Promise<Array<diff.SideBySideLine>>;
 
 export function GetWorkspaceInfo(arg1:string):Promise<project.WorkspaceInfo>;
+
+export function GetWorktreeDiff(arg1:string,arg2:string):Promise<string>;
 
 export function HandleBoatmanModeEvent(arg1:string,arg2:string,arg3:Record<string, any>):Promise<void>;
 

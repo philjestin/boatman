@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/philjestin/boatmanmode/internal/scottbott"
+	"github.com/philjestin/boatman-ecosystem/harness/review"
 )
 
 func TestParseDiff(t *testing.T) {
@@ -13,7 +13,7 @@ func TestParseDiff(t *testing.T) {
 +++ b/file.go
 @@ -1,5 +1,6 @@
  package main
- 
+
 +import "fmt"
 +
  func main() {
@@ -44,7 +44,7 @@ func TestParseDiff(t *testing.T) {
 func TestVerifyIssueAddressed(t *testing.T) {
 	agent := New("/tmp")
 
-	issues := []scottbott.Issue{
+	issues := []review.Issue{
 		{
 			Severity:    "major",
 			Description: "Use fmt.Println instead of println",
@@ -87,7 +87,7 @@ func TestVerifyIssueAddressed(t *testing.T) {
 func TestVerifyIssueNotAddressed(t *testing.T) {
 	agent := New("/tmp")
 
-	issues := []scottbott.Issue{
+	issues := []review.Issue{
 		{
 			Severity:    "major",
 			Description: "Add error handling",
@@ -198,7 +198,7 @@ func TestVerificationHandoff(t *testing.T) {
 		AllAddressed: true,
 		AddressedIssues: []AddressedIssue{
 			{
-				Original:    scottbott.Issue{Severity: "major", Description: "Fix error"},
+				Original:    review.Issue{Severity: "major", Description: "Fix error"},
 				FixEvidence: "Added error handling",
 			},
 		},
@@ -227,7 +227,7 @@ func TestVerificationHandoff(t *testing.T) {
 
 func TestVerifyHandoff(t *testing.T) {
 	handoff := &VerifyHandoff{
-		Issues: []scottbott.Issue{
+		Issues: []review.Issue{
 			{Severity: "major", Description: "Test issue"},
 		},
 		OldDiff: "old diff content",
@@ -247,7 +247,7 @@ func TestVerifyHandoff(t *testing.T) {
 func TestConfidenceCalculation(t *testing.T) {
 	agent := New("/tmp")
 
-	issues := []scottbott.Issue{
+	issues := []review.Issue{
 		{Severity: "major", Description: "Issue 1"},
 		{Severity: "major", Description: "Issue 2"},
 	}

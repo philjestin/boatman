@@ -1,0 +1,22 @@
+package main
+
+import (
+	"context"
+
+	"{{.HarnessImport}}/runner"
+)
+
+// Planner implements runner.Planner using {{.ProviderMeta.Name}}.
+type Planner struct{}
+
+// Plan implements runner.Planner. It analyzes the request and produces
+// a structured plan with steps and relevant files.
+func (p *Planner) Plan(ctx context.Context, req *runner.Request) (*runner.Plan, error) {
+	{{.ProviderMeta.PlanHint}}
+
+	return &runner.Plan{
+		Summary:       "TODO: implement Plan",
+		Steps:         []string{"TODO: add planning steps"},
+		RelevantFiles: []string{},
+	}, nil
+}

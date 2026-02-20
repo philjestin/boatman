@@ -317,8 +317,9 @@ func (s *Session) runClaudeCommand(prompt string, authConfig AuthConfig) {
 	}
 
 	if s.ReasoningEffort != "" {
-		args = append(args, "--reasoning-effort", s.ReasoningEffort)
+		args = append(args, "--effort", s.ReasoningEffort)
 	}
+
 
 	// MCP servers are automatically loaded from ~/.claude/claude_mcp_config.json
 	// No need to pass them as command-line arguments
@@ -469,8 +470,26 @@ func (s *Session) parseStreamLine(line string, responseBuilder *strings.Builder,
 		}
 
 	case "user":
-		// User message event - just log for now
+		// User message event - extract content and display in UI
 		fmt.Println("[user event] Received user message event")
+		if message, ok := event["message"].(map[string]any); ok {
+			if content, ok := message["content"].([]any); ok {
+				var textParts []string
+				for _, block := range content {
+					if textBlock, ok := block.(map[string]any); ok {
+						if textBlock["type"] == "text" {
+							if text, ok := textBlock["text"].(string); ok {
+								textParts = append(textParts, text)
+							}
+						}
+					}
+				}
+				if len(textParts) > 0 {
+					fullText := strings.Join(textParts, "\n")
+					s.addUserMessage(fullText)
+				}
+			}
+		}
 
 	case "assistant":
 		// Full assistant message
@@ -500,12 +519,11 @@ func (s *Session) parseStreamLine(line string, responseBuilder *strings.Builder,
 			if text, ok := delta["text"].(string); ok {
 				fmt.Printf("[content_block_delta] Received text chunk (len=%d): %s...\n", len(text), truncateString(text, 50))
 				responseBuilder.WriteString(text)
-				// Stream this update to the frontend
-				if *currentMessageID != "" {
-					s.updateStreamingMessage(*currentMessageID, responseBuilder.String())
-				} else {
-					fmt.Println("[content_block_delta] WARNING: No currentMessageID set!")
+				// Create streaming message if not already started
+				if *currentMessageID == "" {
+					*currentMessageID = s.createStreamingMessage()
 				}
+				s.updateStreamingMessage(*currentMessageID, responseBuilder.String())
 			}
 		}
 
@@ -775,6 +793,36 @@ func (s *Session) addAssistantMessage(content string) {
 	msg := Message{
 		ID:        fmt.Sprintf("msg-%d", time.Now().UnixNano()),
 		Role:      "assistant",
+		Content:   content,
+		Timestamp: time.Now(),
+		Metadata: &MessageMetadata{
+			Agent: &agentCopy,
+		},
+	}
+
+	s.Messages = append(s.Messages, msg)
+	s.UpdatedAt = time.Now()
+
+	// Trim messages if needed
+	_ = s.TrimMessagesIfNeeded(s.maxMessages, s.archive)
+
+	if s.onMessage != nil {
+		s.onMessage(msg)
+	}
+}
+
+// addUserMessage adds a user message to the session (e.g., sub-agent prompts)
+func (s *Session) addUserMessage(content string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Get current agent info
+	agentInfo := s.agents[s.currentAgentID]
+	agentCopy := *agentInfo
+
+	msg := Message{
+		ID:        fmt.Sprintf("msg-%d", time.Now().UnixNano()),
+		Role:      "user",
 		Content:   content,
 		Timestamp: time.Now(),
 		Metadata: &MessageMetadata{
@@ -1223,7 +1271,7 @@ func (s *Session) handleUsageInfo(usage map[string]any, isFinal bool) {
 	}
 
 	// Only add message if it's a final update (to avoid spam)
-	if isFinal && (inputTokens > 0 || outputTokens > 0) {
+	if isFinal {
 		fmt.Printf("[handleUsageInfo] Adding usage message to session\n")
 		s.Messages = append(s.Messages, msg)
 		s.UpdatedAt = time.Now()

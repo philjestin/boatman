@@ -3,7 +3,7 @@ package issuetracker
 import (
 	"testing"
 
-	"github.com/philjestin/boatmanmode/internal/scottbott"
+	"github.com/philjestin/boatman-ecosystem/harness/review"
 )
 
 func TestNewTracker(t *testing.T) {
@@ -20,7 +20,7 @@ func TestTrackNewIssues(t *testing.T) {
 	tracker := New()
 	tracker.NextIteration()
 
-	issues := []scottbott.Issue{
+	issues := []review.Issue{
 		{Severity: "major", Description: "Issue one"},
 		{Severity: "minor", Description: "Issue two"},
 	}
@@ -46,14 +46,14 @@ func TestTrackDuplicateIssues(t *testing.T) {
 
 	// First iteration
 	tracker.NextIteration()
-	issues1 := []scottbott.Issue{
+	issues1 := []review.Issue{
 		{Severity: "major", Description: "Missing error handling"},
 	}
 	tracker.Track(issues1)
 
 	// Second iteration - same issue
 	tracker.NextIteration()
-	issues2 := []scottbott.Issue{
+	issues2 := []review.Issue{
 		{Severity: "major", Description: "Missing error handling"},
 	}
 	tracked := tracker.Track(issues2)
@@ -78,14 +78,14 @@ func TestTrackSimilarIssues(t *testing.T) {
 
 	// First iteration
 	tracker.NextIteration()
-	issues1 := []scottbott.Issue{
+	issues1 := []review.Issue{
 		{Severity: "major", Description: "Missing error handling"},
 	}
 	tracker.Track(issues1)
 
 	// Second iteration - exact same issue
 	tracker.NextIteration()
-	issues2 := []scottbott.Issue{
+	issues2 := []review.Issue{
 		{Severity: "major", Description: "Missing error handling"},
 	}
 	tracked := tracker.Track(issues2)
@@ -107,14 +107,14 @@ func TestIssueAddressed(t *testing.T) {
 
 	// First iteration - report issue
 	tracker.NextIteration()
-	issues1 := []scottbott.Issue{
+	issues1 := []review.Issue{
 		{Severity: "major", Description: "Bug in code"},
 	}
 	tracker.Track(issues1)
 
 	// Second iteration - issue not present (fixed)
 	tracker.NextIteration()
-	tracker.Track([]scottbott.Issue{})
+	tracker.Track([]review.Issue{})
 
 	addressed := tracker.GetAddressedIssues()
 	if len(addressed) != 1 {
@@ -131,13 +131,13 @@ func TestGetPersistentIssues(t *testing.T) {
 
 	// First iteration
 	tracker.NextIteration()
-	tracker.Track([]scottbott.Issue{
+	tracker.Track([]review.Issue{
 		{Severity: "major", Description: "Persistent bug"},
 	})
 
 	// Second iteration - same issue
 	tracker.NextIteration()
-	tracker.Track([]scottbott.Issue{
+	tracker.Track([]review.Issue{
 		{Severity: "major", Description: "Persistent bug"},
 	})
 
@@ -151,7 +151,7 @@ func TestGetCriticalIssues(t *testing.T) {
 	tracker := New()
 	tracker.NextIteration()
 
-	tracker.Track([]scottbott.Issue{
+	tracker.Track([]review.Issue{
 		{Severity: "critical", Description: "Critical bug"},
 		{Severity: "major", Description: "Major bug"},
 		{Severity: "minor", Description: "Minor bug"},
@@ -172,7 +172,7 @@ func TestStats(t *testing.T) {
 
 	// First iteration
 	tracker.NextIteration()
-	tracker.Track([]scottbott.Issue{
+	tracker.Track([]review.Issue{
 		{Severity: "critical", Description: "Critical"},
 		{Severity: "major", Description: "Major"},
 		{Severity: "minor", Description: "Minor"},
@@ -195,7 +195,7 @@ func TestStats(t *testing.T) {
 
 	// Second iteration - critical fixed
 	tracker.NextIteration()
-	tracker.Track([]scottbott.Issue{
+	tracker.Track([]review.Issue{
 		{Severity: "major", Description: "Major"},
 		{Severity: "minor", Description: "Minor"},
 	})
@@ -226,13 +226,13 @@ func TestFormatStats(t *testing.T) {
 func TestFormatIssues(t *testing.T) {
 	issues := []TrackedIssue{
 		{
-			Issue:         scottbott.Issue{Severity: "critical", Description: "Critical bug"},
+			Issue:         review.Issue{Severity: "critical", Description: "Critical bug"},
 			ID:            "abc123",
 			FirstSeen:     1,
 			TimesReported: 2,
 		},
 		{
-			Issue:     scottbott.Issue{Severity: "major", Description: "Major bug", File: "file.go", Line: 42},
+			Issue:     review.Issue{Severity: "major", Description: "Major bug", File: "file.go", Line: 42},
 			ID:        "def456",
 			FirstSeen: 2,
 		},
@@ -248,7 +248,7 @@ func TestIssueHistory(t *testing.T) {
 	history := NewIssueHistory()
 
 	// First iteration
-	issues1 := []scottbott.Issue{
+	issues1 := []review.Issue{
 		{Severity: "major", Description: "Bug 1"},
 		{Severity: "minor", Description: "Bug 2"},
 	}
@@ -258,7 +258,7 @@ func TestIssueHistory(t *testing.T) {
 	}
 
 	// Second iteration - one fixed
-	issues2 := []scottbott.Issue{
+	issues2 := []review.Issue{
 		{Severity: "major", Description: "Bug 1"},
 	}
 	tracked2 := history.RecordIteration(issues2)
@@ -310,9 +310,9 @@ func TestCalculateSimilarity(t *testing.T) {
 func TestGenerateIssueID(t *testing.T) {
 	tracker := New()
 
-	issue1 := scottbott.Issue{Severity: "major", Description: "Bug in code"}
-	issue2 := scottbott.Issue{Severity: "major", Description: "Bug in code"}
-	issue3 := scottbott.Issue{Severity: "major", Description: "Different bug"}
+	issue1 := review.Issue{Severity: "major", Description: "Bug in code"}
+	issue2 := review.Issue{Severity: "major", Description: "Bug in code"}
+	issue3 := review.Issue{Severity: "major", Description: "Different bug"}
 
 	id1 := tracker.generateIssueID(issue1)
 	id2 := tracker.generateIssueID(issue2)
@@ -329,7 +329,7 @@ func TestGenerateIssueID(t *testing.T) {
 	}
 
 	// ID should include file when present
-	issue4 := scottbott.Issue{Severity: "major", Description: "Bug in code", File: "file.go"}
+	issue4 := review.Issue{Severity: "major", Description: "Bug in code", File: "file.go"}
 	id4 := tracker.generateIssueID(issue4)
 	if id1 == id4 {
 		t.Error("Issue with file should have different ID")

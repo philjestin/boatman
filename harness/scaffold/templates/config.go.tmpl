@@ -1,0 +1,23 @@
+package main
+
+// AppConfig holds runtime configuration for this agent.
+type AppConfig struct {
+	// MaxIterations is the maximum number of review/refactor cycles.
+	MaxIterations int
+
+	// ProjectLang is the language of the target project (e.g. "go", "python").
+	ProjectLang string
+
+	// ReviewCriteria is an optional description of what the reviewer should focus on.
+	ReviewCriteria string
+}
+
+// LoadConfig returns the application configuration.
+// TODO: Load from environment variables, config file, or CLI flags.
+func LoadConfig() AppConfig {
+	return AppConfig{
+		MaxIterations:  {{.MaxIterations}},
+		ProjectLang:    "{{.ProjectLang}}",
+		ReviewCriteria: "{{.ReviewCriteria}}",
+	}
+}

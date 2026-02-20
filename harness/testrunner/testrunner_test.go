@@ -17,8 +17,8 @@ func TestDetectFrameworkGo(t *testing.T) {
 	// Create go.mod
 	os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module test"), 0644)
 
-	agent := New(tmpDir)
-	framework, err := agent.DetectFramework()
+	runner := New(tmpDir)
+	framework, err := runner.DetectFramework()
 	if err != nil {
 		t.Fatalf("DetectFramework failed: %v", err)
 	}
@@ -46,8 +46,8 @@ func TestDetectFrameworkNode(t *testing.T) {
 		}
 	}`), 0644)
 
-	agent := New(tmpDir)
-	framework, err := agent.DetectFramework()
+	runner := New(tmpDir)
+	framework, err := runner.DetectFramework()
 	if err != nil {
 		t.Fatalf("DetectFramework failed: %v", err)
 	}
@@ -70,8 +70,8 @@ func TestDetectFrameworkRSpec(t *testing.T) {
 		gem 'rspec'
 	`), 0644)
 
-	agent := New(tmpDir)
-	framework, err := agent.DetectFramework()
+	runner := New(tmpDir)
+	framework, err := runner.DetectFramework()
 	if err != nil {
 		t.Fatalf("DetectFramework failed: %v", err)
 	}
@@ -91,8 +91,8 @@ func TestDetectFrameworkPytest(t *testing.T) {
 	// Create pytest.ini
 	os.WriteFile(filepath.Join(tmpDir, "pytest.ini"), []byte("[pytest]"), 0644)
 
-	agent := New(tmpDir)
-	framework, err := agent.DetectFramework()
+	runner := New(tmpDir)
+	framework, err := runner.DetectFramework()
 	if err != nil {
 		t.Fatalf("DetectFramework failed: %v", err)
 	}
@@ -109,39 +109,39 @@ func TestDetectFrameworkNone(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	agent := New(tmpDir)
-	_, err = agent.DetectFramework()
+	runner := New(tmpDir)
+	_, err = runner.DetectFramework()
 	if err == nil {
 		t.Error("Expected error when no framework detected")
 	}
 }
 
 func TestIsTestFile(t *testing.T) {
-	agent := &Agent{}
+	runner := &Runner{}
 
 	goFramework := &Framework{Name: "go"}
-	if !agent.isTestFile("pkg/util_test.go", goFramework) {
+	if !runner.IsTestFile("pkg/util_test.go", goFramework) {
 		t.Error("Should detect Go test file")
 	}
-	if agent.isTestFile("pkg/util.go", goFramework) {
+	if runner.IsTestFile("pkg/util.go", goFramework) {
 		t.Error("Should not detect non-test Go file")
 	}
 
 	rspecFramework := &Framework{Name: "rspec"}
-	if !agent.isTestFile("spec/models/user_spec.rb", rspecFramework) {
+	if !runner.IsTestFile("spec/models/user_spec.rb", rspecFramework) {
 		t.Error("Should detect RSpec test file")
 	}
 
 	jestFramework := &Framework{Name: "jest"}
-	if !agent.isTestFile("src/utils/helper.test.ts", jestFramework) {
+	if !runner.IsTestFile("src/utils/helper.test.ts", jestFramework) {
 		t.Error("Should detect Jest test file")
 	}
-	if !agent.isTestFile("src/utils/helper.spec.js", jestFramework) {
+	if !runner.IsTestFile("src/utils/helper.spec.js", jestFramework) {
 		t.Error("Should detect Jest spec file")
 	}
 
 	pytestFramework := &Framework{Name: "pytest"}
-	if !agent.isTestFile("tests/test_user.py", pytestFramework) {
+	if !runner.IsTestFile("tests/test_user.py", pytestFramework) {
 		t.Error("Should detect pytest test file")
 	}
 }
@@ -158,17 +158,17 @@ func TestFindTestFile(t *testing.T) {
 	os.WriteFile(filepath.Join(tmpDir, "pkg", "util.go"), []byte("package pkg"), 0644)
 	os.WriteFile(filepath.Join(tmpDir, "pkg", "util_test.go"), []byte("package pkg"), 0644)
 
-	agent := New(tmpDir)
+	runner := New(tmpDir)
 	goFramework := &Framework{Name: "go"}
 
-	testFile := agent.findTestFile("pkg/util.go", goFramework)
+	testFile := runner.FindTestFile("pkg/util.go", goFramework)
 	if testFile != "pkg/util_test.go" {
 		t.Errorf("Expected 'pkg/util_test.go', got %s", testFile)
 	}
 }
 
 func TestParseGoOutput(t *testing.T) {
-	agent := &Agent{}
+	runner := &Runner{}
 	result := &TestResult{}
 
 	output := `=== RUN   TestExample
@@ -181,7 +181,7 @@ FAIL
 coverage: 75.5% of statements
 `
 
-	agent.parseGoOutput(result, output)
+	runner.parseGoOutput(result, output)
 
 	if result.PassedTests != 1 {
 		t.Errorf("Expected 1 passed, got %d", result.PassedTests)
@@ -204,7 +204,7 @@ coverage: 75.5% of statements
 }
 
 func TestParseRspecOutput(t *testing.T) {
-	agent := &Agent{}
+	runner := &Runner{}
 	result := &TestResult{}
 
 	output := `
@@ -212,7 +212,7 @@ Finished in 0.5 seconds
 15 examples, 2 failures, 3 pending
 `
 
-	agent.parseRspecOutput(result, output)
+	runner.parseRspecOutput(result, output)
 
 	if result.TotalTests != 15 {
 		t.Errorf("Expected 15 total, got %d", result.TotalTests)
@@ -229,7 +229,7 @@ Finished in 0.5 seconds
 }
 
 func TestParseJestOutput(t *testing.T) {
-	agent := &Agent{}
+	runner := &Runner{}
 	result := &TestResult{}
 
 	output := `
@@ -241,7 +241,7 @@ Time:        2.5 s
 All files |   85.71 |    75 |     100 |   85.71 |
 `
 
-	agent.parseJestOutput(result, output)
+	runner.parseJestOutput(result, output)
 
 	if result.TotalTests != 8 {
 		t.Errorf("Expected 8 total, got %d", result.TotalTests)
@@ -261,7 +261,7 @@ All files |   85.71 |    75 |     100 |   85.71 |
 }
 
 func TestParsePytestOutput(t *testing.T) {
-	agent := &Agent{}
+	runner := &Runner{}
 	result := &TestResult{}
 
 	output := `
@@ -270,7 +270,7 @@ collected 10 items
 5 passed, 2 failed, 3 skipped in 1.23s
 `
 
-	agent.parsePytestOutput(result, output)
+	runner.parsePytestOutput(result, output)
 
 	if result.PassedTests != 5 {
 		t.Errorf("Expected 5 passed, got %d", result.PassedTests)
@@ -334,8 +334,8 @@ func TestRunAllNoFramework(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	agent := New(tmpDir)
-	result, err := agent.RunAll(context.Background())
+	runner := New(tmpDir)
+	result, err := runner.RunAll(context.Background())
 	if err != nil {
 		t.Fatalf("RunAll failed: %v", err)
 	}

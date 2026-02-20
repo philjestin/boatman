@@ -1,6 +1,7 @@
 package git
 
 import (
+	"fmt"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -90,7 +91,7 @@ func (r *Repository) GetDiff(filePath string) (string, error) {
 		// Get all diffs when no file path is specified
 		cmd = exec.Command("git", "diff")
 	} else {
-		cmd = exec.Command("git", "diff", filePath)
+		cmd = exec.Command("git", "diff", "--", filePath)
 	}
 	cmd.Dir = r.path
 	output, err := cmd.Output()
@@ -150,7 +151,7 @@ func (r *Repository) Commit(message string) error {
 // GetCommitHistory returns recent commits
 func (r *Repository) GetCommitHistory(limit int) ([]Commit, error) {
 	format := "%H|%an|%ae|%at|%s"
-	cmd := exec.Command("git", "log", "-n", string(rune(limit)), "--format="+format)
+	cmd := exec.Command("git", "log", "-n", fmt.Sprintf("%d", limit), "--format="+format)
 	cmd.Dir = r.path
 	output, err := cmd.Output()
 	if err != nil {

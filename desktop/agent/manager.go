@@ -32,6 +32,7 @@ type ConfigGetter interface {
 // Manager handles multiple agent sessions
 type Manager struct {
 	ctx              context.Context
+	wailsReady       bool // true after SetContext is called with a valid Wails context
 	sessions         map[string]*Session
 	mu               sync.RWMutex
 	defaultModel     string
@@ -47,9 +48,18 @@ func NewManager() *Manager {
 	}
 }
 
-// SetContext sets the Wails runtime context
+// SetContext sets the Wails runtime context and enables event emission.
+// This should be called from the Wails OnStartup lifecycle hook with the
+// context provided by Wails. Calling with context.Background() or other
+// non-Wails contexts will store the context but not enable event emission.
 func (m *Manager) SetContext(ctx context.Context) {
 	m.ctx = ctx
+}
+
+// SetWailsReady marks the manager as ready to emit Wails events.
+// Call this after SetContext with a valid Wails context.
+func (m *Manager) SetWailsReady() {
+	m.wailsReady = true
 }
 
 // SetDefaultModel sets the default model for new sessions
@@ -190,7 +200,7 @@ func (m *Manager) CreateBoatmanModeSession(projectPath string, input string, mod
 // setupSessionHandlers sets up event handlers for a session
 func (m *Manager) setupSessionHandlers(session *Session, sessionID string) {
 	session.SetMessageHandler(func(msg Message) {
-		if m.ctx != nil {
+		if m.wailsReady {
 			runtime.EventsEmit(m.ctx, "agent:message", map[string]interface{}{
 				"sessionId": sessionID,
 				"message":   msg,
@@ -199,7 +209,7 @@ func (m *Manager) setupSessionHandlers(session *Session, sessionID string) {
 	})
 
 	session.SetTaskHandler(func(task Task) {
-		if m.ctx != nil {
+		if m.wailsReady {
 			runtime.EventsEmit(m.ctx, "agent:task", map[string]interface{}{
 				"sessionId": sessionID,
 				"task":      task,
@@ -208,7 +218,7 @@ func (m *Manager) setupSessionHandlers(session *Session, sessionID string) {
 	})
 
 	session.SetStatusHandler(func(status SessionStatus) {
-		if m.ctx != nil {
+		if m.wailsReady {
 			runtime.EventsEmit(m.ctx, "agent:status", map[string]interface{}{
 				"sessionId": sessionID,
 				"status":    status,

@@ -1,437 +1,260 @@
 package memory
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
-	"time"
+
+	harnessmem "github.com/philjestin/boatman-ecosystem/harness/memory"
 )
 
+// TestTypeAliases verifies that type aliases are properly exported
+func TestTypeAliases(t *testing.T) {
+	// Verify Memory alias
+	var _ Memory = harnessmem.Memory{}
+
+	// Verify Pattern alias
+	var _ Pattern = harnessmem.Pattern{}
+
+	// Verify CommonIssue alias
+	var _ CommonIssue = harnessmem.CommonIssue{}
+
+	// Verify PromptRecord alias
+	var _ PromptRecord = harnessmem.PromptRecord{}
+
+	// Verify Preferences alias
+	var _ Preferences = harnessmem.Preferences{}
+
+	// Verify SessionStats alias
+	var _ SessionStats = harnessmem.SessionStats{}
+
+	// Verify Store alias
+	var _ Store = (*harnessmem.Store)(nil)
+
+	// Verify Analyzer alias
+	var _ Analyzer = (*harnessmem.Analyzer)(nil)
+
+	t.Log("All type aliases verified successfully")
+}
+
+// TestNewStore verifies NewStore function alias works
 func TestNewStore(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "memory-test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	store, err := NewStore(tmpDir)
-	if err != nil {
-		t.Fatalf("NewStore failed: %v", err)
+	// Verify function exists and is callable
+	store := NewStore("/test/path")
+	if store == nil {
+		t.Fatal("NewStore returned nil")
 	}
 
-	if store.baseDir != tmpDir {
-		t.Errorf("Expected baseDir %s, got %s", tmpDir, store.baseDir)
-	}
+	// Verify it creates a harness.Store
+	var _ *harnessmem.Store = store
+
+	t.Log("NewStore alias verified successfully")
 }
 
-func TestGetMemory(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "memory-test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tmpDir)
+// TestNewAnalyzer verifies NewAnalyzer function alias works
+func TestNewAnalyzer(t *testing.T) {
+	store := NewStore("/test/path")
 
-	store, _ := NewStore(tmpDir)
-
-	mem, err := store.Get("/path/to/project")
-	if err != nil {
-		t.Fatalf("Get failed: %v", err)
+	// Verify function exists and is callable
+	analyzer := NewAnalyzer(store)
+	if analyzer == nil {
+		t.Fatal("NewAnalyzer returned nil")
 	}
 
-	if mem == nil {
-		t.Fatal("Memory should not be nil")
-	}
+	// Verify it creates a harness.Analyzer
+	var _ *harnessmem.Analyzer = analyzer
 
-	// Same path should return cached memory
-	mem2, _ := store.Get("/path/to/project")
-	if mem.ProjectID != mem2.ProjectID {
-		t.Error("Same path should return same memory")
-	}
-
-	// Different path should return different memory
-	mem3, _ := store.Get("/different/project")
-	if mem.ProjectID == mem3.ProjectID {
-		t.Error("Different path should return different memory")
-	}
+	t.Log("NewAnalyzer alias verified successfully")
 }
 
-func TestLearnPattern(t *testing.T) {
-	mem := &Memory{
-		Patterns: []Pattern{},
-	}
-
-	pattern := Pattern{
-		ID:          "test-pattern",
-		Type:        "naming",
-		Description: "Use snake_case for variables",
-		Weight:      0.8,
-	}
-
-	mem.LearnPattern(pattern)
-
-	if len(mem.Patterns) != 1 {
-		t.Errorf("Expected 1 pattern, got %d", len(mem.Patterns))
-	}
-
-	// Learn same pattern again - should update
-	pattern.SuccessRate = 0.9
-	mem.LearnPattern(pattern)
-
-	if len(mem.Patterns) != 1 {
-		t.Error("Duplicate pattern should update, not add")
-	}
-	if mem.Patterns[0].UsageCount != 2 {
-		t.Errorf("Expected usage count 2, got %d", mem.Patterns[0].UsageCount)
-	}
-}
-
-func TestLearnIssue(t *testing.T) {
-	mem := &Memory{
-		CommonIssues: []CommonIssue{},
-	}
-
-	issue := CommonIssue{
-		Type:        "style",
-		Description: "Missing error handling",
-		Solution:    "Add error check",
-	}
-
-	mem.LearnIssue(issue)
-
-	if len(mem.CommonIssues) != 1 {
-		t.Errorf("Expected 1 issue, got %d", len(mem.CommonIssues))
-	}
-
-	// Learn similar issue - should update frequency
-	issue2 := CommonIssue{
-		Type:        "style",
-		Description: "Missing error handling in function",
-	}
-	mem.LearnIssue(issue2)
-
-	if len(mem.CommonIssues) != 1 {
-		t.Error("Similar issue should update, not add")
-	}
-	if mem.CommonIssues[0].Frequency != 2 {
-		t.Errorf("Expected frequency 2, got %d", mem.CommonIssues[0].Frequency)
-	}
-}
-
-func TestLearnPrompt(t *testing.T) {
-	mem := &Memory{
-		SuccessfulPrompts: []PromptRecord{},
-	}
-
-	mem.LearnPrompt("feature", "Add the feature", "Success", 85)
-
-	if len(mem.SuccessfulPrompts) != 1 {
-		t.Errorf("Expected 1 prompt, got %d", len(mem.SuccessfulPrompts))
-	}
-
-	if mem.SuccessfulPrompts[0].SuccessScore != 85 {
-		t.Errorf("Expected score 85, got %d", mem.SuccessfulPrompts[0].SuccessScore)
-	}
-}
-
-func TestUpdateStats(t *testing.T) {
-	mem := &Memory{}
-
-	mem.UpdateStats(true, 2, 5*time.Minute)
-
-	if mem.Stats.TotalSessions != 1 {
-		t.Errorf("Expected 1 session, got %d", mem.Stats.TotalSessions)
-	}
-	if mem.Stats.SuccessfulSessions != 1 {
-		t.Errorf("Expected 1 successful, got %d", mem.Stats.SuccessfulSessions)
-	}
-	if mem.Stats.TotalIterations != 2 {
-		t.Errorf("Expected 2 iterations, got %d", mem.Stats.TotalIterations)
-	}
-
-	// Add failed session
-	mem.UpdateStats(false, 3, 10*time.Minute)
-
-	if mem.Stats.TotalSessions != 2 {
-		t.Errorf("Expected 2 sessions, got %d", mem.Stats.TotalSessions)
-	}
-	if mem.Stats.SuccessfulSessions != 1 {
-		t.Error("Successful sessions should still be 1")
-	}
-}
-
-func TestGetPatternsForFile(t *testing.T) {
-	mem := &Memory{
-		Patterns: []Pattern{
-			{ID: "go-1", Type: "naming", Description: "Go pattern", FileMatcher: "*.go", Weight: 0.8},
-			{ID: "rb-1", Type: "naming", Description: "Ruby pattern", FileMatcher: "*.rb", Weight: 0.9},
-			{ID: "all-1", Type: "general", Description: "General pattern", Weight: 0.7},
-		},
-	}
-
-	// Go file - should get at least the Go pattern
-	patterns := mem.GetPatternsForFile("pkg/util.go")
-	if len(patterns) < 1 {
-		t.Errorf("Expected at least 1 pattern for .go file, got %d", len(patterns))
-	}
-
-	// Ruby file - should get at least the Ruby pattern
-	patterns = mem.GetPatternsForFile("app/models/user.rb")
-	if len(patterns) < 1 {
-		t.Errorf("Expected at least 1 pattern for .rb file, got %d", len(patterns))
-	}
-}
-
-func TestGetBestPromptForType(t *testing.T) {
-	mem := &Memory{
-		SuccessfulPrompts: []PromptRecord{
-			{TicketType: "feature", Prompt: "Low score", SuccessScore: 60},
-			{TicketType: "feature", Prompt: "High score", SuccessScore: 90},
-			{TicketType: "bugfix", Prompt: "Other type", SuccessScore: 95},
-		},
-	}
-
-	best := mem.GetBestPromptForType("feature")
-	if best == nil {
-		t.Fatal("Should find best prompt")
-	}
-	if best.SuccessScore != 90 {
-		t.Errorf("Expected score 90, got %d", best.SuccessScore)
-	}
-
-	// Non-existent type
-	none := mem.GetBestPromptForType("nonexistent")
-	if none != nil {
-		t.Error("Should return nil for non-existent type")
-	}
-}
-
-func TestToContext(t *testing.T) {
-	mem := &Memory{
-		Patterns: []Pattern{
-			{Type: "naming", Description: "Use camelCase", Weight: 0.9},
-			{Type: "testing", Description: "Add unit tests", Weight: 0.8},
-		},
-		CommonIssues: []CommonIssue{
-			{Description: "Missing docs", Solution: "Add docstring", Frequency: 3},
-		},
-		Preferences: Preferences{
-			PreferredTestFramework: "go test",
-			NamingConventions:      map[string]string{"functions": "camelCase"},
-		},
-	}
-
-	context := mem.ToContext(10000)
-
-	if context == "" {
-		t.Error("ToContext should return content")
-	}
-
-	// Test truncation
-	shortContext := mem.ToContext(50)
-	if len(shortContext) > 250 { // 50 tokens * ~5 chars
-		t.Error("Should truncate to token budget")
-	}
-}
-
-func TestSaveAndReload(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "memory-test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	store, _ := NewStore(tmpDir)
-	mem, _ := store.Get("/test/project")
-
-	// Add data
-	mem.LearnPattern(Pattern{
-		ID:          "test",
-		Type:        "naming",
-		Description: "Test pattern",
-		Weight:      0.8,
-	})
-	mem.LearnIssue(CommonIssue{
-		Type:        "style",
-		Description: "Test issue",
-	})
-
-	// Save
-	err = store.Save(mem)
-	if err != nil {
-		t.Fatalf("Save failed: %v", err)
-	}
-
-	// Clear cache and reload
-	store.cache = make(map[string]*Memory)
-	mem2, _ := store.Get("/test/project")
-
-	if len(mem2.Patterns) != 1 {
-		t.Errorf("Expected 1 pattern after reload, got %d", len(mem2.Patterns))
-	}
-	if len(mem2.CommonIssues) != 1 {
-		t.Errorf("Expected 1 issue after reload, got %d", len(mem2.CommonIssues))
-	}
-}
-
-func TestFormatStats(t *testing.T) {
-	mem := &Memory{
-		Stats: SessionStats{
-			TotalSessions:      10,
-			SuccessfulSessions: 8,
-			AvgIterationsPerPR: 2.5,
-			AvgDuration:        15 * time.Minute,
-		},
-		Patterns:     make([]Pattern, 5),
-		CommonIssues: make([]CommonIssue, 3),
-	}
-
-	formatted := mem.FormatStats()
-	if formatted == "" {
-		t.Error("FormatStats should return content")
-	}
-}
-
-func TestHashPath(t *testing.T) {
-	hash1 := hashPath("/path/to/project")
-	hash2 := hashPath("/path/to/project")
-	hash3 := hashPath("/different/project")
-
-	if hash1 != hash2 {
-		t.Error("Same path should produce same hash")
-	}
-	if hash1 == hash3 {
-		t.Error("Different paths should produce different hashes")
-	}
-}
-
-func TestSimilar(t *testing.T) {
-	// Identical
-	if !similar("hello world", "hello world") {
-		t.Error("Identical strings should be similar")
-	}
-
-	// Contained
-	if !similar("hello world test", "hello world") {
-		t.Error("Containing strings should be similar")
-	}
-
-	// Word overlap
-	if !similar("error handling missing", "missing error handling code") {
-		t.Error("High word overlap should be similar")
-	}
-
-	// No overlap
-	if similar("hello world", "foo bar") {
-		t.Error("No overlap should not be similar")
-	}
-}
-
-func TestAnalyzer(t *testing.T) {
-	mem := &Memory{
+// TestMemoryStruct tests the Memory struct through alias
+func TestMemoryStruct(t *testing.T) {
+	memory := &Memory{
 		Patterns:     []Pattern{},
 		CommonIssues: []CommonIssue{},
-		Preferences: Preferences{
-			FileOrganization: make(map[string]string),
-		},
+		Preferences:  Preferences{},
 	}
 
-	analyzer := NewAnalyzer(mem)
-
-	// Analyze successful completion
-	files := []string{"pkg/util_test.go", "pkg/util.go"}
-	analyzer.AnalyzeSuccess(files, 85)
-
-	// Should have learned patterns
-	if len(mem.Patterns) == 0 {
-		t.Error("Should learn patterns from success")
+	if memory.Patterns == nil {
+		t.Error("Expected Patterns to be initialized")
 	}
 
-	// Analyze issue
-	analyzer.AnalyzeIssue("major", "Missing security check", "Add validation", "auth.go")
+	if memory.CommonIssues == nil {
+		t.Error("Expected CommonIssues to be initialized")
+	}
 
-	if len(mem.CommonIssues) != 1 {
-		t.Errorf("Expected 1 issue, got %d", len(mem.CommonIssues))
-	}
-	if mem.CommonIssues[0].Type != "security" {
-		t.Errorf("Expected security type, got %s", mem.CommonIssues[0].Type)
-	}
+	t.Log("Memory struct works through alias")
 }
 
-func TestPatternLimit(t *testing.T) {
-	mem := &Memory{
-		Patterns: []Pattern{},
+// TestPatternStruct tests the Pattern struct through alias
+func TestPatternStruct(t *testing.T) {
+	pattern := &Pattern{
+		Type:        "test-pattern",
+		Description: "A test pattern",
+		Frequency:   5,
 	}
 
-	// Add many patterns
-	for i := 0; i < 150; i++ {
-		mem.LearnPattern(Pattern{
-			ID:          string(rune('a' + i%26)) + string(rune('0'+i/26)),
-			Type:        "test",
-			Description: "Pattern",
-			Weight:      float64(i) / 150.0,
-		})
+	if pattern.Type != "test-pattern" {
+		t.Errorf("Expected Type = 'test-pattern', got %s", pattern.Type)
 	}
 
-	// Should be limited to 100
-	if len(mem.Patterns) > 100 {
-		t.Errorf("Patterns should be limited to 100, got %d", len(mem.Patterns))
+	if pattern.Frequency != 5 {
+		t.Errorf("Expected Frequency = 5, got %d", pattern.Frequency)
 	}
+
+	t.Log("Pattern struct works through alias")
 }
 
-func TestCommonIssueLimit(t *testing.T) {
-	mem := &Memory{
-		CommonIssues: []CommonIssue{},
+// TestCommonIssueStruct tests the CommonIssue struct through alias
+func TestCommonIssueStruct(t *testing.T) {
+	issue := &CommonIssue{
+		Description: "Common test issue",
+		Solution:    "Test solution",
+		Count:       3,
 	}
 
-	// Add many issues
-	for i := 0; i < 60; i++ {
-		mem.LearnIssue(CommonIssue{
-			ID:          string(rune('a' + i%26)) + string(rune('0'+i/26)),
-			Type:        "test",
-			Description: "Issue " + string(rune('0'+i)),
-		})
+	if issue.Description != "Common test issue" {
+		t.Errorf("Expected Description = 'Common test issue', got %s", issue.Description)
 	}
 
-	// Should be limited to 50
-	if len(mem.CommonIssues) > 50 {
-		t.Errorf("Issues should be limited to 50, got %d", len(mem.CommonIssues))
+	if issue.Count != 3 {
+		t.Errorf("Expected Count = 3, got %d", issue.Count)
 	}
+
+	t.Log("CommonIssue struct works through alias")
 }
 
-func TestPromptLimit(t *testing.T) {
-	mem := &Memory{
-		SuccessfulPrompts: []PromptRecord{},
+// TestPromptRecordStruct tests the PromptRecord struct through alias
+func TestPromptRecordStruct(t *testing.T) {
+	record := &PromptRecord{
+		Prompt:   "Test prompt",
+		Response: "Test response",
+		Success:  true,
 	}
 
-	// Add many prompts
-	for i := 0; i < 30; i++ {
-		mem.LearnPrompt("feature", "prompt", "result", i*3)
+	if record.Prompt != "Test prompt" {
+		t.Errorf("Expected Prompt = 'Test prompt', got %s", record.Prompt)
 	}
 
-	// Should be limited to 20
-	if len(mem.SuccessfulPrompts) > 20 {
-		t.Errorf("Prompts should be limited to 20, got %d", len(mem.SuccessfulPrompts))
+	if !record.Success {
+		t.Error("Expected Success = true")
 	}
 
-	// Should keep highest scoring
-	for _, p := range mem.SuccessfulPrompts {
-		if p.SuccessScore < 30 {
-			t.Error("Should keep high scoring prompts")
-		}
-	}
+	t.Log("PromptRecord struct works through alias")
 }
 
-func TestDefaultStore(t *testing.T) {
-	// Test with empty baseDir (should use default)
-	store, err := NewStore("")
-	if err != nil {
-		t.Fatalf("NewStore with default path failed: %v", err)
+// TestPreferencesStruct tests the Preferences struct through alias
+func TestPreferencesStruct(t *testing.T) {
+	prefs := &Preferences{
+		CodingStyle:    "golang-standard",
+		TestFramework:  "testing",
+		PreferredTools: []string{"go", "git"},
 	}
 
-	homeDir, _ := os.UserHomeDir()
-	expectedDir := filepath.Join(homeDir, ".boatman", "memory")
-
-	if store.baseDir != expectedDir {
-		t.Errorf("Expected default dir %s, got %s", expectedDir, store.baseDir)
+	if prefs.CodingStyle != "golang-standard" {
+		t.Errorf("Expected CodingStyle = 'golang-standard', got %s", prefs.CodingStyle)
 	}
+
+	if len(prefs.PreferredTools) != 2 {
+		t.Errorf("Expected 2 preferred tools, got %d", len(prefs.PreferredTools))
+	}
+
+	t.Log("Preferences struct works through alias")
+}
+
+// TestSessionStatsStruct tests the SessionStats struct through alias
+func TestSessionStatsStruct(t *testing.T) {
+	stats := &SessionStats{
+		TotalPrompts:     10,
+		SuccessfulPrompts: 8,
+		FailedPrompts:    2,
+	}
+
+	if stats.TotalPrompts != 10 {
+		t.Errorf("Expected TotalPrompts = 10, got %d", stats.TotalPrompts)
+	}
+
+	if stats.SuccessfulPrompts != 8 {
+		t.Errorf("Expected SuccessfulPrompts = 8, got %d", stats.SuccessfulPrompts)
+	}
+
+	t.Log("SessionStats struct works through alias")
+}
+
+// TestStoreBasicOperations tests basic store operations through aliases
+func TestStoreBasicOperations(t *testing.T) {
+	// Create store with temp directory
+	store := NewStore(t.TempDir())
+
+	// Test recording a prompt
+	store.RecordPrompt("test prompt", "test response", true)
+
+	// Test recording a pattern
+	store.RecordPattern("test-pattern", "description")
+
+	// Test recording a common issue
+	store.RecordCommonIssue("issue description", "solution")
+
+	// Test getting memory (will be empty in basic test)
+	memory := store.GetMemory()
+	if memory == nil {
+		t.Error("Expected GetMemory to return non-nil memory")
+	}
+
+	t.Log("Store basic operations work through aliases")
+}
+
+// TestAnalyzerBasicOperations tests basic analyzer operations through aliases
+func TestAnalyzerBasicOperations(t *testing.T) {
+	store := NewStore(t.TempDir())
+	analyzer := NewAnalyzer(store)
+
+	// Record some test data
+	store.RecordPrompt("test prompt 1", "response 1", true)
+	store.RecordPrompt("test prompt 2", "response 2", false)
+	store.RecordPattern("pattern1", "desc1")
+	store.RecordCommonIssue("issue1", "solution1")
+
+	// Test getting session stats
+	stats := analyzer.GetSessionStats()
+	if stats == nil {
+		t.Fatal("Expected GetSessionStats to return non-nil stats")
+	}
+
+	t.Logf("Session stats: total=%d, successful=%d, failed=%d",
+		stats.TotalPrompts, stats.SuccessfulPrompts, stats.FailedPrompts)
+
+	// Test getting patterns
+	patterns := analyzer.GetTopPatterns(10)
+	if patterns == nil {
+		t.Error("Expected GetTopPatterns to return non-nil slice")
+	}
+
+	// Test getting common issues
+	issues := analyzer.GetCommonIssues(10)
+	if issues == nil {
+		t.Error("Expected GetCommonIssues to return non-nil slice")
+	}
+
+	t.Log("Analyzer basic operations work through aliases")
+}
+
+// TestPackageBackwardCompatibility verifies the package maintains backward compatibility
+func TestPackageBackwardCompatibility(t *testing.T) {
+	// This test ensures that code using the old import path still works
+	// by verifying all exported types and functions are available
+
+	// Types
+	var _ Memory
+	var _ Pattern
+	var _ CommonIssue
+	var _ PromptRecord
+	var _ Preferences
+	var _ SessionStats
+	var _ *Store
+	var _ *Analyzer
+
+	// Functions
+	_ = NewStore
+	_ = NewAnalyzer
+
+	t.Log("All exports are available for backward compatibility")
 }

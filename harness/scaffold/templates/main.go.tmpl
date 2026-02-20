@@ -1,0 +1,80 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"os"
+{{- if .IncludeCostTracking}}
+
+	"{{.HarnessImport}}/cost"
+{{- end}}
+	"{{.HarnessImport}}/runner"
+)
+
+func main() {
+	ctx := context.Background()
+
+	workDir, err := os.Getwd()
+	if err != nil {
+		log.Fatalf("failed to get working directory: %v", err)
+	}
+
+	cfg := LoadConfig()
+
+	dev := &Developer{WorkDir: workDir}
+	rev := &Reviewer{}
+
+	opts := []runner.Option{
+		runner.WithMaxIterations(cfg.MaxIterations),
+	}
+
+{{- if .IncludePlanner}}
+
+	planner := &Planner{}
+	opts = append(opts, runner.WithPlanner(planner))
+{{- end}}
+
+{{- if .IncludeTester}}
+
+	tester := &Tester{Lang: cfg.ProjectLang}
+	opts = append(opts, runner.WithTester(tester))
+{{- end}}
+
+{{- if .IncludeCostTracking}}
+
+	costTracker := cost.NewTracker()
+	opts = append(opts, runner.WithCostTracker(costTracker))
+{{- end}}
+
+	r := runner.New(dev, rev, opts...)
+
+	req := &runner.Request{
+		ID:          "task-1",
+		Title:       "TODO: set task title",
+		Description: "TODO: set task description",
+		WorkDir:     workDir,
+	}
+
+	result, err := r.Run(ctx, req)
+	if err != nil {
+		log.Fatalf("runner failed: %v", err)
+	}
+
+	fmt.Printf("Status: %v\n", result.Status)
+	fmt.Printf("Iterations: %d\n", result.Iterations)
+
+	if len(result.FilesChanged) > 0 {
+		fmt.Println("Files changed:")
+		for _, f := range result.FilesChanged {
+			fmt.Printf("  %s\n", f)
+		}
+	}
+
+{{- if .IncludeCostTracking}}
+
+	if costTracker.HasUsage() {
+		fmt.Print(costTracker.Summary())
+	}
+{{- end}}
+}

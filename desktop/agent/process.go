@@ -25,7 +25,7 @@ func (c *ClaudeCLI) IsInstalled() bool {
 
 // GetVersion returns the installed Claude CLI version
 func (c *ClaudeCLI) GetVersion() (string, error) {
-	cmd := exec.Command(c.path, "--version")
+	cmd := exec.Command(c.path, "version")
 	output, err := cmd.Output()
 	if err != nil {
 		return "", err

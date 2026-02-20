@@ -116,7 +116,7 @@ func TestPinWithLock(t *testing.T) {
 
 	pinner := New(tmpDir)
 
-	// Pin with lock
+	// Pin with lock (no FileLock set, so lock request is a no-op)
 	pin, err := pinner.Pin("agent-1", []string{"file.go"}, true)
 	if err != nil {
 		t.Fatalf("Pin with lock failed: %v", err)
@@ -124,6 +124,63 @@ func TestPinWithLock(t *testing.T) {
 
 	if !pin.Locked {
 		t.Error("Pin should be locked")
+	}
+}
+
+func TestPinWithFileLock(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "contextpin-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	os.WriteFile(filepath.Join(tmpDir, "file.go"), []byte("content"), 0644)
+
+	pinner := New(tmpDir)
+
+	// Set up a mock file lock that succeeds
+	mock := &mockFileLock{lockResult: true}
+	pinner.SetFileLock(mock)
+
+	pin, err := pinner.Pin("agent-1", []string{"file.go"}, true)
+	if err != nil {
+		t.Fatalf("Pin with FileLock failed: %v", err)
+	}
+	if !pin.Locked {
+		t.Error("Pin should be locked")
+	}
+	if !mock.lockCalled {
+		t.Error("FileLock.LockFiles should have been called")
+	}
+
+	// Unpin should call UnlockFiles
+	pinner.Unpin("agent-1")
+	if !mock.unlockCalled {
+		t.Error("FileLock.UnlockFiles should have been called")
+	}
+}
+
+func TestPinWithFileLockDenied(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "contextpin-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	os.WriteFile(filepath.Join(tmpDir, "file.go"), []byte("content"), 0644)
+
+	pinner := New(tmpDir)
+
+	// Set up a mock file lock that denies
+	mock := &mockFileLock{lockResult: false}
+	pinner.SetFileLock(mock)
+
+	_, err = pinner.Pin("agent-1", []string{"file.go"}, true)
+	if err == nil {
+		t.Fatal("Pin should fail when FileLock denies lock")
+	}
+	if _, ok := err.(*FileLockError); !ok {
+		t.Errorf("Expected FileLockError, got %T", err)
 	}
 }
 
@@ -250,7 +307,7 @@ func TestGetDependents(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	pinner := New(tmpDir)
-	
+
 	// GetDependents for non-analyzed file
 	dependents := pinner.GetDependents("util.go")
 	// Should return empty or nil for unanalyzed
@@ -329,7 +386,7 @@ func TestPinConsistency(t *testing.T) {
 	os.WriteFile(filepath.Join(tmpDir, "test.go"), []byte(content), 0644)
 
 	pinner := New(tmpDir)
-	
+
 	// Pin file twice - checksums should be same
 	pin1, _ := pinner.Pin("agent-1", []string{"test.go"}, false)
 	pinner.Unpin("agent-1")
@@ -369,4 +426,31 @@ func TestPinHandoff(t *testing.T) {
 	if budget == "" {
 		t.Error("ForTokenBudget() should return content")
 	}
+}
+
+func TestPinHandoffImplementsHandoff(t *testing.T) {
+	pin := &Pin{
+		Files:    []string{"file1.go"},
+		AgentID:  "agent-1",
+		Contents: map[string]string{"file1.go": "content"},
+	}
+
+	// Verify PinHandoff satisfies the Handoff interface
+	var _ Handoff = &PinHandoff{Pin: pin}
+}
+
+// mockFileLock is a test implementation of the FileLock interface.
+type mockFileLock struct {
+	lockResult   bool
+	lockCalled   bool
+	unlockCalled bool
+}
+
+func (m *mockFileLock) LockFiles(ownerID string, files []string) bool {
+	m.lockCalled = true
+	return m.lockResult
+}
+
+func (m *mockFileLock) UnlockFiles(ownerID string, files []string) {
+	m.unlockCalled = true
 }
