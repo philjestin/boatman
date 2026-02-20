@@ -102,11 +102,16 @@ This will:
 ### Desktop
 
 1. Start the app: `make dev`
-2. Open a project
-3. Click "Boatman Mode"
-4. Enter a prompt
-5. Watch the execution in real-time
-6. Click on tasks to see details (diffs, feedback, etc.)
+2. Complete onboarding wizard (first time only)
+3. Open or create a project
+4. Choose a mode:
+   - **Standard Mode**: Chat with Claude for interactive coding
+   - **Boatman Mode**: Autonomous Linear ticket execution
+   - **Firefighter Mode**: Production incident investigation
+5. Watch the execution in real-time with agent logs
+6. Click on tasks to see details (diffs, feedback, plans, issues)
+7. Use search (Cmd+K) to find past sessions
+8. Add favorites and tags to organize your work
 
 ## Project Structure
 
