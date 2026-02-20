@@ -196,15 +196,20 @@ func (i *Integration) StreamExecution(ctx context.Context, sessionID string, inp
 				// Also send formatted output to channel
 				switch event.Type {
 				case "agent_started":
-					outputChan <- fmt.Sprintf("🤖 Agent started: %s\n", event.Name)
+					outputChan <- fmt.Sprintf("Agent started: %s\n", event.Name)
 				case "agent_completed":
-					outputChan <- fmt.Sprintf("✅ Agent completed: %s (status: %s)\n", event.Name, event.Status)
+					outputChan <- fmt.Sprintf("Agent completed: %s (status: %s)\n", event.Name, event.Status)
 				case "task_created":
-					outputChan <- fmt.Sprintf("📋 Task created: %s\n", event.Name)
+					outputChan <- fmt.Sprintf("Task created: %s\n", event.Name)
 				case "task_updated":
-					outputChan <- fmt.Sprintf("📝 Task updated: %s (status: %s)\n", event.Name, event.Status)
+					outputChan <- fmt.Sprintf("Task updated: %s (status: %s)\n", event.Name, event.Status)
 				case "progress":
-					outputChan <- fmt.Sprintf("⏳ %s\n", event.Message)
+					outputChan <- fmt.Sprintf("%s\n", event.Message)
+				case "claude_stream":
+					// Forward raw Claude stream line to the session for parsing
+					if onMessage != nil && event.Message != "" {
+						onMessage("claude_stream", event.Message)
+					}
 				default:
 					outputChan <- line + "\n"
 				}

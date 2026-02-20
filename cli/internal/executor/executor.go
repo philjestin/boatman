@@ -14,6 +14,7 @@ import (
 	"github.com/philjestin/boatmanmode/internal/claude"
 	"github.com/philjestin/boatmanmode/internal/config"
 	"github.com/philjestin/boatmanmode/internal/cost"
+	"github.com/philjestin/boatmanmode/internal/events"
 	"github.com/philjestin/boatmanmode/internal/handoff"
 	"github.com/philjestin/boatmanmode/internal/linear"
 	"github.com/philjestin/boatmanmode/internal/planner"
@@ -52,6 +53,11 @@ func New(worktreePath string, cfg *config.Config) *Executor {
 	}
 	client.EnablePromptCaching = cfg.Claude.EnablePromptCaching
 
+	// Forward Claude stream events for desktop app visibility
+	client.EventForwarder = func(rawLine string) {
+		events.ClaudeStream("executor", rawLine)
+	}
+
 	return &Executor{
 		client:       client,
 		worktreePath: worktreePath,
@@ -76,6 +82,12 @@ func NewRefactorExecutor(worktreePath string, iteration int, cfg *config.Config)
 		client.Model = cfg.Claude.Models.Refactor
 	}
 	client.EnablePromptCaching = cfg.Claude.EnablePromptCaching
+
+	// Forward Claude stream events for desktop app visibility
+	phaseID := fmt.Sprintf("refactor-%d", iteration)
+	client.EventForwarder = func(rawLine string) {
+		events.ClaudeStream(phaseID, rawLine)
+	}
 
 	return &Executor{
 		client:       client,

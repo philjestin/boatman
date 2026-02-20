@@ -13,6 +13,7 @@ import (
 	"github.com/philjestin/boatmanmode/internal/claude"
 	"github.com/philjestin/boatmanmode/internal/config"
 	"github.com/philjestin/boatmanmode/internal/cost"
+	"github.com/philjestin/boatmanmode/internal/events"
 	"github.com/philjestin/boatmanmode/internal/linear"
 	"github.com/philjestin/boatmanmode/internal/task"
 )
@@ -66,6 +67,11 @@ func New(worktreePath string, cfg *config.Config) *Planner {
 
 	// Note: Prompt caching is automatically handled by Claude CLI
 	client.EnablePromptCaching = cfg.Claude.EnablePromptCaching
+
+	// Forward Claude stream events for desktop app visibility
+	client.EventForwarder = func(rawLine string) {
+		events.ClaudeStream("planner", rawLine)
+	}
 
 	return &Planner{
 		client:       client,

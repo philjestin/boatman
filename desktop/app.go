@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"boatman/agent"
@@ -893,8 +894,17 @@ func (a *App) StreamBoatmanModeExecution(sessionID, input, mode, linearAPIKey, p
 		// Create message callback to route messages through the session
 		var onMessage bmintegration.MessageCallback
 		if sessionErr == nil && session != nil {
+			// Persistent stream state for processing Claude stream lines
+			var streamBuilder strings.Builder
+			var streamMsgID string
+
 			onMessage = func(role, content string) {
-				session.AddBoatmanMessage(role, content)
+				if role == "claude_stream" {
+					// Route raw Claude stream-json line through the session parser
+					session.ProcessExternalStreamLine(content, &streamBuilder, &streamMsgID)
+				} else {
+					session.AddBoatmanMessage(role, content)
+				}
 			}
 		}
 
