@@ -820,10 +820,19 @@ func (a *App) ExecuteLinearTicketWithBoatmanMode(linearAPIKey, ticketID, project
 	return nil
 }
 
+// BoatmanModeConfig contains configuration for boatmanmode execution
+type BoatmanModeConfig struct {
+	MaxIterations int    `json:"maxIterations"`
+	BaseBranch    string `json:"baseBranch"`
+	AutoPR        bool   `json:"autoPR"`
+	ReviewSkill   string `json:"reviewSkill"`
+	Timeout       int    `json:"timeout"`
+}
+
 // StreamBoatmanModeExecution runs boatmanmode workflow with streaming output
 // mode can be "ticket" or "prompt"
 // This function returns immediately and runs the execution in the background
-func (a *App) StreamBoatmanModeExecution(sessionID, input, mode, linearAPIKey, projectPath string) error {
+func (a *App) StreamBoatmanModeExecution(sessionID, input, mode, linearAPIKey, projectPath string, config *BoatmanModeConfig) error {
 	// Get auth config using the same mechanism as regular sessions
 	prefs := a.config.GetPreferences()
 	claudeAPIKey := prefs.APIKey
@@ -908,8 +917,28 @@ func (a *App) StreamBoatmanModeExecution(sessionID, input, mode, linearAPIKey, p
 			}
 		}
 
+		// Use default config if not provided
+		if config == nil {
+			config = &BoatmanModeConfig{
+				MaxIterations: 3,
+				BaseBranch:    "main",
+				AutoPR:        true,
+				ReviewSkill:   "peer-review",
+				Timeout:       60,
+			}
+		}
+
+		// Convert to bmintegration.Config
+		bmConfig := &bmintegration.Config{
+			MaxIterations: config.MaxIterations,
+			BaseBranch:    config.BaseBranch,
+			AutoPR:        config.AutoPR,
+			ReviewSkill:   config.ReviewSkill,
+			Timeout:       config.Timeout,
+		}
+
 		// Execute with streaming (use app context for Wails events)
-		_, err := bmIntegration.StreamExecution(a.ctx, sessionID, input, mode, outputChan, onMessage)
+		_, err := bmIntegration.StreamExecution(a.ctx, sessionID, input, mode, outputChan, onMessage, bmConfig)
 		close(outputChan)
 
 		if err != nil {

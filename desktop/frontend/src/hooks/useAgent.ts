@@ -232,7 +232,7 @@ export function useAgent() {
 
   // Create a boatmanmode session
   // mode can be "ticket" or "prompt"
-  const createBoatmanModeSession = useCallback(async (projectPath: string, input: string, mode: string, linearAPIKey: string): Promise<string | null> => {
+  const createBoatmanModeSession = useCallback(async (projectPath: string, input: string, mode: string, linearAPIKey: string, config?: any): Promise<string | null> => {
     try {
       setLoading('sessions', true);
       const info = await CreateBoatmanModeSession(projectPath, input, mode);
@@ -247,7 +247,7 @@ export function useAgent() {
         tags: info.tags || [],
         isFavorite: info.isFavorite || false,
         mode: 'boatmanmode',
-        modeConfig: { input, mode },
+        modeConfig: { input, mode, ...config },
       };
 
       addSession(session);
@@ -256,8 +256,8 @@ export function useAgent() {
       // Start the session
       await StartAgentSession(session.id);
 
-      // Start streaming execution
-      await StreamBoatmanModeExecution(session.id, input, mode, linearAPIKey, projectPath);
+      // Start streaming execution with config
+      await StreamBoatmanModeExecution(session.id, input, mode, linearAPIKey, projectPath, config);
 
       return session.id;
     } catch (err) {

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, Moon, Sun, Bell, BellOff, Shield, Zap, Bot, Server, Key, Eye, EyeOff, Database, Trash2, Plus, Flame } from 'lucide-react';
+import { X, Moon, Sun, Bell, BellOff, Shield, Zap, Bot, Server, Key, Eye, EyeOff, Database, Trash2, Plus, Flame, GitBranch } from 'lucide-react';
 import type { UserPreferences, ApprovalMode, Theme, MCPServer } from '../../types';
 import { CleanupOldSessions, GetSessionStats, GetMCPServers, GetMCPPresets, AddMCPServer, RemoveMCPServer, UpdateMCPServer } from '../../../wailsjs/go/main/App';
 import { MCPServerDialog } from './MCPServerDialog';
@@ -13,7 +13,7 @@ interface SettingsModalProps {
   onSave: (preferences: UserPreferences) => void;
 }
 
-type SettingsTab = 'general' | 'approval' | 'memory' | 'mcp' | 'firefighter' | 'about';
+type SettingsTab = 'general' | 'approval' | 'memory' | 'mcp' | 'firefighter' | 'boatmanmode' | 'about';
 
 export function SettingsModal({ isOpen, onClose, preferences, onSave }: SettingsModalProps) {
   const [activeTab, setActiveTab] = useState<SettingsTab>('general');
@@ -32,6 +32,7 @@ export function SettingsModal({ isOpen, onClose, preferences, onSave }: Settings
     { id: 'memory', label: 'Memory', icon: <Database className="w-4 h-4" /> },
     { id: 'mcp', label: 'MCP Servers', icon: <Server className="w-4 h-4" /> },
     { id: 'firefighter', label: 'Firefighter', icon: <Flame className="w-4 h-4" /> },
+    { id: 'boatmanmode', label: 'Boatman Mode', icon: <GitBranch className="w-4 h-4" /> },
     { id: 'about', label: 'About', icon: <Bot className="w-4 h-4" /> },
   ];
 
@@ -118,6 +119,12 @@ export function SettingsModal({ isOpen, onClose, preferences, onSave }: Settings
                 onLinearAPIKeyChange={(key) =>
                   setLocalPrefs({ ...localPrefs, linearAPIKey: key })
                 }
+              />
+            )}
+            {activeTab === 'boatmanmode' && (
+              <BoatmanModeSettings
+                preferences={localPrefs}
+                onChange={setLocalPrefs}
               />
             )}
             {activeTab === 'about' && <AboutSettings />}
@@ -776,6 +783,114 @@ function MCPSettings({
         onAdd={handleAddServer}
         presets={availablePresets}
       />
+    </div>
+  );
+}
+
+// BoatmanMode Settings Tab
+function BoatmanModeSettings({
+  preferences,
+  onChange,
+}: {
+  preferences: UserPreferences;
+  onChange: (prefs: UserPreferences) => void;
+}) {
+  return (
+    <div className="space-y-6">
+      <div>
+        <h3 className="text-sm font-medium text-slate-100 mb-2">Default Configuration</h3>
+        <p className="text-xs text-slate-400 mb-4">
+          Set default values for BoatmanMode execution. These can be overridden per-session.
+        </p>
+
+        <div className="space-y-4">
+          {/* Max Iterations */}
+          <div>
+            <label className="block text-sm font-medium text-slate-300 mb-2">
+              Max Review Iterations
+            </label>
+            <input
+              type="number"
+              min="1"
+              max="10"
+              value={preferences.boatmanMaxIterations || 3}
+              onChange={(e) => onChange({ ...preferences, boatmanMaxIterations: parseInt(e.target.value) || 3 })}
+              className="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-slate-100 focus:outline-none focus:border-blue-500"
+            />
+            <p className="text-xs text-slate-500 mt-1">
+              Maximum number of review/refactor iterations (default: 3)
+            </p>
+          </div>
+
+          {/* Base Branch */}
+          <div>
+            <label className="block text-sm font-medium text-slate-300 mb-2">
+              Base Branch
+            </label>
+            <input
+              type="text"
+              value={preferences.boatmanBaseBranch || 'main'}
+              onChange={(e) => onChange({ ...preferences, boatmanBaseBranch: e.target.value })}
+              placeholder="main"
+              className="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-blue-500"
+            />
+            <p className="text-xs text-slate-500 mt-1">
+              Default base branch for git worktree (default: main)
+            </p>
+          </div>
+
+          {/* Review Skill */}
+          <div>
+            <label className="block text-sm font-medium text-slate-300 mb-2">
+              Review Skill
+            </label>
+            <input
+              type="text"
+              value={preferences.boatmanReviewSkill || 'peer-review'}
+              onChange={(e) => onChange({ ...preferences, boatmanReviewSkill: e.target.value })}
+              placeholder="peer-review"
+              className="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-blue-500"
+            />
+            <p className="text-xs text-slate-500 mt-1">
+              Claude skill/agent to use for code review (default: peer-review)
+            </p>
+          </div>
+
+          {/* Timeout */}
+          <div>
+            <label className="block text-sm font-medium text-slate-300 mb-2">
+              Agent Timeout (minutes)
+            </label>
+            <input
+              type="number"
+              min="5"
+              max="180"
+              value={preferences.boatmanTimeout || 60}
+              onChange={(e) => onChange({ ...preferences, boatmanTimeout: parseInt(e.target.value) || 60 })}
+              className="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-slate-100 focus:outline-none focus:border-blue-500"
+            />
+            <p className="text-xs text-slate-500 mt-1">
+              Timeout in minutes for each Claude agent (default: 60)
+            </p>
+          </div>
+
+          {/* Auto PR */}
+          <label className="flex items-center justify-between p-4 rounded-lg border border-slate-700 cursor-pointer hover:bg-slate-800 transition-colors">
+            <div>
+              <p className="text-sm text-slate-100">Auto-create Pull Request</p>
+              <p className="text-xs text-slate-400">
+                Automatically create PR when execution succeeds
+              </p>
+            </div>
+            <input
+              type="checkbox"
+              checked={preferences.boatmanAutoPR ?? true}
+              onChange={(e) => onChange({ ...preferences, boatmanAutoPR: e.target.checked })}
+              className="w-4 h-4 rounded"
+            />
+          </label>
+        </div>
+      </div>
     </div>
   );
 }
