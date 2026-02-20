@@ -6,6 +6,7 @@ import {agent} from '../models';
 import {config} from '../models';
 import {project} from '../models';
 import {diff} from '../models';
+import {harnessui} from '../models';
 
 export function AddMCPServer(arg1:mcp.Server):Promise<void>;
 
@@ -115,6 +116,8 @@ export function IsOnboardingCompleted():Promise<boolean>;
 
 export function ListAgentSessions():Promise<Array<main.AgentSessionInfo>>;
 
+export function ListHarnesses():Promise<Array<harnessui.HarnessInfo>>;
+
 export function ListProjects():Promise<Array<project.Project>>;
 
 export function OktaLogin(arg1:string,arg2:string,arg3:string):Promise<void>;
@@ -135,9 +138,15 @@ export function RemoveProject(arg1:string):Promise<void>;
 
 export function RemoveSessionTag(arg1:string,arg2:string):Promise<void>;
 
+export function RunHarness(arg1:string,arg2:harnessui.RunRequest):Promise<void>;
+
+export function ScaffoldHarness(arg1:harnessui.ScaffoldRequest):Promise<harnessui.ScaffoldResponse>;
+
 export function SearchSessions(arg1:main.SearchSessionsRequest):Promise<Array<main.SearchSessionsResponse>>;
 
 export function SelectFolder():Promise<string>;
+
+export function SelectHarnessFolder():Promise<string>;
 
 export function SendAgentMessage(arg1:string,arg2:string):Promise<void>;
 
@@ -158,6 +167,8 @@ export function StartFirefighterMonitoring(arg1:string):Promise<void>;
 export function StopAgentSession(arg1:string):Promise<void>;
 
 export function StopFirefighterMonitoring(arg1:string):Promise<void>;
+
+export function StopHarness(arg1:string):Promise<void>;
 
 export function StreamBoatmanModeExecution(arg1:string,arg2:string,arg3:string,arg4:string,arg5:string):Promise<void>;
 

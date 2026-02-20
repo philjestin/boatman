@@ -13,17 +13,18 @@ import { SearchModal } from './components/search/SearchModal';
 import { FirefighterDialog } from './components/firefighter/FirefighterDialog';
 import { FirefighterMonitor } from './components/firefighter/FirefighterMonitor';
 import { BoatmanModeDialog } from './components/boatmanmode/BoatmanModeDialog';
+import { HarnessView } from './components/harness/HarnessView';
 import { useAgent } from './hooks/useAgent';
 import { useProject } from './hooks/useProject';
 import { usePreferences } from './hooks/usePreferences';
 import { useSearch } from './hooks/useSearch';
 import { useDiff } from './hooks/useDiff';
 import { useStore } from './store';
-import { ListTodo, MessageSquare, FileCode } from 'lucide-react';
+import { ListTodo, MessageSquare, FileCode, Hammer } from 'lucide-react';
 import { ListAgentSessions, SetSessionFavorite, AddSessionTag, RemoveSessionTag } from '../wailsjs/go/main/App';
 import type { Task } from './types';
 
-type TabView = 'chat' | 'tasks' | 'diff';
+type TabView = 'chat' | 'tasks' | 'diff' | 'harness';
 
 function App() {
   const [activeTab, setActiveTab] = useState<TabView>('chat');
@@ -402,23 +403,23 @@ function App() {
 
         {/* Main Content */}
         <MainPanel
-          isEmpty={!hasActiveSession}
+          isEmpty={!hasActiveSession && activeTab !== 'harness'}
           onNewSession={handleNewSession}
           onOpenProject={handleOpenProject}
         >
-          {hasActiveSession && (
-            <>
-              {/* Firefighter Monitor */}
-              {activeSession.mode === 'firefighter' && (
-                <FirefighterMonitor
-                  sessionId={activeSession.id}
-                  isActive={monitoringActive}
-                  onToggle={handleToggleMonitoring}
-                />
-              )}
+          {/* Firefighter Monitor */}
+          {hasActiveSession && activeSession.mode === 'firefighter' && (
+            <FirefighterMonitor
+              sessionId={activeSession.id}
+              isActive={monitoringActive}
+              onToggle={handleToggleMonitoring}
+            />
+          )}
 
-              {/* Tab Navigation */}
-              <div className="flex items-center border-b border-slate-700 bg-slate-800">
+          {/* Tab Navigation - always visible */}
+          <div className="flex items-center border-b border-slate-700 bg-slate-800">
+            {hasActiveSession && (
+              <>
                 <button
                   onClick={() => setActiveTab('chat')}
                   className={`flex items-center gap-2 px-4 py-3 text-sm transition-colors border-b-2 ${
@@ -462,45 +463,57 @@ function App() {
                     </span>
                   )}
                 </button>
-              </div>
+              </>
+            )}
+            <button
+              onClick={() => setActiveTab('harness')}
+              className={`flex items-center gap-2 px-4 py-3 text-sm transition-colors border-b-2 ${
+                activeTab === 'harness'
+                  ? 'border-blue-500 text-slate-100'
+                  : 'border-transparent text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Hammer className="w-4 h-4" />
+              Harness
+            </button>
+          </div>
 
-              {/* Tab Content */}
-              <div className="flex-1 overflow-hidden">
-                {activeTab === 'chat' && (
-                  <ChatView
-                    messages={activeSession.messages}
-                    status={activeSession.status}
-                    onSendMessage={handleSendMessage}
-                    onStop={handleStopSession}
-                    hasMoreMessages={currentPagination?.hasMore ?? false}
-                    onLoadMore={handleLoadMore}
-                    model={activeSession.model}
-                    reasoningEffort={activeSession.reasoningEffort}
-                    onModelChange={handleModelChange}
-                    onReasoningEffortChange={handleReasoningEffortChange}
-                  />
-                )}
-                {activeTab === 'tasks' && (
-                  <div className="p-4 overflow-y-auto h-full">
-                    <TaskList
-                      tasks={activeSession.tasks}
-                      onTaskClick={(task) => setSelectedTask(task)}
-                    />
-                  </div>
-                )}
-                {activeTab === 'diff' && (
-                  <DiffView
-                    diffs={diffs}
-                    sideBySideData={sideBySideData}
-                    onAccept={acceptFile}
-                    onReject={rejectFile}
-                    onAcceptAll={acceptAll}
-                    onRejectAll={rejectAll}
-                  />
-                )}
+          {/* Tab Content */}
+          <div className="flex-1 overflow-hidden">
+            {hasActiveSession && activeTab === 'chat' && (
+              <ChatView
+                messages={activeSession.messages}
+                status={activeSession.status}
+                onSendMessage={handleSendMessage}
+                onStop={handleStopSession}
+                hasMoreMessages={currentPagination?.hasMore ?? false}
+                onLoadMore={handleLoadMore}
+                model={activeSession.model}
+                reasoningEffort={activeSession.reasoningEffort}
+                onModelChange={handleModelChange}
+                onReasoningEffortChange={handleReasoningEffortChange}
+              />
+            )}
+            {hasActiveSession && activeTab === 'tasks' && (
+              <div className="p-4 overflow-y-auto h-full">
+                <TaskList
+                  tasks={activeSession.tasks}
+                  onTaskClick={(task) => setSelectedTask(task)}
+                />
               </div>
-            </>
-          )}
+            )}
+            {hasActiveSession && activeTab === 'diff' && (
+              <DiffView
+                diffs={diffs}
+                sideBySideData={sideBySideData}
+                onAccept={acceptFile}
+                onReject={rejectFile}
+                onAcceptAll={acceptAll}
+                onRejectAll={rejectAll}
+              />
+            )}
+            {activeTab === 'harness' && <HarnessView />}
+          </div>
         </MainPanel>
       </div>
 

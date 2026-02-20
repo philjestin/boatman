@@ -49,10 +49,22 @@ func main() {
 
 	r := runner.New(dev, rev, opts...)
 
+	title := os.Getenv("HARNESS_TASK_TITLE")
+	if title == "" {
+		title = "TODO: set task title"
+	}
+	description := os.Getenv("HARNESS_TASK_DESCRIPTION")
+	if description == "" {
+		description = "TODO: set task description"
+	}
+	if harnessWorkDir := os.Getenv("HARNESS_WORK_DIR"); harnessWorkDir != "" {
+		workDir = harnessWorkDir
+	}
+
 	req := &runner.Request{
 		ID:          "task-1",
-		Title:       "TODO: set task title",
-		Description: "TODO: set task description",
+		Title:       title,
+		Description: description,
 		WorkDir:     workDir,
 	}
 

@@ -322,6 +322,54 @@ export interface LinearTicket {
 }
 
 // =============================================================================
+// Harness Types
+// =============================================================================
+
+export type LLMProvider = 'claude' | 'openai' | 'ollama' | 'generic';
+export type ProjectLanguage = 'go' | 'typescript' | 'python' | 'ruby' | 'generic';
+
+export interface ScaffoldRequest {
+  projectName: string;
+  outputDir: string;
+  provider: LLMProvider;
+  projectLang: ProjectLanguage;
+  includePlanner: boolean;
+  includeTester: boolean;
+  includeCostTracking: boolean;
+  maxIterations: number;
+  reviewCriteria: string;
+}
+
+export interface ScaffoldResponse {
+  outputDir: string;
+  filesCreated: string[];
+}
+
+export interface HarnessInfo {
+  name: string;
+  path: string;
+  hasGoMod: boolean;
+  hasMain: boolean;
+}
+
+export interface RunRequest {
+  harnessPath: string;
+  workDir: string;
+  taskTitle: string;
+  taskDescription: string;
+  envVars: Record<string, string>;
+}
+
+export type HarnessRunStatus = 'idle' | 'running' | 'completed' | 'error';
+
+export interface HarnessRunState {
+  status: HarnessRunStatus;
+  runId: string | null;
+  output: string[];
+  error: string | null;
+}
+
+// =============================================================================
 // Component Props Types
 // =============================================================================
 

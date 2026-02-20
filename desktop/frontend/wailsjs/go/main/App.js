@@ -218,6 +218,10 @@ export function ListAgentSessions() {
   return window['go']['main']['App']['ListAgentSessions']();
 }
 
+export function ListHarnesses() {
+  return window['go']['main']['App']['ListHarnesses']();
+}
+
 export function ListProjects() {
   return window['go']['main']['App']['ListProjects']();
 }
@@ -258,12 +262,24 @@ export function RemoveSessionTag(arg1, arg2) {
   return window['go']['main']['App']['RemoveSessionTag'](arg1, arg2);
 }
 
+export function RunHarness(arg1, arg2) {
+  return window['go']['main']['App']['RunHarness'](arg1, arg2);
+}
+
+export function ScaffoldHarness(arg1) {
+  return window['go']['main']['App']['ScaffoldHarness'](arg1);
+}
+
 export function SearchSessions(arg1) {
   return window['go']['main']['App']['SearchSessions'](arg1);
 }
 
 export function SelectFolder() {
   return window['go']['main']['App']['SelectFolder']();
+}
+
+export function SelectHarnessFolder() {
+  return window['go']['main']['App']['SelectHarnessFolder']();
 }
 
 export function SendAgentMessage(arg1, arg2) {
@@ -304,6 +320,10 @@ export function StopAgentSession(arg1) {
 
 export function StopFirefighterMonitoring(arg1) {
   return window['go']['main']['App']['StopFirefighterMonitoring'](arg1);
+}
+
+export function StopHarness(arg1) {
+  return window['go']['main']['App']['StopHarness'](arg1);
 }
 
 export function StreamBoatmanModeExecution(arg1, arg2, arg3, arg4, arg5) {

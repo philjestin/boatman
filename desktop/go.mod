@@ -4,6 +4,7 @@ go 1.24.1
 
 require (
 	github.com/google/uuid v1.6.0
+	github.com/philjestin/boatman-ecosystem/harness v0.0.0
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c
 	github.com/wailsapp/wails/v2 v2.11.0
 )

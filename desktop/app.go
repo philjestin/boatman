@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"boatman/agent"
@@ -12,6 +13,7 @@ import (
 	"boatman/config"
 	"boatman/diff"
 	gitpkg "boatman/git"
+	"boatman/harnessui"
 	"boatman/mcp"
 	"boatman/project"
 
@@ -25,6 +27,8 @@ type App struct {
 	agentManager   *agent.Manager
 	projectManager *project.ProjectManager
 	mcpManager     *mcp.Manager
+	harnessRuns    map[string]context.CancelFunc
+	harnessMu      sync.Mutex
 }
 
 // NewApp creates a new App application struct
@@ -49,6 +53,7 @@ func NewApp() *App {
 		agentManager:   agent.NewManager(),
 		projectManager: pm,
 		mcpManager:     mcpMgr,
+		harnessRuns:    make(map[string]context.CancelFunc),
 	}
 }
 
@@ -1096,5 +1101,71 @@ func (a *App) SendNotification(title, message string) {
 		Type:    runtime.InfoDialog,
 		Title:   title,
 		Message: message,
+	})
+}
+
+// =============================================================================
+// Harness Methods
+// =============================================================================
+
+// ScaffoldHarness generates a new harness project from the scaffold templates.
+func (a *App) ScaffoldHarness(req harnessui.ScaffoldRequest) (*harnessui.ScaffoldResponse, error) {
+	return harnessui.GenerateScaffold(req)
+}
+
+// ListHarnesses returns all discovered harness projects in ~/.boatman/harnesses/.
+func (a *App) ListHarnesses() ([]harnessui.HarnessInfo, error) {
+	return harnessui.ListHarnesses()
+}
+
+// RunHarness starts a harness subprocess and streams output via events.
+func (a *App) RunHarness(runID string, req harnessui.RunRequest) error {
+	ctx, cancel := context.WithCancel(a.ctx)
+
+	a.harnessMu.Lock()
+	a.harnessRuns[runID] = cancel
+	a.harnessMu.Unlock()
+
+	go func() {
+		defer func() {
+			a.harnessMu.Lock()
+			delete(a.harnessRuns, runID)
+			a.harnessMu.Unlock()
+		}()
+
+		err := harnessui.RunHarness(ctx, a.ctx, runID, req)
+		if err != nil {
+			runtime.EventsEmit(a.ctx, "harness:error", map[string]any{
+				"runId": runID,
+				"error": err.Error(),
+			})
+		} else {
+			runtime.EventsEmit(a.ctx, "harness:complete", map[string]any{
+				"runId": runID,
+			})
+		}
+	}()
+
+	return nil
+}
+
+// StopHarness cancels a running harness subprocess.
+func (a *App) StopHarness(runID string) error {
+	a.harnessMu.Lock()
+	cancel, ok := a.harnessRuns[runID]
+	a.harnessMu.Unlock()
+
+	if !ok {
+		return fmt.Errorf("no running harness with ID %q", runID)
+	}
+
+	cancel()
+	return nil
+}
+
+// SelectHarnessFolder opens a directory selection dialog for harness output.
+func (a *App) SelectHarnessFolder() (string, error) {
+	return runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{
+		Title: "Select Harness Output Folder",
 	})
 }
