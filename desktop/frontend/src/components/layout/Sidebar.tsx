@@ -10,6 +10,7 @@ import {
   Trash2,
   Circle,
   Star,
+  StopCircle,
   MoreVertical,
   Tag,
 } from 'lucide-react';
@@ -25,6 +26,7 @@ interface SidebarProps {
   onSessionSelect: (sessionId: string) => void;
   onProjectSelect: (projectId: string) => void;
   onDeleteSession: (sessionId: string) => void;
+  onStopSession?: (sessionId: string) => void;
   onToggleFavorite?: (sessionId: string) => void;
   onAddTag?: (sessionId: string, tag: string) => void;
   onRemoveTag?: (sessionId: string, tag: string) => void;
@@ -65,6 +67,7 @@ export function Sidebar({
   onSessionSelect,
   onProjectSelect,
   onDeleteSession,
+  onStopSession,
   onToggleFavorite,
   onAddTag,
   onRemoveTag,
@@ -286,16 +289,31 @@ export function Sidebar({
                           </button>
                         </div>
                       ) : (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setTagInputSession(session.id);
-                          }}
-                          className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-slate-300 hover:bg-slate-700 rounded transition-colors"
-                        >
-                          <Tag className="w-3 h-3" />
-                          Add Tag
-                        </button>
+                        <>
+                          {onStopSession && (session.status === 'running' || session.status === 'waiting') && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onStopSession(session.id);
+                                setMenuOpenSession(null);
+                              }}
+                              className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-red-400 hover:bg-slate-700 rounded transition-colors"
+                            >
+                              <StopCircle className="w-3 h-3" />
+                              Stop Session
+                            </button>
+                          )}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setTagInputSession(session.id);
+                            }}
+                            className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-slate-300 hover:bg-slate-700 rounded transition-colors"
+                          >
+                            <Tag className="w-3 h-3" />
+                            Add Tag
+                          </button>
+                        </>
                       )}
                     </div>
                   )}

@@ -57,6 +57,7 @@ An AI-powered development agent that automates ticket execution with peer review
 - Watch Claude work in real-time via tmux
 - See every tool call: file reads, edits, bash commands
 - Full visibility into AI decision-making
+- `claude_stream` events forward raw Claude output for desktop app integration
 
 ### 🌲 Git Worktree Isolation
 - Each ticket works in an isolated worktree
@@ -101,6 +102,7 @@ boatman work ENG-123 | grep '^{' | jq
 **Event Types:**
 - `agent_started` / `agent_completed` - Track each workflow step
 - `progress` - General progress updates
+- `claude_stream` - Raw Claude stream-json lines for full UI visibility
 - `task_created` / `task_updated` - Task lifecycle events (reserved)
 
 **Use Cases:**
@@ -705,7 +707,8 @@ boatmanmode/
 │   ├── contextpin/           # File dependency tracking
 │   ├── coordinator/          # Parallel agent coordination (thread-safe, observable)
 │   ├── diffverify/           # Diff verification agent
-│   ├── executor/             # Code generation
+│   ├── events/               # Event emission (agent_started, claude_stream, etc.)
+│   ├── executor/             # Code generation (with EventForwarder for claude_stream)
 │   ├── filesummary/          # Smart file summarization
 │   ├── github/               # PR creation (gh CLI)
 │   ├── handoff/              # Agent context passing + compression

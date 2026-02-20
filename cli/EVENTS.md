@@ -107,9 +107,52 @@ Not currently emitted by boatmanmode, but supported by the event system for exte
 
 Not currently emitted by boatmanmode, but supported by the event system for external integrations.
 
+### 6. `claude_stream`
+
+Emitted for each raw stream-json line from Claude during execution. This provides full visibility into Claude's work (tool usage, streaming text, etc.) within each workflow phase.
+
+**Fields:**
+- `type`: `"claude_stream"` (required)
+- `id`: Phase identifier (required) - e.g., `"executor"`, `"planner"`, `"refactor-1"`
+- `message`: Raw stream-json line from Claude (required)
+
+**Example:**
+```json
+{
+  "type": "claude_stream",
+  "id": "executor",
+  "message": "{\"type\":\"content_block_delta\",\"content\":\"Implementing the feature...\"}"
+}
+```
+
+**When Emitted:**
+- During every Claude CLI interaction within executor, planner, and refactor agents
+- Each line of Claude's `--output-format stream-json` output generates one event
+
+**How It Works:**
+The `claude.Client` struct has an `EventForwarder` callback field. When set, it is called for each raw stream-json line before the line is parsed by the client itself:
+
+```go
+// claude.Client.EventForwarder is called in doStreamingRequest()
+// for each line before parsing
+if c.EventForwarder != nil {
+    c.EventForwarder(line)
+}
+```
+
+The executor and planner set this callback during initialization:
+
+```go
+client.EventForwarder = func(rawLine string) {
+    events.ClaudeStream("executor", rawLine)
+}
+```
+
+The desktop app's `integration.go` handles `claude_stream` events by forwarding the raw line to `session.ProcessExternalStreamLine()`, which parses it using the same logic as standard mode sessions. This means Claude's tool usage, streaming text, and other events appear in the UI with proper agent attribution.
+
 ## Example Event Flow
 
-Here's a typical event sequence for a successful workflow:
+Here's a typical event sequence for a successful workflow (with `claude_stream` events interspersed):
 
 ```json
 {"type":"agent_started","id":"prepare-ENG-123","name":"Preparing Task","description":"Preparing task ENG-123"}
@@ -117,10 +160,14 @@ Here's a typical event sequence for a successful workflow:
 {"type":"agent_started","id":"worktree-ENG-123","name":"Setup Worktree","description":"Creating isolated git worktree"}
 {"type":"agent_completed","id":"worktree-ENG-123","name":"Setup Worktree","status":"success"}
 {"type":"agent_started","id":"planning-ENG-123","name":"Planning & Analysis","description":"Analyzing codebase and creating implementation plan"}
+{"type":"claude_stream","id":"planner","message":"{\"type\":\"content_block_start\",\"content_block\":{\"type\":\"text\"}}"}
+{"type":"claude_stream","id":"planner","message":"{\"type\":\"content_block_delta\",\"delta\":{\"text\":\"Analyzing...\"}}"}
 {"type":"agent_completed","id":"planning-ENG-123","name":"Planning & Analysis","status":"success"}
 {"type":"agent_started","id":"preflight-ENG-123","name":"Pre-flight Validation","description":"Validating implementation plan"}
 {"type":"agent_completed","id":"preflight-ENG-123","name":"Pre-flight Validation","status":"success"}
 {"type":"agent_started","id":"execute-ENG-123","name":"Execution","description":"Implementing code changes"}
+{"type":"claude_stream","id":"executor","message":"{\"type\":\"content_block_delta\",\"delta\":{\"text\":\"Creating file...\"}}"}
+{"type":"claude_stream","id":"executor","message":"{\"type\":\"tool_use\",\"name\":\"Write\",\"input\":{\"path\":\"pkg/feature.go\"}}"}
 {"type":"agent_completed","id":"execute-ENG-123","name":"Execution","status":"success"}
 {"type":"agent_started","id":"test-ENG-123","name":"Running Tests","description":"Running unit tests for changed files"}
 {"type":"agent_started","id":"review-1-ENG-123","name":"Code Review #1","description":"Reviewing code quality and best practices"}
@@ -128,12 +175,15 @@ Here's a typical event sequence for a successful workflow:
 {"type":"agent_completed","id":"review-1-ENG-123","name":"Code Review #1","status":"failed"}
 {"type":"progress","message":"Review & refactor iteration 1 of 3"}
 {"type":"agent_started","id":"refactor-1-ENG-123","name":"Refactoring #1","description":"Applying code review feedback"}
+{"type":"claude_stream","id":"refactor-1","message":"{\"type\":\"content_block_delta\",\"delta\":{\"text\":\"Fixing...\"}}"}
 {"type":"agent_completed","id":"refactor-1-ENG-123","name":"Refactoring #1","status":"success"}
 {"type":"agent_started","id":"commit-ENG-123","name":"Commit & Push","description":"Committing and pushing changes to remote"}
 {"type":"agent_completed","id":"commit-ENG-123","name":"Commit & Push","status":"success"}
 {"type":"agent_started","id":"pr-ENG-123","name":"Create PR","description":"Creating pull request"}
 {"type":"agent_completed","id":"pr-ENG-123","name":"Create PR","status":"success"}
 ```
+
+Note: In practice, many `claude_stream` events are emitted between each `agent_started`/`agent_completed` pair. They are shown sparingly here for brevity.
 
 ## Consuming Events
 
@@ -239,9 +289,39 @@ events.AgentCompleted("execute-ENG-123", "Execution", "success")
 
 // Progress update
 events.Progress("Running tests...")
+
+// Forward raw Claude stream line
+events.ClaudeStream("executor", rawLine)
 ```
 
 All events are automatically flushed to stdout immediately, ensuring real-time updates.
+
+### Claude Event Forwarding
+
+The `claude.Client` struct has an `EventForwarder` field:
+
+```go
+type Client struct {
+    // ...
+    EventForwarder func(rawLine string) // Called for each stream-json line
+}
+```
+
+When set, `doStreamingRequest()` calls it for each raw line before parsing. The executor and planner set this during initialization:
+
+```go
+// In executor.go
+client.EventForwarder = func(rawLine string) {
+    events.ClaudeStream("executor", rawLine)
+}
+
+// In planner.go
+client.EventForwarder = func(rawLine string) {
+    events.ClaudeStream("planner", rawLine)
+}
+```
+
+This allows the desktop app to receive and display Claude's streaming activity (tool calls, text generation, etc.) within each workflow phase.
 
 ## Disabling Events *(Future)*
 
@@ -266,8 +346,8 @@ Events are emitted synchronously - `agent_started` is emitted immediately before
 ## Future Enhancements
 
 - [ ] Add `--no-events` flag to disable event emission
-- [ ] Emit `task_created` / `task_updated` events for internal Claude task tool usage
-- [ ] Add more granular events for sub-steps (file reads, code edits, etc.)
+- [x] ~~Emit `task_created` / `task_updated` events for internal Claude task tool usage~~ (Partially addressed: `claude_stream` now forwards all Claude events including task tool events, giving the desktop app full visibility)
+- [x] ~~Add more granular events for sub-steps (file reads, code edits, etc.)~~ (Addressed: `claude_stream` forwards every Claude stream-json line, providing tool-level granularity)
 - [ ] Support event output to separate file descriptor (e.g., `--events-fd=3`)
 - [ ] Add event timestamps
 - [ ] Support structured logging levels (debug, info, warn, error)

@@ -57,7 +57,9 @@ A cross-platform desktop application built with Wails that provides a GUI for th
 
 **Key features:**
 - Visual task tracking with clickable phase details
-- Real-time streaming of agent execution
+- Real-time streaming of agent execution with per-agent attribution
+- Subagent tracking in standard mode (Task/Explore agents get separate tabs)
+- Claude event streaming in boatmanmode (full visibility into each phase)
 - Session management and history
 - Project-based organization
 - Event-driven architecture with live updates
@@ -135,20 +137,20 @@ cd frontend && npm test
 The CLI and desktop communicate via structured JSON events:
 
 ```json
-{
-  "type": "agent_completed",
-  "id": "execution-task-123",
-  "name": "Execution",
-  "status": "success",
-  "data": {
-    "diff": "...",
-    "feedback": "...",
-    "issues": [...]
-  }
-}
+{"type": "agent_started", "id": "execute-ENG-123", "name": "Execution", "description": "Implementing code"}
+{"type": "claude_stream", "id": "executor", "message": "{\"type\":\"content_block_delta\",...}"}
+{"type": "agent_completed", "id": "execute-ENG-123", "name": "Execution", "status": "success"}
 ```
 
 Events are emitted by the CLI to stdout and captured by the desktop app for real-time UI updates.
+
+**Event types:**
+- `agent_started` / `agent_completed` — Track each workflow phase
+- `progress` — General status updates
+- `claude_stream` — Raw Claude stream-json lines for full visibility into Claude's work
+- `task_created` / `task_updated` — Task lifecycle events
+
+The desktop app routes these events through the session message system with proper agent attribution, so each workflow phase gets its own tab in the Agent Logs panel.
 
 ## Why a Monorepo?
 
@@ -181,8 +183,11 @@ import "github.com/philjestin/boatmanmode/pkg/diff"
 hybrid := services.NewHybrid(projectPath)
 stats := hybrid.GetDiffStats(diff)
 
-// Full execution with streaming (subprocess)
-bmIntegration.StreamExecution(ctx, sessionID, prompt, "prompt", outputChan)
+// Full execution with streaming + session routing (subprocess)
+onMessage := func(role, content string) {
+    session.AddBoatmanMessage(role, content)
+}
+bmIntegration.StreamExecution(ctx, sessionID, prompt, "prompt", outputChan, onMessage)
 ```
 
 See [HYBRID_ARCHITECTURE.md](./HYBRID_ARCHITECTURE.md) for details.
@@ -236,26 +241,35 @@ See [RELEASE_SUMMARY.md](./RELEASE_SUMMARY.md) for quick reference or [RELEASES.
 │  (boatmanmode)  │
 └────────┬────────┘
          │ Emits JSON events to stdout
-         │ {"type": "agent_completed", "data": {...}}
+         │ agent_started, claude_stream, agent_completed, progress
          ▼
 ┌─────────────────┐
 │  Integration    │ (desktop/boatmanmode/integration.go)
 │    Layer        │ Captures stdout, parses JSON
+│                 │ Calls MessageCallback for session routing
 └────────┬────────┘
-         │ Wails EventsEmit
-         │ runtime.EventsEmit(ctx, "boatmanmode:event", ...)
-         ▼
-┌─────────────────┐
-│   Desktop UI    │ (desktop/frontend/src/hooks/useAgent.ts)
-│   React App     │ EventsOn('boatmanmode:event', handler)
-└─────────────────┘
-         │ Updates task metadata
-         │ task.metadata = { diff, feedback, plan, ... }
-         ▼
-┌─────────────────┐
-│  TaskDetail     │ Displays clickable task details
-│     Modal       │ with diffs, feedback, issues
-└─────────────────┘
+         │
+    ┌────┴─────────────────────────┐
+    │                              │
+    ▼                              ▼
+┌─────────────┐          ┌─────────────────────────┐
+│ Wails emit  │          │ app.go → Session methods │
+│ boatmanmode │          │ RegisterBoatmanAgent()   │
+│ :event      │          │ SetCurrentAgent()        │
+│             │          │ AddBoatmanMessage()      │
+│             │          │ ProcessExternalStream    │
+│             │          │ Line() (claude_stream)   │
+└──────┬──────┘          └───────────┬──────────────┘
+       │                             │
+       │                             │ agent:message (Wails)
+       ▼                             ▼
+┌──────────────────────────────────────┐
+│   Desktop UI (React)                 │
+│   useAgent.ts handles events         │
+│   AgentLogsPanel groups by agent     │
+│   MessageBubble shows agent badges   │
+│   TaskDetail shows phase info        │
+└──────────────────────────────────────┘
 ```
 
 ### Directory Structure Philosophy

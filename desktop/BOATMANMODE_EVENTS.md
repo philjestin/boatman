@@ -4,9 +4,52 @@ This document explains how boatmanapp tracks boatmanmode's internal agents and t
 
 ## Overview
 
-When boatmanmode executes a ticket, it orchestrates multiple agents (planning, implementation, testing, peer review, etc.) in tmux sessions. To surface this activity in boatmanapp's UI, boatmanmode needs to emit structured JSON events to stdout.
+When boatmanmode executes a ticket, it orchestrates multiple agents (planning, implementation, testing, peer review, etc.) in tmux sessions. To surface this activity in boatmanapp's UI, boatmanmode emits structured JSON events to stdout. Additionally, Claude's raw stream-json lines are forwarded via `claude_stream` events for full visibility into Claude's work within each phase.
 
 ## Event Flow
+
+There are two event routing paths:
+
+### Standard Mode (Claude Agent Sessions)
+
+When Claude spawns subagents via the Task tool, the session tracks them automatically:
+
+```
+Claude API (stream-json)
+    │
+    ▼
+┌─────────────────────────────────────┐
+│  Session (session.go)               │
+│                                     │
+│  parseStreamLine() handles:         │
+│  - tool_use(Task) → registers agent │
+│    + maps tool_use_id → agent_id    │
+│  - user(parent_tool_use_id) →       │
+│    pushes agentStack, switches      │
+│    currentAgentID to subagent       │
+│  - content/tool events → attributed │
+│    to currentAgentID                │
+│  - tool_result(matching id) →       │
+│    pops stack, marks completed      │
+└────────┬────────────────────────────┘
+         │ onMessage callback
+         │
+         ▼
+┌─────────────────────────────────────┐
+│  Wails EventsEmit("agent:message") │
+└────────┬────────────────────────────┘
+         │
+         ▼
+┌─────────────────────────────────────┐
+│  Frontend (useAgent.ts)             │
+│  AgentLogsPanel groups by agent     │
+│  MessageBubble shows agent badges   │
+└─────────────────────────────────────┘
+```
+
+### BoatmanMode (CLI Subprocess)
+
+Boatmanmode events take two paths into the session:
 
 ```
 ┌─────────────────┐
@@ -18,41 +61,56 @@ When boatmanmode executes a ticket, it orchestrates multiple agents (planning, i
 │  stdout         │
 └────────┬────────┘
          │
-         │ {"type": "agent_started", "id": "plan-123", ...}
+         │ {"type": "agent_started", ...}
+         │ {"type": "claude_stream", ...}
+         │ Regular text output
          │
          ▼
 ┌─────────────────────────────────────┐
-│  boatmanapp Integration             │
-│  (boatmanmode/integration.go)       │
+│  Integration (integration.go)       │
 │                                     │
-│  Parses JSON events                 │
-│  Emits Wails events                 │
-└────────┬────────────────────────────┘
-         │
-         │ EventsEmit("boatmanmode:event")
-         │
-         ▼
-┌─────────────────────────────────────┐
-│  Frontend (TypeScript)              │
-│                                     │
-│  Listens to boatmanmode:event       │
-│  Calls HandleBoatmanModeEvent()     │
-└────────┬────────────────────────────┘
-         │
-         ▼
-┌─────────────────────────────────────┐
-│  Backend (app.go)                   │
-│                                     │
-│  Creates/updates tasks in session   │
-└────────┬────────────────────────────┘
-         │
-         ▼
-┌─────────────────────────────────────┐
-│  UI Task List                       │
-│                                     │
-│  Displays agents/tasks              │
-└─────────────────────────────────────┘
+│  Parses JSON events:                │
+│  - Structured events → Wails emit   │
+│  - claude_stream → onMessage()      │
+│  - Non-JSON text → onMessage()      │
+└────────┬──────────┬─────────────────┘
+         │          │
+    Wails emit   MessageCallback
+         │          │
+         ▼          ▼
+┌────────────┐  ┌────────────────────────────┐
+│  Frontend  │  │  app.go                    │
+│  handles   │  │  HandleBoatmanModeEvent()  │
+│  boatman   │  │                            │
+│  mode:     │  │  agent_started →           │
+│  event     │  │    RegisterBoatmanAgent()  │
+│            │  │    SetCurrentAgent()       │
+│            │  │    AddBoatmanMessage()     │
+│            │  │                            │
+│            │  │  agent_completed →         │
+│            │  │    AddBoatmanMessage()     │
+│            │  │    CompleteCurrentAgent()  │
+│            │  │                            │
+│            │  │  progress →               │
+│            │  │    AddBoatmanMessage()     │
+│            │  │                            │
+│            │  │  claude_stream →           │
+│            │  │    ProcessExternalStream   │
+│            │  │    Line() → parseStream   │
+│            │  │    Line()                  │
+└────────────┘  └────────────┬───────────────┘
+                             │
+                             │ Session message system
+                             │ (onMessage callback)
+                             ▼
+                ┌────────────────────────────┐
+                │  Wails "agent:message"     │
+                │  → Frontend chat UI        │
+                │  → AgentLogsPanel          │
+                └────────────────────────────┘
 ```
+
+**Key change:** Messages now primarily flow through the session message system (`agent:message` Wails channel) with proper agent attribution, rather than through `boatmanmode:output`. The `boatmanmode:output` channel remains as a fallback for raw text.
 
 ## Event Format
 
@@ -62,6 +120,7 @@ Boatmanmode should output JSON events to stdout, one per line:
 {"type": "agent_started", "id": "plan-123", "name": "Planning Implementation", "description": "Creating implementation plan"}
 {"type": "progress", "message": "Analyzing codebase structure..."}
 {"type": "agent_completed", "id": "plan-123", "name": "Planning Implementation", "status": "success"}
+{"type": "claude_stream", "id": "executor", "message": "{\"type\":\"content_block_delta\",\"content\":\"...\"}"}
 {"type": "task_created", "id": "task-1", "name": "Implement feature X", "description": "Add new API endpoint"}
 {"type": "task_updated", "id": "task-1", "status": "in_progress"}
 ```
@@ -89,9 +148,11 @@ Emitted when an agent begins execution (e.g., planning agent, implementation age
 ```
 
 **UI Behavior:**
-- Creates a new task in the session's task list
-- Status: `in_progress`
-- Shows in Tasks tab with 🤖 icon
+- Creates a new task in the session's task list (status: `in_progress`)
+- Registers a new agent via `session.RegisterBoatmanAgent(id, name, description)`
+- Switches context via `session.SetCurrentAgent(id)` - subsequent messages are attributed to this agent
+- Adds a system message: "Started: {name}"
+- AgentLogsPanel shows a new tab with the agent's type and a pulsing cyan status dot
 
 ### 2. `agent_completed`
 
@@ -116,7 +177,9 @@ Emitted when an agent finishes execution.
 
 **UI Behavior:**
 - Updates existing task status to `completed` (if success) or `failed` (if failed)
-- Shows checkmark ✅ or error ❌ in task list
+- Adds a system message: "Completed: {name} ({status})"
+- Calls `session.CompleteCurrentAgent()` which marks the agent as completed and restores the parent agent
+- AgentLogsPanel tab shows a solid green dot for completed agents
 
 ### 3. `task_created`
 
@@ -143,7 +206,6 @@ Emitted when boatmanmode's internal task system creates a task (e.g., from Claud
 **UI Behavior:**
 - Creates a new task in the session's task list
 - Status: `pending` (or specified status)
-- Shows in Tasks tab with 📋 icon
 
 ### 4. `task_updated`
 
@@ -166,7 +228,6 @@ Emitted when a task's status changes.
 
 **UI Behavior:**
 - Updates existing task status
-- Shows appropriate icon based on status
 
 ### 5. `progress`
 
@@ -185,178 +246,134 @@ General progress message (not tied to specific agent/task).
 ```
 
 **UI Behavior:**
-- Displays in output stream
-- Shows with ⏳ icon
-- Does NOT create a task
+- Routed through `session.AddBoatmanMessage("system", message)` to appear as a system message in the chat, attributed to the current agent
+- Displayed in the AgentLogsPanel under the active agent's tab
+
+### 6. `claude_stream`
+
+Raw stream-json line from Claude, forwarded by the CLI for full visibility into Claude's work.
+
+**Fields:**
+- `type`: `"claude_stream"` (required)
+- `id`: Phase identifier (required) - e.g., `"executor"`, `"planner"`, `"refactor-1"`
+- `message`: Raw stream-json line from Claude (required)
+
+**Example:**
+```json
+{
+  "type": "claude_stream",
+  "id": "executor",
+  "message": "{\"type\":\"content_block_delta\",\"content\":\"Implementing the feature...\"}"
+}
+```
+
+**How it works:**
+1. The CLI's `claude.Client` has an `EventForwarder` callback that fires for each raw stream-json line
+2. The executor/planner sets this callback to call `events.ClaudeStream(phaseID, rawLine)`
+3. The event is emitted as JSON to stdout
+4. `integration.go` parses it and calls `onMessage("claude_stream", rawLine)`
+5. `app.go` routes it to `session.ProcessExternalStreamLine()` which wraps `parseStreamLine()`
+6. The session parses the raw line exactly like standard mode events (tool use, content deltas, etc.)
+
+**UI Behavior:**
+- Claude's streaming text, tool usage, and tool results appear in the chat attributed to the current boatmanmode agent
+- Provides full visibility into what Claude is doing during each phase (previously invisible)
+
+## Standard Mode Subagent Tracking
+
+When using the desktop app in standard mode (direct Claude sessions), subagent tracking happens automatically:
+
+### Subagent Lifecycle
+
+```
+1. tool_use (name=Task, id=toolu_abc)
+   → Session registers agent-123
+   → Maps toolu_abc → agent-123 in toolIDToAgentID
+
+2. user (parent_tool_use_id=toolu_abc)
+   → Looks up agent-123 from toolIDToAgentID
+   → Pushes "main" onto agentStack
+   → Sets currentAgentID = agent-123
+   → Subsequent messages attributed to agent-123
+
+3. content_block_delta, tool_use, tool_result
+   → All attributed to agent-123
+
+4. tool_result (tool_use_id=toolu_abc)
+   → Detects toolu_abc in toolIDToAgentID
+   → Marks agent-123 as completed
+   → Pops agentStack → currentAgentID = "main"
+   → Cleans up toolIDToAgentID entry
+```
+
+### Session Fields
+
+```go
+type Session struct {
+    // ...existing fields...
+    toolIDToAgentID map[string]string // Maps Task tool_use ID → spawned agent ID
+    agentStack      []string          // Stack of active agent IDs for nested subagents
+}
+```
+
+### Nested Subagents
+
+The stack-based approach supports nested subagents (e.g., a Task agent spawning its own Task agents). Each level pushes onto the stack and pops on completion.
 
 ## Implementation in BoatmanMode CLI
 
-To add event emission to boatmanmode:
+### Event Emitter
 
-### 1. Create Event Emitter
+Events are emitted using the `internal/events` package:
 
 ```go
-// pkg/events/emitter.go
-package events
+import "github.com/philjestin/boatmanmode/internal/events"
 
-import (
-	"encoding/json"
-	"fmt"
-	"os"
-)
+// Start an agent
+events.AgentStarted("execute-ENG-123", "Execution", "Implementing code changes")
 
-type Event struct {
-	Type        string                 `json:"type"`
-	ID          string                 `json:"id,omitempty"`
-	Name        string                 `json:"name,omitempty"`
-	Description string                 `json:"description,omitempty"`
-	Status      string                 `json:"status,omitempty"`
-	Message     string                 `json:"message,omitempty"`
-	Data        map[string]interface{} `json:"data,omitempty"`
-}
+// Complete an agent
+events.AgentCompleted("execute-ENG-123", "Execution", "success")
 
-func Emit(event Event) {
-	json, _ := json.Marshal(event)
-	fmt.Fprintln(os.Stdout, string(json))
-}
+// Progress update
+events.Progress("Running tests...")
 
-func AgentStarted(id, name, description string) {
-	Emit(Event{
-		Type:        "agent_started",
-		ID:          id,
-		Name:        name,
-		Description: description,
-	})
-}
+// Forward Claude stream line (called via EventForwarder callback)
+events.ClaudeStream("executor", rawLine)
+```
 
-func AgentCompleted(id, name, status string) {
-	Emit(Event{
-		Type:   "agent_completed",
-		ID:     id,
-		Name:   name,
-		Status: status,
-	})
-}
+### Claude Event Forwarding
 
-func TaskCreated(id, name, description string) {
-	Emit(Event{
-		Type:        "task_created",
-		ID:          id,
-		Name:        name,
-		Description: description,
-	})
-}
+The `claude.Client` supports an `EventForwarder` callback:
 
-func TaskUpdated(id, status string) {
-	Emit(Event{
-		Type:   "task_updated",
-		ID:     id,
-		Status: status,
-	})
-}
-
-func Progress(message string) {
-	Emit(Event{
-		Type:    "progress",
-		Message: message,
-	})
+```go
+client := claude.NewWithTools(worktreePath, "executor", nil)
+client.EventForwarder = func(rawLine string) {
+    events.ClaudeStream("executor", rawLine)
 }
 ```
 
-### 2. Emit Events During Execution
+This is set automatically in `executor.go` and `planner.go`.
+
+## Boatmanmode Agent Management API
+
+The desktop session provides these exported methods for managing boatmanmode agents:
 
 ```go
-// cmd/boatmanmode/execute.go
-package main
+// Register a new agent for a boatmanmode phase
+session.RegisterBoatmanAgent(agentID, agentType, description string)
 
-import (
-	"github.com/philjestin/boatmanmode/pkg/events"
-)
+// Push current agent and switch to the given agent
+session.SetCurrentAgent(agentID string)
 
-func executeTicket(ticketID string) error {
-	// Start planning agent
-	planAgentID := "plan-" + generateID()
-	events.AgentStarted(planAgentID, "Planning Implementation", "Creating implementation plan for "+ticketID)
+// Mark current agent completed and pop the stack
+session.CompleteCurrentAgent()
 
-	// Run planning
-	plan, err := runPlanningAgent(ticketID)
-	if err != nil {
-		events.AgentCompleted(planAgentID, "Planning Implementation", "failed")
-		return err
-	}
-	events.AgentCompleted(planAgentID, "Planning Implementation", "success")
+// Add a message attributed to the current agent
+session.AddBoatmanMessage(role, content string)
 
-	// Start implementation agent
-	implAgentID := "impl-" + generateID()
-	events.AgentStarted(implAgentID, "Implementation", "Writing code based on plan")
-
-	// Implementation creates tasks
-	for _, step := range plan.Steps {
-		taskID := "task-" + generateID()
-		events.TaskCreated(taskID, step.Title, step.Description)
-
-		events.TaskUpdated(taskID, "in_progress")
-		// ... do work ...
-		events.TaskUpdated(taskID, "completed")
-	}
-
-	events.AgentCompleted(implAgentID, "Implementation", "success")
-
-	return nil
-}
-```
-
-### 3. Hook into Existing Agents
-
-For tmux-based agents, emit events before/after launching them:
-
-```go
-// When launching a tmux agent
-agentID := "peer-review-" + generateID()
-events.AgentStarted(agentID, "Peer Review", "Reviewing code quality and best practices")
-
-// Launch tmux session
-session := tmux.NewSession("peer-review")
-session.Start()
-
-// Wait for completion
-session.Wait()
-
-events.AgentCompleted(agentID, "Peer Review", "success")
-```
-
-### 4. Forward Claude CLI Task Events
-
-When Claude CLI emits task events (via `--output-format stream-json`), forward them:
-
-```go
-// Parse Claude output
-scanner := bufio.NewScanner(stdout)
-for scanner.Scan() {
-	line := scanner.Text()
-
-	var claudeEvent map[string]interface{}
-	if err := json.Unmarshal([]byte(line), &claudeEvent); err == nil {
-		// Check if it's a task event
-		if eventType, ok := claudeEvent["event_type"].(string); ok {
-			switch eventType {
-			case "task_create":
-				task := claudeEvent["task"].(map[string]interface{})
-				events.TaskCreated(
-					task["id"].(string),
-					task["subject"].(string),
-					task["description"].(string),
-				)
-			case "task_update":
-				task := claudeEvent["task"].(map[string]interface{})
-				events.TaskUpdated(
-					task["id"].(string),
-					task["status"].(string),
-				)
-			}
-		}
-	}
-}
+// Process a raw stream-json line from an external source
+session.ProcessExternalStreamLine(line string, responseBuilder *strings.Builder, currentMessageID *string)
 ```
 
 ## Testing Event Emission
@@ -366,68 +383,99 @@ for scanner.Scan() {
 Run boatmanmode with streaming:
 
 ```bash
-cd ~/workspace/handshake/boatmanmode
-go run ./cmd/boatmanmode execute --ticket TICKET-123 --repo ~/workspace/myproject --stream
+cd ~/workspace/personal/boatman-ecosystem/cli
+go run ./cmd/boatman work --prompt "Add health check" --repo ~/workspace/myproject
 ```
 
-Expected output:
+Expected output includes both high-level events and claude_stream events:
 ```json
 {"type":"agent_started","id":"plan-abc123","name":"Planning Implementation","description":"Creating implementation plan"}
+{"type":"claude_stream","id":"planner","message":"{\"type\":\"content_block_delta\",\"content\":\"Analyzing...\"}"}
 {"type":"progress","message":"Analyzing codebase..."}
 {"type":"agent_completed","id":"plan-abc123","status":"success"}
-{"type":"agent_started","id":"impl-def456","name":"Implementation","description":"Writing code"}
-{"type":"task_created","id":"task-1","name":"Add API endpoint","description":"Implement /api/users"}
-{"type":"task_updated","id":"task-1","status":"in_progress"}
-{"type":"task_updated","id":"task-1","status":"completed"}
+{"type":"agent_started","id":"impl-def456","name":"Execution","description":"Writing code"}
+{"type":"claude_stream","id":"executor","message":"{\"type\":\"content_block_delta\",\"content\":\"Creating file...\"}"}
 {"type":"agent_completed","id":"impl-def456","status":"success"}
 ```
 
-### Integration Test with BoatmanApp
+### Integration Test with Desktop App
 
-1. Build boatmanmode:
+1. Build CLI:
    ```bash
-   cd ~/workspace/handshake/boatmanmode
-   go build -o boatman ./cmd/boatmanmode
+   cd ~/workspace/personal/boatman-ecosystem/cli
+   go build -o boatman ./cmd/boatman
    ```
 
-2. Run boatmanapp:
+2. Run desktop app:
    ```bash
-   cd /Users/pmiddleton/workspace/personal/boatmanapp
+   cd ~/workspace/personal/boatman-ecosystem/desktop
    wails dev
    ```
 
-3. Create a boatmanmode session:
-   - Click "Boatman Mode" button
-   - Enter ticket ID: `TICKET-123`
-   - Click "Start"
+3. Create a boatmanmode session and verify:
+   - AgentLogsPanel shows separate tabs per phase (Planning, Execution, Review, etc.)
+   - Each tab has a status indicator (pulsing cyan = active, green = completed)
+   - Messages within each tab show Claude's streaming activity
+   - MessageBubble shows agent badges next to "Claude" for non-main agents
 
-4. Verify in UI:
-   - Switch to Tasks tab
-   - Should see agents appearing as tasks:
-     - 🤖 Planning Implementation (in_progress)
-     - ✅ Planning Implementation (completed)
-     - 🤖 Implementation (in_progress)
-     - 📋 Add API endpoint (in_progress)
-   - Output stream should show formatted messages
+### Standard Mode Test
+
+1. Start a standard Claude session
+2. Send a message that triggers Claude to spawn a Task/Explore subagent
+3. Verify:
+   - AgentLogsPanel shows a new tab for the subagent
+   - Messages in that tab are properly attributed
+   - Tab shows active/completed status
 
 ## Frontend Integration
 
-Listen to boatmanmode events and update UI:
+Messages from boatmanmode now primarily flow through the `agent:message` Wails channel, the same channel used by standard mode sessions. The `boatmanmode:output` handler in `useAgent.ts` is a no-op fallback that only logs:
 
 ```typescript
 // frontend/src/hooks/useAgent.ts
 
-useEffect(() => {
-  const unsubscribe = EventsOn("boatmanmode:event", (data: any) => {
-    const { sessionId, event } = data;
+// Primary message flow - handles all session messages including boatmanmode
+EventsOn('agent:message', (data) => {
+  addMessage(data.sessionId, data.message);
+  // Messages include metadata.agent with agentId, agentType, status, etc.
+});
 
-    // Call backend to update session tasks
-    HandleBoatmanModeEvent(sessionId, event.type, event);
-  });
+// Boatmanmode structured events still flow through their own channel
+// for task tracking (creating/updating tasks in the session)
+EventsOn('boatmanmode:event', async (data) => {
+  await HandleBoatmanModeEvent(data.sessionId, data.event.type, data.event);
+});
 
-  return unsubscribe;
-}, []);
+// Fallback for raw text - now a no-op since messages route through agent:message
+EventsOn('boatmanmode:output', (data) => {
+  console.log('[FRONTEND] Boatmanmode raw output (fallback):', data.message?.substring(0, 100));
+});
 ```
+
+### AgentLogsPanel
+
+The `AgentLogsPanel` component groups messages by agent and shows:
+- Separate tabs per agent with color-coded types
+- Status indicators per tab (pulsing cyan dot = active, solid green = completed)
+- Agent hierarchy view showing parent-child relationships
+
+**Agent type colors:**
+| Type | Color |
+|------|-------|
+| main | Blue |
+| task | Purple |
+| Explore | Green |
+| Plan | Amber |
+| general-purpose | Cyan |
+| Execution | Orange |
+| Planning | Yellow |
+| Review | Pink |
+| Refactor | Indigo |
+| Testing | Teal |
+
+### MessageBubble
+
+When a message's agent is not "main", a purple badge appears next to "Claude" showing the agent type and description (truncated to 30 chars).
 
 ## Troubleshooting
 
@@ -435,24 +483,42 @@ useEffect(() => {
 
 1. Check boatmanmode output contains JSON events:
    ```bash
-   boatman execute --ticket TICKET-123 --stream | grep '{"type"'
+   boatman work --prompt "test" | grep '{"type"'
    ```
 
-2. Check browser console for `boatmanmode:event` logs:
+2. Check browser console for `agent:message` events (primary channel):
    ```javascript
-   EventsOn("boatmanmode:event", (data) => console.log("Event:", data))
+   // Messages now flow through agent:message, not boatmanmode:output
    ```
 
-3. Verify HandleBoatmanModeEvent is being called:
-   ```typescript
-   console.log("Handling event:", sessionId, eventType, eventData)
+3. Verify HandleBoatmanModeEvent is being called in the console logs
+
+### Subagent tabs not appearing (Standard Mode)
+
+1. Verify the Claude response includes `parent_tool_use_id` in user messages
+2. Check console for `[user event] Switched to subagent` log lines
+3. Verify `[handleToolResult] Subagent completed` appears when the subagent finishes
+
+### Claude stream events not visible (Boatmanmode)
+
+1. Verify the CLI was built with `EventForwarder` support:
+   ```bash
+   cd ~/workspace/personal/boatman-ecosystem/cli
+   go build -o boatman ./cmd/boatman
    ```
+
+2. Check that `claude_stream` events appear in CLI stdout:
+   ```bash
+   boatman work --prompt "test" 2>/dev/null | grep claude_stream
+   ```
+
+3. Verify `integration.go` is routing `claude_stream` events via `onMessage`
 
 ### Duplicate tasks
 
 Ensure agent IDs are unique and consistent:
-- ✅ `plan-` + UUID or timestamp
-- ❌ Hardcoded `plan-agent` (will cause duplicates across tickets)
+- Use `{phase}-{taskID}` format (e.g., `planning-ENG-123`)
+- Avoid hardcoded IDs that cause conflicts across tickets
 
 ### Tasks stuck in "in_progress"
 
@@ -469,17 +535,20 @@ defer func() {
 
 ## Summary
 
-**BoatmanMode needs to:**
-1. Output JSON events to stdout (one per line)
-2. Emit `agent_started` when agents begin
-3. Emit `agent_completed` when agents finish
-4. Emit `task_created` / `task_updated` for task lifecycle
-5. Use unique, consistent IDs for agents/tasks
+**BoatmanMode CLI emits:**
+1. `agent_started` / `agent_completed` for workflow phases
+2. `progress` for general status updates
+3. `claude_stream` for raw Claude stream-json lines (full visibility)
+4. `task_created` / `task_updated` for task lifecycle
 
-**BoatmanApp will:**
-1. Parse JSON events from stdout
-2. Emit Wails events to frontend
-3. Create/update tasks in session
-4. Display agents/tasks in UI
+**Desktop App routes events through the session:**
+1. Structured events → `HandleBoatmanModeEvent()` → session agent methods
+2. Claude stream lines → `ProcessExternalStreamLine()` → session message system
+3. Raw CLI output → `AddBoatmanMessage()` → session message system
+4. All messages flow via `agent:message` Wails channel with proper agent attribution
 
-This gives users full visibility into boatmanmode's multi-agent orchestration! 🚀
+**Standard Mode tracks subagents automatically:**
+1. `tool_use(Task)` → registers agent + maps tool ID
+2. `user(parent_tool_use_id)` → switches context to subagent
+3. Messages attributed to current agent via `agentStack`
+4. `tool_result` → completes subagent + restores parent

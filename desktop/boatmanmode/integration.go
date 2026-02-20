@@ -148,6 +148,10 @@ func (i *Integration) StreamExecution(ctx context.Context, sessionID string, inp
 		cmd.Env = append(cmd.Env, "ANTHROPIC_API_KEY="+i.claudeAPIKey)
 	}
 
+	// Bypass tmux so Claude streams directly, allowing EventForwarder to
+	// forward real-time events to the desktop UI.
+	cmd.Env = append(cmd.Env, "BOATMAN_NO_TMUX=1")
+
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create stdout pipe: %w", err)

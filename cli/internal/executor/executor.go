@@ -53,6 +53,11 @@ func New(worktreePath string, cfg *config.Config) *Executor {
 	}
 	client.EnablePromptCaching = cfg.Claude.EnablePromptCaching
 
+	// Skip permissions so Claude doesn't prompt for tool approval interactively.
+	// The tmux bash script uses --dangerously-skip-permissions; when bypassing tmux
+	// via BOATMAN_NO_TMUX, doStreamingRequest() needs SkipPermissions set to add the flag.
+	client.SkipPermissions = true
+
 	// Forward Claude stream events for desktop app visibility
 	client.EventForwarder = func(rawLine string) {
 		events.ClaudeStream("executor", rawLine)
@@ -82,6 +87,9 @@ func NewRefactorExecutor(worktreePath string, iteration int, cfg *config.Config)
 		client.Model = cfg.Claude.Models.Refactor
 	}
 	client.EnablePromptCaching = cfg.Claude.EnablePromptCaching
+
+	// Skip permissions so Claude doesn't prompt for tool approval interactively
+	client.SkipPermissions = true
 
 	// Forward Claude stream events for desktop app visibility
 	phaseID := fmt.Sprintf("refactor-%d", iteration)

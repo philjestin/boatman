@@ -271,6 +271,112 @@ func TestGetSessionsDir(t *testing.T) {
 	}
 }
 
+func TestSaveAndLoadSession_ModeFields(t *testing.T) {
+	session := NewSession("test-mode-fields", "/tmp/test")
+	session.Mode = "firefighter"
+	session.ModeConfig = map[string]interface{}{
+		"scope": "backend",
+	}
+	session.ReasoningEffort = "high"
+	session.Model = "opus"
+
+	if err := SaveSession(session); err != nil {
+		t.Fatalf("Failed to save session: %v", err)
+	}
+
+	loaded, err := LoadSession(session.ID)
+	if err != nil {
+		t.Fatalf("Failed to load session: %v", err)
+	}
+
+	if loaded.Mode != session.Mode {
+		t.Errorf("Mode mismatch: expected %s, got %s", session.Mode, loaded.Mode)
+	}
+
+	if loaded.ReasoningEffort != session.ReasoningEffort {
+		t.Errorf("ReasoningEffort mismatch: expected %s, got %s", session.ReasoningEffort, loaded.ReasoningEffort)
+	}
+
+	if loaded.ModeConfig == nil {
+		t.Fatal("ModeConfig should not be nil")
+	}
+
+	scope, ok := loaded.ModeConfig["scope"].(string)
+	if !ok || scope != "backend" {
+		t.Errorf("ModeConfig scope mismatch: expected 'backend', got '%v'", loaded.ModeConfig["scope"])
+	}
+
+	DeleteSessionFile(session.ID)
+}
+
+func TestSaveAndLoadSession_BoatmanModeFields(t *testing.T) {
+	session := NewSession("test-boatman-mode", "/tmp/test")
+	session.Mode = "boatmanmode"
+	session.ModeConfig = map[string]interface{}{
+		"input": "Fix the login bug",
+		"mode":  "prompt",
+	}
+	session.ReasoningEffort = "medium"
+	session.Tags = []string{"boatmanmode"}
+
+	if err := SaveSession(session); err != nil {
+		t.Fatalf("Failed to save session: %v", err)
+	}
+
+	loaded, err := LoadSession(session.ID)
+	if err != nil {
+		t.Fatalf("Failed to load session: %v", err)
+	}
+
+	if loaded.Mode != "boatmanmode" {
+		t.Errorf("Mode mismatch: expected boatmanmode, got %s", loaded.Mode)
+	}
+
+	input, _ := loaded.ModeConfig["input"].(string)
+	if input != "Fix the login bug" {
+		t.Errorf("ModeConfig input mismatch: expected 'Fix the login bug', got '%s'", input)
+	}
+
+	mode, _ := loaded.ModeConfig["mode"].(string)
+	if mode != "prompt" {
+		t.Errorf("ModeConfig mode mismatch: expected 'prompt', got '%s'", mode)
+	}
+
+	if len(loaded.Tags) != 1 || loaded.Tags[0] != "boatmanmode" {
+		t.Errorf("Tags mismatch: expected [boatmanmode], got %v", loaded.Tags)
+	}
+
+	DeleteSessionFile(session.ID)
+}
+
+func TestLoadSession_InitializesRuntimeMaps(t *testing.T) {
+	session := NewSession("test-runtime-maps", "/tmp/test")
+
+	if err := SaveSession(session); err != nil {
+		t.Fatalf("Failed to save session: %v", err)
+	}
+
+	loaded, err := LoadSession(session.ID)
+	if err != nil {
+		t.Fatalf("Failed to load session: %v", err)
+	}
+
+	// Verify toolIDToAgentID is initialized (not persisted, runtime only)
+	if loaded.toolIDToAgentID == nil {
+		t.Error("toolIDToAgentID should be initialized")
+	}
+
+	// Verify agentStack is initialized
+	if loaded.agentStack == nil {
+		t.Error("agentStack should be initialized")
+	}
+	if len(loaded.agentStack) != 1 || loaded.agentStack[0] != "main" {
+		t.Errorf("agentStack should be ['main'], got %v", loaded.agentStack)
+	}
+
+	DeleteSessionFile(session.ID)
+}
+
 func TestSaveSession_PreservesConversationID(t *testing.T) {
 	session := NewSession("test-conv-id", "/tmp/test")
 	session.conversationID = "my-conversation-123"

@@ -2,13 +2,14 @@ import { useRef, useEffect } from 'react';
 import { MessageBubble } from './MessageBubble';
 import { InputArea } from './InputArea';
 import { AgentLogsPanel } from './AgentLogsPanel';
-import { Loader2 } from 'lucide-react';
+import { Loader2, StopCircle } from 'lucide-react';
 import type { Message, SessionStatus } from '../../types';
 
 interface ChatViewProps {
   messages: Message[];
   status: SessionStatus;
   onSendMessage: (content: string) => void;
+  onStop?: () => void;
   isLoading?: boolean;
   hasMoreMessages?: boolean;
   onLoadMore?: () => void;
@@ -23,6 +24,7 @@ export function ChatView({
   messages,
   status,
   onSendMessage,
+  onStop,
   isLoading = false,
   hasMoreMessages = false,
   onLoadMore,
@@ -115,6 +117,15 @@ export function ChatView({
         <div className="flex items-center justify-center gap-2 py-3 text-sm text-blue-400 bg-slate-800/50">
           {status === 'running' && <Loader2 className="w-4 h-4 animate-spin text-blue-400" />}
           <span>{statusMessage}</span>
+          {status === 'running' && onStop && (
+            <button
+              onClick={onStop}
+              className="ml-2 p-1 text-red-400 hover:text-red-300 hover:bg-slate-700 rounded transition-colors"
+              aria-label="Stop session"
+            >
+              <StopCircle className="w-4 h-4" />
+            </button>
+          )}
         </div>
       )}
 
@@ -124,6 +135,8 @@ export function ChatView({
       {/* Input */}
       <InputArea
         onSend={onSendMessage}
+        onStop={onStop}
+        status={status}
         disabled={isInputDisabled}
         placeholder={
           status === 'waiting'

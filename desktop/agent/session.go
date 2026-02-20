@@ -421,6 +421,11 @@ func (s *Session) runClaudeCommand(prompt string, authConfig AuthConfig) {
 		s.setStatus(SessionStatusIdle)
 	}
 	s.mu.Unlock()
+
+	// Persist session after command completes
+	if err := SaveSession(s); err != nil {
+		fmt.Printf("Warning: failed to save session %s after command: %v\n", s.ID, err)
+	}
 }
 
 // parseStreamLine parses a single line of stream-json output

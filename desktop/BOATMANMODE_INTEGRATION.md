@@ -37,6 +37,23 @@ cmd := exec.CommandContext(ctx, boatmanmodePath,
 )
 ```
 
+### Message Routing
+
+`StreamExecution()` accepts a `MessageCallback` that routes messages through the desktop session:
+
+```go
+type MessageCallback func(role, content string)
+
+func (i *Integration) StreamExecution(ctx context.Context, sessionID, input, mode string,
+    outputChan chan<- string, onMessage MessageCallback) (map[string]interface{}, error)
+```
+
+The callback handles two roles:
+- `"assistant"` — regular CLI output text, routed via `session.AddBoatmanMessage()`
+- `"claude_stream"` — raw Claude stream-json lines, routed via `session.ProcessExternalStreamLine()`
+
+This means all boatmanmode messages flow through the session's message system with proper agent attribution, appearing in the chat UI via the `agent:message` Wails channel.
+
 ## Usage from BoatmanApp
 
 ### 1. Execute a Ticket (Simple)
@@ -73,9 +90,20 @@ err := StreamLinearTicketExecution(
     projectPath,
 )
 
-// Listen for events in frontend:
+// Messages now flow through agent:message (primary channel):
+EventsOn("agent:message", (data) => {
+    // Messages include metadata.agent with agentId, agentType, status
+    addMessage(data.sessionId, data.message);
+})
+
+// Structured events for task tracking:
+EventsOn("boatmanmode:event", (data) => {
+    HandleBoatmanModeEvent(data.sessionId, data.event.type, data.event);
+})
+
+// boatmanmode:output is now a fallback (no-op logger):
 EventsOn("boatmanmode:output", (data) => {
-    console.log(data.message); // "🚀 Starting execution for ticket..."
+    console.log("Fallback:", data.message);
 })
 ```
 
@@ -83,6 +111,9 @@ EventsOn("boatmanmode:output", (data) => {
 - Same as above, but streams real-time output to the UI
 - User can watch the execution progress live
 - Shows all agent activity: file reads, edits, test runs, peer review feedback
+- Each boatmanmode phase creates a separate agent tab in the AgentLogsPanel
+- Claude's raw stream events are forwarded via `claude_stream` for full visibility
+- Messages are attributed to the correct agent and appear in the chat UI
 
 ### 3. Fetch Linear Tickets
 
@@ -195,19 +226,30 @@ Add an "Auto-Execute" button next to the "Investigate" button:
 </button>
 ```
 
-### Execution Progress Modal
+### Message Flow
 
-Show real-time progress when boatmanmode is running:
+Boatmanmode messages now flow through the session message system with proper agent attribution:
 
-```tsx
-<BoatmanModeExecutionModal
-  ticketId={ticketId}
-  onClose={() => setShowExecution(false)}
-  onComplete={(result) => handleExecutionComplete(result)}
-/>
-```
+1. **`agent:message`** (primary) - All session messages including boatmanmode output. Messages include `metadata.agent` with `agentId`, `agentType`, `description`, and `status`.
+2. **`boatmanmode:event`** - Structured events for task tracking (agent_started, agent_completed, etc.)
+3. **`boatmanmode:output`** (fallback) - Raw text output, now a no-op logger since messages route through `agent:message`
 
-Listens to `boatmanmode:output` events and displays them in a log view.
+### AgentLogsPanel
+
+The `AgentLogsPanel` component groups messages by agent. Boatmanmode phases (Execution, Planning, Review, Refactor, Testing) each get their own tab with color-coded labels:
+- **Execution**: Orange
+- **Planning**: Yellow
+- **Review**: Pink
+- **Refactor**: Indigo
+- **Testing**: Teal
+
+Each tab shows a status indicator:
+- Pulsing cyan dot = active
+- Solid green dot = completed
+
+### MessageBubble Agent Badges
+
+When a message is attributed to a non-main agent, a purple badge appears next to "Claude" in the message header showing the agent type and description (truncated to 30 characters).
 
 ## Future Enhancements
 
@@ -258,28 +300,59 @@ Track all automated executions:
 ## Architecture Diagram
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                         BoatmanApp (UI)                          │
-│                                                                   │
-│  ┌──────────────────┐              ┌──────────────────┐         │
-│  │   Firefighter    │              │   BoatmanMode    │         │
-│  │      Mode        │              │   Integration    │         │
-│  │                  │              │                  │         │
-│  │ • Investigate    │              │ • Auto-Execute   │         │
-│  │ • Report         │              │ • Stream Output  │         │
-│  │ • Manual Fix     │              │ • Fetch Tickets  │         │
-│  └────────┬─────────┘              └────────┬─────────┘         │
-│           │                                 │                   │
-│           │ MCP Tools                       │ Subprocess        │
-│           │ (Bugsnag,                       │ exec.Command      │
-│           │  Datadog,                       ▼                   │
-│           │  Linear)              ┌─────────────────┐           │
-│           │                       │  boatman CLI    │           │
-│           │                       │  (boatmanmode)  │           │
-│           │                       └─────────────────┘           │
-└───────────┼─────────────────────────────────┼──────────────────┘
-            │                                 │
-            ▼                                 ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│                           BoatmanApp (UI)                            │
+│                                                                      │
+│  ┌──────────────────┐              ┌──────────────────┐             │
+│  │   Firefighter    │              │   BoatmanMode    │             │
+│  │      Mode        │              │   Integration    │             │
+│  │                  │              │                  │             │
+│  │ • Investigate    │              │ • Auto-Execute   │             │
+│  │ • Report         │              │ • Stream Output  │             │
+│  │ • Manual Fix     │              │ • Fetch Tickets  │             │
+│  └────────┬─────────┘              └────────┬─────────┘             │
+│           │                                 │                       │
+│           │ MCP Tools                       │ Subprocess            │
+│           │ (Bugsnag,                       │ exec.Command          │
+│           │  Datadog,                       ▼                       │
+│           │  Linear)              ┌──────────────────┐              │
+│           │                       │  boatman CLI     │              │
+│           │                       │  (boatmanmode)   │              │
+│           │                       └────────┬─────────┘              │
+│           │                                │                        │
+│           │                   JSON events to stdout                 │
+│           │                   (agent_started, claude_stream, etc.)  │
+│           │                                │                        │
+│           │                                ▼                        │
+│           │                       ┌──────────────────┐              │
+│           │                       │ integration.go   │              │
+│           │                       │ Parses events    │              │
+│           │                       │ + MessageCallback│              │
+│           │                       └────────┬─────────┘              │
+│           │                                │                        │
+│           │                ┌───────────────┼───────────────┐        │
+│           │                │               │               │        │
+│           │                ▼               ▼               ▼        │
+│           │         boatmanmode:     app.go routes   Session routes  │
+│           │         event (Wails)    to session      messages via    │
+│           │                         agent methods    agent:message   │
+│           │                                                         │
+│           │                         RegisterBoatmanAgent()          │
+│           │                         SetCurrentAgent()               │
+│           │                         AddBoatmanMessage()             │
+│           │                         CompleteCurrentAgent()           │
+│           │                         ProcessExternalStreamLine()     │
+│           │                                │                        │
+│           │                                ▼                        │
+│           │                       ┌──────────────────┐              │
+│           │                       │  Frontend        │              │
+│           │                       │  AgentLogsPanel  │              │
+│           │                       │  MessageBubble   │              │
+│           │                       │  (agent badges)  │              │
+│           │                       └──────────────────┘              │
+└───────────┼─────────────────────────────────────────────────────────┘
+            │
+            ▼
     ┌──────────────┐                 ┌──────────────┐
     │   Bugsnag    │                 │    Linear    │
     │   Datadog    │                 │     API      │

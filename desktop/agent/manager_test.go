@@ -2,6 +2,8 @@ package agent
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -1177,5 +1179,144 @@ func TestThreadSafety(t *testing.T) {
 	sessions := m.ListSessions()
 	if len(sessions) != 0 {
 		t.Errorf("expected 0 sessions after deletion, got %d", len(sessions))
+	}
+}
+
+// TestLoadPersistedSessions tests loading sessions from disk into the manager
+func TestLoadPersistedSessions(t *testing.T) {
+	// Create and save sessions directly to disk
+	s1 := NewSession("test-load-mgr-1", "/tmp/project1")
+	s1.Model = "opus"
+	s1.Mode = "firefighter"
+	s1.ModeConfig = map[string]interface{}{"scope": "backend"}
+	s2 := NewSession("test-load-mgr-2", "/tmp/project2")
+	s2.Model = "sonnet"
+
+	if err := SaveSession(s1); err != nil {
+		t.Fatalf("Failed to save session1: %v", err)
+	}
+	if err := SaveSession(s2); err != nil {
+		t.Fatalf("Failed to save session2: %v", err)
+	}
+	defer DeleteSessionFile(s1.ID)
+	defer DeleteSessionFile(s2.ID)
+
+	// Create a fresh manager and load
+	m := NewManager()
+	m.SetContext(context.Background())
+
+	if err := m.LoadPersistedSessions(); err != nil {
+		t.Fatalf("LoadPersistedSessions failed: %v", err)
+	}
+
+	// Verify sessions are registered
+	loaded1, err := m.GetSession(s1.ID)
+	if err != nil {
+		t.Fatalf("Session 1 not found in manager: %v", err)
+	}
+	if loaded1.Model != "opus" {
+		t.Errorf("Session 1 model mismatch: expected opus, got %s", loaded1.Model)
+	}
+	if loaded1.Mode != "firefighter" {
+		t.Errorf("Session 1 mode mismatch: expected firefighter, got %s", loaded1.Mode)
+	}
+
+	loaded2, err := m.GetSession(s2.ID)
+	if err != nil {
+		t.Fatalf("Session 2 not found in manager: %v", err)
+	}
+	if loaded2.Model != "sonnet" {
+		t.Errorf("Session 2 model mismatch: expected sonnet, got %s", loaded2.Model)
+	}
+
+	// Verify handlers are wired (not nil)
+	loaded1.mu.RLock()
+	hasHandler := loaded1.onMessage != nil
+	loaded1.mu.RUnlock()
+	if !hasHandler {
+		t.Error("Loaded session should have message handler wired")
+	}
+}
+
+// TestSaveAllSessions tests persisting all manager sessions to disk
+func TestSaveAllSessions(t *testing.T) {
+	m := NewManager()
+	m.SetContext(context.Background())
+
+	// Create sessions in the manager
+	s1, err := m.CreateSession("/tmp/save-all-1")
+	if err != nil {
+		t.Fatalf("CreateSession failed: %v", err)
+	}
+	s2, err := m.CreateSession("/tmp/save-all-2")
+	if err != nil {
+		t.Fatalf("CreateSession failed: %v", err)
+	}
+
+	// Add some content to verify round-trip
+	s1.Model = "opus"
+	s2.Model = "haiku"
+
+	// Save all
+	m.SaveAllSessions()
+
+	defer DeleteSessionFile(s1.ID)
+	defer DeleteSessionFile(s2.ID)
+
+	// Verify files exist and can be loaded
+	loaded1, err := LoadSession(s1.ID)
+	if err != nil {
+		t.Fatalf("Failed to load saved session 1: %v", err)
+	}
+	if loaded1.Model != "opus" {
+		t.Errorf("Session 1 model mismatch after SaveAllSessions: expected opus, got %s", loaded1.Model)
+	}
+
+	loaded2, err := LoadSession(s2.ID)
+	if err != nil {
+		t.Fatalf("Failed to load saved session 2: %v", err)
+	}
+	if loaded2.Model != "haiku" {
+		t.Errorf("Session 2 model mismatch after SaveAllSessions: expected haiku, got %s", loaded2.Model)
+	}
+}
+
+// TestDeleteSession_RemovesFile tests that DeleteSession cleans up the disk file
+func TestDeleteSession_RemovesFile(t *testing.T) {
+	m := NewManager()
+	m.SetContext(context.Background())
+
+	session, err := m.CreateSession("/tmp/delete-file-test")
+	if err != nil {
+		t.Fatalf("CreateSession failed: %v", err)
+	}
+	sessionID := session.ID
+
+	// Save the session to disk first
+	if err := SaveSession(session); err != nil {
+		t.Fatalf("Failed to save session: %v", err)
+	}
+
+	// Verify the file exists
+	sessionsDir, _ := GetSessionsDir()
+	filename := filepath.Join(sessionsDir, sessionID+".json")
+	if _, err := os.Stat(filename); os.IsNotExist(err) {
+		t.Fatal("Session file should exist after saving")
+	}
+
+	// Delete via manager
+	if err := m.DeleteSession(sessionID); err != nil {
+		t.Fatalf("DeleteSession failed: %v", err)
+	}
+
+	// Verify file is removed
+	if _, err := os.Stat(filename); !os.IsNotExist(err) {
+		t.Error("Session file should be deleted after DeleteSession")
+	}
+
+	// Verify session is removed from manager
+	_, err = m.GetSession(sessionID)
+	if err == nil {
+		t.Error("GetSession should return error for deleted session")
 	}
 }

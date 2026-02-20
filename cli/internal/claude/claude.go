@@ -147,8 +147,12 @@ func NewWithTools(workDir, sessionName string, tools []string) *Client {
 
 // Message sends a message to Claude and returns the response with usage data.
 func (c *Client) Message(ctx context.Context, systemPrompt, userPrompt string) (string, *cost.Usage, error) {
-	// Use tmux for large prompts or when explicitly enabled
-	if c.UseTmux || len(userPrompt) > 100000 || len(systemPrompt) > 50000 {
+	// When BOATMAN_NO_TMUX=1 is set (e.g., by desktop app), bypass tmux and use
+	// direct streaming so EventForwarder can forward events to the UI.
+	noTmux := os.Getenv("BOATMAN_NO_TMUX") == "1"
+
+	// Use tmux for large prompts or when explicitly enabled (unless bypassed)
+	if !noTmux && (c.UseTmux || len(userPrompt) > 100000 || len(systemPrompt) > 50000) {
 		return c.messageTmux(ctx, systemPrompt, userPrompt)
 	}
 
@@ -251,7 +255,12 @@ func (c *Client) doStreamingRequest(ctx context.Context, systemPrompt, userPromp
 		args = append(args, "--system-prompt", systemPrompt)
 	}
 
-	args = append(args, userPrompt)
+	// For large prompts, pipe via stdin to avoid OS ARG_MAX limits.
+	// For small prompts, pass as command-line arg (current behavior).
+	useStdin := len(userPrompt) > 100000
+	if !useStdin {
+		args = append(args, userPrompt)
+	}
 
 	cmd := exec.CommandContext(ctx, c.Command, args...)
 
@@ -263,6 +272,11 @@ func (c *Client) doStreamingRequest(ctx context.Context, systemPrompt, userPromp
 	cmd.Env = filterParentEnv()
 	for k, v := range c.Env {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
+	}
+
+	// Pipe large prompts via stdin
+	if useStdin {
+		cmd.Stdin = strings.NewReader(userPrompt)
 	}
 
 	stdout, err := cmd.StdoutPipe()

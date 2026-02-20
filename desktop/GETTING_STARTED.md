@@ -114,6 +114,15 @@ Claude can:
 - Create git commits and PRs
 - Spawn sub-agents for complex tasks
 
+**Sub-Agent Tracking:**
+
+When Claude spawns sub-agents (via Task, Explore, Plan tools), the app automatically tracks them:
+- The **Agent Logs Panel** shows a separate tab for each sub-agent
+- Each tab has a **status indicator**: pulsing cyan dot (active) or solid green dot (completed)
+- Tabs are color-coded by agent type (Explore = green, Plan = amber, Task = purple, etc.)
+- **Agent badges** appear on messages in the chat showing which agent produced them
+- Nested sub-agents (agents spawning agents) are fully supported via a stack-based tracking system
+
 ### Approval Modes
 
 **Suggest Mode** (Safest):

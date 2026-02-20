@@ -299,6 +299,12 @@ func (m *Manager) DeleteSession(sessionID string) error {
 
 	session.Stop()
 	delete(m.sessions, sessionID)
+
+	// Remove persisted file from disk
+	if err := DeleteSessionFile(sessionID); err != nil {
+		fmt.Printf("Warning: failed to delete session file %s: %v\n", sessionID, err)
+	}
+
 	return nil
 }
 
@@ -366,6 +372,51 @@ func (m *Manager) StopAllSessions() {
 	}
 }
 
+// LoadPersistedSessions loads all sessions from disk and registers them in the manager.
+// Should be called once during startup, after SetContext/SetWailsReady/SetConfigGetter.
+func (m *Manager) LoadPersistedSessions() error {
+	sessions, err := LoadAllSessions()
+	if err != nil {
+		return fmt.Errorf("failed to load persisted sessions: %w", err)
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for _, session := range sessions {
+		// Wire up Wails event handlers
+		m.setupSessionHandlers(session, session.ID)
+
+		// Apply config settings
+		if m.configGetter != nil {
+			maxMessages := m.configGetter.GetMaxMessagesPerSession()
+			archive := m.configGetter.GetArchiveOldMessages()
+			session.SetTrimSettings(maxMessages, archive)
+
+			maxAgents := m.configGetter.GetMaxAgentsPerSession()
+			keepCompleted := m.configGetter.GetKeepCompletedAgents()
+			session.SetAgentCleanupSettings(maxAgents, keepCompleted)
+		}
+
+		m.sessions[session.ID] = session
+	}
+
+	return nil
+}
+
+// SaveAllSessions persists all sessions to disk.
+// Used on shutdown to preserve session state.
+func (m *Manager) SaveAllSessions() {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	for _, session := range m.sessions {
+		if err := SaveSession(session); err != nil {
+			fmt.Printf("Warning: failed to save session %s: %v\n", session.ID, err)
+		}
+	}
+}
+
 // CleanupSessions removes old sessions based on config settings
 func (m *Manager) CleanupSessions() (int, error) {
 	m.mu.RLock()
@@ -419,7 +470,7 @@ func (m *Manager) SetSessionModel(sessionID, model string) error {
 		return err
 	}
 	session.SetModel(model)
-	return nil
+	return SaveSession(session)
 }
 
 // SetSessionReasoningEffort updates the reasoning effort for a session
@@ -429,7 +480,7 @@ func (m *Manager) SetSessionReasoningEffort(sessionID, effort string) error {
 		return err
 	}
 	session.SetReasoningEffort(effort)
-	return nil
+	return SaveSession(session)
 }
 
 // SetFavorite sets the favorite status of a session

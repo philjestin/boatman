@@ -48,6 +48,7 @@ function App() {
     createFirefighterSession,
     createBoatmanModeSession,
     deleteSession,
+    stopSession,
     selectSession,
     sendMessage,
     approveAction,
@@ -181,6 +182,13 @@ function App() {
   // Handle project open
   const handleOpenProject = async () => {
     await selectAndOpenProject();
+  };
+
+  // Handle stop session
+  const handleStopSession = async () => {
+    if (activeSession) {
+      await stopSession(activeSession.id);
+    }
   };
 
   // Handle message send
@@ -384,6 +392,7 @@ function App() {
           onSessionSelect={selectSession}
           onProjectSelect={selectProject}
           onDeleteSession={deleteSession}
+          onStopSession={stopSession}
           onToggleFavorite={handleToggleFavorite}
           onAddTag={handleAddTag}
           onRemoveTag={handleRemoveTag}
@@ -461,6 +470,7 @@ function App() {
                     messages={activeSession.messages}
                     status={activeSession.status}
                     onSendMessage={handleSendMessage}
+                    onStop={handleStopSession}
                     hasMoreMessages={currentPagination?.hasMore ?? false}
                     onLoadMore={handleLoadMore}
                     model={activeSession.model}

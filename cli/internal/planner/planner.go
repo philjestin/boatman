@@ -68,6 +68,9 @@ func New(worktreePath string, cfg *config.Config) *Planner {
 	// Note: Prompt caching is automatically handled by Claude CLI
 	client.EnablePromptCaching = cfg.Claude.EnablePromptCaching
 
+	// Skip permissions so Claude doesn't prompt for tool approval interactively
+	client.SkipPermissions = true
+
 	// Forward Claude stream events for desktop app visibility
 	client.EventForwarder = func(rawLine string) {
 		events.ClaudeStream("planner", rawLine)

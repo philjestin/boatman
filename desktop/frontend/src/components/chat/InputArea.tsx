@@ -1,10 +1,13 @@
 import { useState, useRef, useEffect, KeyboardEvent } from 'react';
-import { Send, Paperclip, Loader2, Bot, Zap } from 'lucide-react';
+import { Send, Square, Paperclip, Loader2, Bot, Zap } from 'lucide-react';
 import { PillDropdown } from './PillDropdown';
 import { MODEL_OPTIONS, REASONING_EFFORT_OPTIONS } from '../../types';
+import type { SessionStatus } from '../../types';
 
 interface InputAreaProps {
   onSend: (message: string) => void;
+  onStop?: () => void;
+  status?: SessionStatus;
   disabled?: boolean;
   placeholder?: string;
   model?: string;
@@ -15,6 +18,8 @@ interface InputAreaProps {
 
 export function InputArea({
   onSend,
+  onStop,
+  status,
   disabled = false,
   placeholder = 'Type a message...',
   model,
@@ -69,22 +74,28 @@ export function InputArea({
             rows={1}
             className="flex-1 py-3 bg-transparent text-slate-100 placeholder-slate-500 resize-none focus:outline-none text-sm"
           />
-          <button
-            onClick={handleSend}
-            disabled={disabled || !message.trim()}
-            className={`flex-shrink-0 p-3 transition-colors ${
-              disabled || !message.trim()
-                ? 'text-slate-600 cursor-not-allowed'
-                : 'text-blue-400 hover:text-blue-300'
-            }`}
-            aria-label="Send message"
-          >
-            {disabled ? (
-              <Loader2 className="w-5 h-5 animate-spin" />
-            ) : (
+          {status === 'running' && onStop ? (
+            <button
+              onClick={onStop}
+              className="flex-shrink-0 p-3 text-red-400 hover:text-red-300 transition-colors"
+              aria-label="Stop session"
+            >
+              <Square className="w-5 h-5 fill-current" />
+            </button>
+          ) : (
+            <button
+              onClick={handleSend}
+              disabled={disabled || !message.trim()}
+              className={`flex-shrink-0 p-3 transition-colors ${
+                disabled || !message.trim()
+                  ? 'text-slate-600 cursor-not-allowed'
+                  : 'text-blue-400 hover:text-blue-300'
+              }`}
+              aria-label="Send message"
+            >
               <Send className="w-5 h-5" />
-            )}
-          </button>
+            </button>
+          )}
         </div>
 
         {/* Model & Reasoning Effort pills */}

@@ -12,7 +12,9 @@ Boatman is a native desktop application built with Wails (Go + React) that provi
 - **Interactive Chat**: Ask questions, request changes, get explanations about your codebase
 - **Code Analysis**: Deep understanding of your project structure and patterns
 - **Autonomous Actions**: Edit files, run commands, create commits with your approval
-- **Sub-Agents**: Spawns specialized agents for complex multi-step tasks
+- **Sub-Agent Tracking**: Spawns specialized agents for complex multi-step tasks, with automatic context switching and per-agent message attribution
+- **Agent Logs Panel**: View messages grouped by agent in separate tabs with status indicators (active/completed)
+- **Agent Badges**: Messages show which agent produced them via inline badges
 - **Project Management**: Open and manage multiple coding projects
 - **Task Tracking**: View and monitor tasks created by the agent during sessions
 
@@ -140,7 +142,15 @@ Linear Ticket → Extract Context → Query Bugsnag/Datadog → Analyze Git Hist
 - Edit files with your approval
 - Run bash commands (git, npm, tests, etc.)
 - Create commits and pull requests
-- Spawn sub-agents for complex tasks
+- Spawn sub-agents for complex tasks (tracked in the Agent Logs panel)
+
+### BoatmanMode Integration
+
+**Full Claude event streaming:**
+- Each workflow phase (Planning, Execution, Review, Refactor) creates a separate agent tab
+- Claude's raw streaming output is forwarded via `claude_stream` events for full visibility
+- Progress messages and agent lifecycle events appear as system messages in the chat
+- See [BOATMANMODE_INTEGRATION.md](./BOATMANMODE_INTEGRATION.md) for details
 
 ### Firefighter Mode
 
@@ -181,16 +191,18 @@ This starts:
 boatmanapp/
 ├── frontend/          # React TypeScript frontend
 │   ├── src/
-│   │   ├── components/  # UI components
-│   │   ├── hooks/       # React hooks
+│   │   ├── components/  # UI components (MessageBubble, AgentLogsPanel, etc.)
+│   │   ├── hooks/       # React hooks (useAgent for event handling)
+│   │   ├── types/       # TypeScript types (AgentInfo, Message, etc.)
 │   │   └── store/       # State management
-├── agent/             # Agent session management
+├── agent/             # Agent session management (subagent tracking, stream parsing)
+├── boatmanmode/       # BoatmanMode CLI integration (subprocess, event routing)
 ├── project/           # Project and workspace management
 ├── config/            # Configuration and preferences
 ├── git/               # Git integration
 ├── diff/              # Diff parsing and rendering
 ├── mcp/               # MCP server management
-├── app.go             # Main application logic
+├── app.go             # Main application logic (event routing, session management)
 └── main.go            # Application entry point
 ```
 
@@ -258,6 +270,8 @@ npx -y @package/mcp-server
 - **[Firefighter Mode](./GETTING_STARTED.md#firefighter-mode)** - Production incident investigation
 - **[MCP Servers](./GETTING_STARTED.md#mcp-servers)** - Extending capabilities
 - **[Configuration](./GETTING_STARTED.md#configuration)** - Settings and customization
+- **[BoatmanMode Integration](./BOATMANMODE_INTEGRATION.md)** - CLI integration and event routing
+- **[BoatmanMode Events](./BOATMANMODE_EVENTS.md)** - Event system and subagent tracking
 
 ## FAQ
 

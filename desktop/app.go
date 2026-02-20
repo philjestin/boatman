@@ -72,6 +72,11 @@ func (a *App) startup(ctx context.Context) {
 	// Set config getter for memory management
 	a.agentManager.SetConfigGetter(a)
 
+	// Load persisted sessions from disk
+	if err := a.agentManager.LoadPersistedSessions(); err != nil {
+		fmt.Printf("Warning: failed to load persisted sessions: %v\n", err)
+	}
+
 	// Run session cleanup asynchronously on startup
 	go func() {
 		if count, err := a.agentManager.CleanupSessions(); err == nil && count > 0 {
@@ -82,6 +87,8 @@ func (a *App) startup(ctx context.Context) {
 
 // shutdown is called when the app is closing
 func (a *App) shutdown(ctx context.Context) {
+	// Save all sessions BEFORE stopping them, so we persist current status (not "stopped")
+	a.agentManager.SaveAllSessions()
 	a.agentManager.StopAllSessions()
 }
 
@@ -924,6 +931,13 @@ func (a *App) StreamBoatmanModeExecution(sessionID, input, mode, linearAPIKey, p
 			runtime.EventsEmit(a.ctx, "boatmanmode:complete", map[string]interface{}{
 				"sessionId": sessionID,
 			})
+		}
+
+		// Persist session after boatmanmode execution completes
+		if sessionErr == nil && session != nil {
+			if saveErr := agent.SaveSession(session); saveErr != nil {
+				fmt.Printf("[boatmanmode] Warning: failed to save session %s: %v\n", sessionID, saveErr)
+			}
 		}
 	}()
 

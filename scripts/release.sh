@@ -30,14 +30,31 @@ case $CHOICE in
 esac
 
 # For each component, ask for bump type
-declare -A VERSIONS
+# Use simple variables instead of associative arrays for bash 3.x compatibility.
+VERSION_CLI=""
+VERSION_DESKTOP=""
+
+get_version() {
+    case "$1" in
+        cli) echo "$VERSION_CLI" ;;
+        desktop) echo "$VERSION_DESKTOP" ;;
+    esac
+}
+
+set_version() {
+    case "$1" in
+        cli) VERSION_CLI="$2" ;;
+        desktop) VERSION_DESKTOP="$2" ;;
+    esac
+}
+
 for COMPONENT in $COMPONENTS; do
     echo ""
     echo "=== $COMPONENT ==="
 
     # Show current version
     if [ "$COMPONENT" = "cli" ]; then
-        CURRENT=$(cat cli/VERSION | sed 's/v//')
+        CURRENT=$(sed 's/v//' cli/VERSION)
     else
         CURRENT=$(grep '"version"' desktop/wails.json | sed 's/.*"version": "\(.*\)".*/\1/')
     fi
@@ -74,23 +91,23 @@ for COMPONENT in $COMPONENTS; do
                 sed -i "s/\"version\": \".*\"/\"version\": \"$NEW_VERSION\"/" desktop/wails.json
             fi
         fi
-        VERSIONS[$COMPONENT]=$NEW_VERSION
+        set_version "$COMPONENT" "$NEW_VERSION"
     else
         ./scripts/bump-version.sh $COMPONENT $BUMP_TYPE > /dev/null
         if [ "$COMPONENT" = "cli" ]; then
-            VERSIONS[$COMPONENT]=$(cat cli/VERSION | sed 's/v//')
+            set_version "$COMPONENT" "$(sed 's/v//' cli/VERSION)"
         else
-            VERSIONS[$COMPONENT]=$(grep '"version"' desktop/wails.json | sed 's/.*"version": "\(.*\)".*/\1/')
+            set_version "$COMPONENT" "$(grep '"version"' desktop/wails.json | sed 's/.*"version": "\(.*\)".*/\1/')"
         fi
     fi
 
-    echo "✓ Version bumped to v${VERSIONS[$COMPONENT]}"
+    echo "✓ Version bumped to v$(get_version "$COMPONENT")"
 done
 
 echo ""
 echo "=== Summary ==="
 for COMPONENT in $COMPONENTS; do
-    echo "  $COMPONENT: v${VERSIONS[$COMPONENT]}"
+    echo "  $COMPONENT: v$(get_version "$COMPONENT")"
 done
 echo ""
 
@@ -106,7 +123,7 @@ echo ""
 echo "=== Release checklist ==="
 for COMPONENT in $COMPONENTS; do
     echo ""
-    echo "$COMPONENT v${VERSIONS[$COMPONENT]}:"
+    echo "$COMPONENT v$(get_version "$COMPONENT"):"
     echo "  ✓ Version bumped"
     echo "  ? Changelog updated"
     echo "  ? Tests passing"
@@ -130,10 +147,10 @@ echo "=== Commit and Tag ==="
 
 # Prepare commit message
 if [ "$COMPONENTS" = "cli desktop" ]; then
-    COMMIT_MSG="Release: CLI v${VERSIONS[cli]}, Desktop v${VERSIONS[desktop]}"
+    COMMIT_MSG="Release: CLI v${VERSION_CLI}, Desktop v${VERSION_DESKTOP}"
 else
     COMPONENT=${COMPONENTS}
-    COMMIT_MSG="$COMPONENT: Release v${VERSIONS[$COMPONENT]}"
+    COMMIT_MSG="$COMPONENT: Release v$(get_version "$COMPONENT")"
 fi
 
 echo "Commit message: $COMMIT_MSG"
@@ -146,7 +163,7 @@ if [ "$PROCEED" != "y" ]; then
     done
     echo "  git commit -m \"$COMMIT_MSG\""
     for COMPONENT in $COMPONENTS; do
-        echo "  git tag $COMPONENT/v${VERSIONS[$COMPONENT]}"
+        echo "  git tag $COMPONENT/v$(get_version "$COMPONENT")"
     done
     exit 0
 fi
@@ -157,7 +174,7 @@ git commit -m "$COMMIT_MSG"
 
 # Tag
 for COMPONENT in $COMPONENTS; do
-    TAG="${COMPONENT}/v${VERSIONS[$COMPONENT]}"
+    TAG="${COMPONENT}/v$(get_version "$COMPONENT")"
     git tag $TAG
     echo "✓ Tagged $TAG"
 done
@@ -177,10 +194,10 @@ if [ "$PUSH" = "y" ]; then
     for COMPONENT in $COMPONENTS; do
         if [ "$COMPONENT" = "cli" ]; then
             echo "  • Build CLI binaries for all platforms"
-            echo "  • Create GitHub release for cli/v${VERSIONS[$COMPONENT]}"
+            echo "  • Create GitHub release for cli/v$(get_version "$COMPONENT")"
         else
             echo "  • Build desktop apps for macOS, Linux, Windows"
-            echo "  • Create GitHub release for desktop/v${VERSIONS[$COMPONENT]}"
+            echo "  • Create GitHub release for desktop/v$(get_version "$COMPONENT")"
         fi
     done
     echo ""

@@ -11,19 +11,22 @@ import (
 
 // SessionData represents the persistable data of a session
 type SessionData struct {
-	ID             string                `json:"id"`
-	ProjectPath    string                `json:"projectPath"`
-	Status         SessionStatus         `json:"status"`
-	Messages       []Message             `json:"messages"`
-	Tasks          []Task                `json:"tasks"`
-	CreatedAt      string                `json:"createdAt"`
-	UpdatedAt      string                `json:"updatedAt"`
-	Model          string                `json:"model"`
-	ConversationID string                `json:"conversationId"`
-	CurrentAgentID string                `json:"currentAgentId"`
-	Agents         map[string]*AgentInfo `json:"agents"`
-	Tags           []string              `json:"tags,omitempty"`
-	IsFavorite     bool                  `json:"isFavorite,omitempty"`
+	ID              string                 `json:"id"`
+	ProjectPath     string                 `json:"projectPath"`
+	Status          SessionStatus          `json:"status"`
+	Messages        []Message              `json:"messages"`
+	Tasks           []Task                 `json:"tasks"`
+	CreatedAt       string                 `json:"createdAt"`
+	UpdatedAt       string                 `json:"updatedAt"`
+	Model           string                 `json:"model"`
+	ConversationID  string                 `json:"conversationId"`
+	CurrentAgentID  string                 `json:"currentAgentId"`
+	Agents          map[string]*AgentInfo  `json:"agents"`
+	Tags            []string               `json:"tags,omitempty"`
+	IsFavorite      bool                   `json:"isFavorite,omitempty"`
+	Mode            string                 `json:"mode,omitempty"`
+	ModeConfig      map[string]interface{} `json:"modeConfig,omitempty"`
+	ReasoningEffort string                 `json:"reasoningEffort,omitempty"`
 }
 
 // SessionsDirGetter is a function type for getting sessions directory (for testing)
@@ -65,19 +68,22 @@ func SaveSession(session *Session) error {
 
 	// Convert to persistable format
 	data := SessionData{
-		ID:             session.ID,
-		ProjectPath:    session.ProjectPath,
-		Status:         session.Status,
-		Messages:       session.Messages,
-		Tasks:          session.Tasks,
-		CreatedAt:      session.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
-		UpdatedAt:      session.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
-		Model:          session.Model,
-		ConversationID: session.conversationID,
-		CurrentAgentID: session.currentAgentID,
-		Agents:         session.agents,
-		Tags:           session.Tags,
-		IsFavorite:     session.IsFavorite,
+		ID:              session.ID,
+		ProjectPath:     session.ProjectPath,
+		Status:          session.Status,
+		Messages:        session.Messages,
+		Tasks:           session.Tasks,
+		CreatedAt:       session.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		UpdatedAt:       session.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		Model:           session.Model,
+		ConversationID:  session.conversationID,
+		CurrentAgentID:  session.currentAgentID,
+		Agents:          session.agents,
+		Tags:            session.Tags,
+		IsFavorite:      session.IsFavorite,
+		Mode:            session.Mode,
+		ModeConfig:      session.ModeConfig,
+		ReasoningEffort: session.ReasoningEffort,
 	}
 
 	// Marshal to JSON
@@ -115,17 +121,20 @@ func LoadSession(sessionID string) (*Session, error) {
 
 	// Create session from persisted data
 	session := &Session{
-		ID:             data.ID,
-		ProjectPath:    data.ProjectPath,
-		Status:         data.Status,
-		Messages:       data.Messages,
-		Tasks:          data.Tasks,
-		Model:          data.Model,
-		conversationID: data.ConversationID,
-		currentAgentID: data.CurrentAgentID,
-		agents:         data.Agents,
-		Tags:           data.Tags,
-		IsFavorite:     data.IsFavorite,
+		ID:              data.ID,
+		ProjectPath:     data.ProjectPath,
+		Status:          data.Status,
+		Messages:        data.Messages,
+		Tasks:           data.Tasks,
+		Model:           data.Model,
+		ReasoningEffort: data.ReasoningEffort,
+		Mode:            data.Mode,
+		ModeConfig:      data.ModeConfig,
+		conversationID:  data.ConversationID,
+		currentAgentID:  data.CurrentAgentID,
+		agents:          data.Agents,
+		Tags:            data.Tags,
+		IsFavorite:      data.IsFavorite,
 	}
 
 	// Initialize tags if nil
@@ -145,6 +154,10 @@ func LoadSession(sessionID string) (*Session, error) {
 			session.currentAgentID = "main"
 		}
 	}
+
+	// Initialize runtime-only maps to prevent nil panics
+	session.toolIDToAgentID = make(map[string]string)
+	session.agentStack = []string{"main"}
 
 	// Parse timestamps
 	createdAt, err := parseTimestamp(data.CreatedAt)
