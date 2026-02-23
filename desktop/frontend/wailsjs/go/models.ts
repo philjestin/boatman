@@ -445,6 +445,91 @@ export namespace diff {
 
 }
 
+export namespace harnessui {
+	
+	export class HarnessInfo {
+	    name: string;
+	    path: string;
+	    hasGoMod: boolean;
+	    hasMain: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new HarnessInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.path = source["path"];
+	        this.hasGoMod = source["hasGoMod"];
+	        this.hasMain = source["hasMain"];
+	    }
+	}
+	export class RunRequest {
+	    harnessPath: string;
+	    workDir: string;
+	    taskTitle: string;
+	    taskDescription: string;
+	    envVars: Record<string, string>;
+	
+	    static createFrom(source: any = {}) {
+	        return new RunRequest(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.harnessPath = source["harnessPath"];
+	        this.workDir = source["workDir"];
+	        this.taskTitle = source["taskTitle"];
+	        this.taskDescription = source["taskDescription"];
+	        this.envVars = source["envVars"];
+	    }
+	}
+	export class ScaffoldRequest {
+	    projectName: string;
+	    outputDir: string;
+	    provider: string;
+	    projectLang: string;
+	    includePlanner: boolean;
+	    includeTester: boolean;
+	    includeCostTracking: boolean;
+	    maxIterations: number;
+	    reviewCriteria: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ScaffoldRequest(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.projectName = source["projectName"];
+	        this.outputDir = source["outputDir"];
+	        this.provider = source["provider"];
+	        this.projectLang = source["projectLang"];
+	        this.includePlanner = source["includePlanner"];
+	        this.includeTester = source["includeTester"];
+	        this.includeCostTracking = source["includeCostTracking"];
+	        this.maxIterations = source["maxIterations"];
+	        this.reviewCriteria = source["reviewCriteria"];
+	    }
+	}
+	export class ScaffoldResponse {
+	    outputDir: string;
+	    filesCreated: string[];
+	
+	    static createFrom(source: any = {}) {
+	        return new ScaffoldResponse(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.outputDir = source["outputDir"];
+	        this.filesCreated = source["filesCreated"];
+	    }
+	}
+
+}
+
 export namespace main {
 	
 	export class AgentSessionInfo {
