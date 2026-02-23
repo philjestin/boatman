@@ -8,9 +8,9 @@ const config: DocsThemeConfig = {
     </span>
   ),
   project: {
-    link: 'https://github.com/philjestin/boatman-ecosystem',
+    link: 'https://github.com/philjestin/boatman',
   },
-  docsRepositoryBase: 'https://github.com/philjestin/boatman-ecosystem/tree/main/docs',
+  docsRepositoryBase: 'https://github.com/philjestin/boatman/tree/main/docs',
   footer: {
     text: 'Boatman Ecosystem Documentation',
   },

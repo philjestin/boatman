@@ -59,7 +59,7 @@ boatman-ecosystem/
 │   └── *.md               # Desktop-specific docs
 │
 ├── shared/                # Shared Go packages
-│   └── go.mod             # module github.com/philjestin/boatman-ecosystem/shared
+│   └── go.mod             # module github.com/philjestin/boatman/shared
 │
 └── docs/                  # Documentation site (this site)
     ├── pages/
@@ -98,7 +98,7 @@ Each component maintains its own `go.mod`:
 |-----------|-------------|------------------|
 | CLI | `github.com/philjestin/boatmanmode` | Yes (as a Go library) |
 | Desktop | `boatman` | No (application-only) |
-| Shared | `github.com/philjestin/boatman-ecosystem/shared` | Yes |
+| Shared | `github.com/philjestin/boatman/shared` | Yes |
 
 The CLI publishes as a versioned Go module. The Desktop is a standalone application.
 
