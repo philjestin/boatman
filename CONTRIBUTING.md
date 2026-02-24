@@ -4,10 +4,12 @@ Thank you for your interest in contributing! This guide will help you get starte
 
 ## Repository Structure
 
-This is a monorepo containing two main components:
+This is a monorepo containing four main components:
 
 - **`cli/`** - The autonomous development CLI (boatmanmode)
 - **`desktop/`** - The desktop GUI wrapper (boatmanapp)
+- **`harness/`** - Reusable model-agnostic AI agent primitives
+- **`platform/`** - Organizational server for shared memory, policy, and cost governance
 
 ## Getting Started
 
@@ -152,7 +154,9 @@ Fixes #123
 Prefixes:
 - `[cli]` - Changes to the CLI component
 - `[desktop]` - Changes to the desktop component
-- `[both]` - Changes affecting both components
+- `[harness]` - Changes to the harness module
+- `[platform]` - Changes to the platform server
+- `[both]` - Changes affecting multiple components
 - `[docs]` - Documentation only changes
 - `[build]` - Build system or tooling changes
 
@@ -234,6 +238,36 @@ The CLI and desktop communicate via JSON events. When modifying this protocol:
 2. Create/update React components in `desktop/frontend/src/`
 3. Wire up Wails bindings if needed
 4. Update desktop README
+
+### Working on the Harness
+
+The harness module has **zero external dependencies** (stdlib only). When adding new interfaces or primitives:
+
+1. Implement in `harness/` with only stdlib imports
+2. Add tests: `cd harness && go test ./...`
+3. If adding a new interface that the platform will implement, coordinate with `platform/services/`
+4. Update `harness/doc.go` with new package descriptions
+
+### Working on the Platform
+
+```bash
+# Make changes in platform/
+cd platform
+
+# Run tests
+go test ./...
+
+# Build
+go build -o boatman-platform ./cmd/boatman-platform
+
+# Test locally
+./boatman-platform --port 8080 --data-dir /tmp/boatman-test
+
+# Verify
+curl http://localhost:8080/api/v1/health
+```
+
+If modifying harness interfaces that the platform implements (Guard, Observer, MemoryProvider), update both the harness interface and the platform implementation together.
 
 ### Debugging
 

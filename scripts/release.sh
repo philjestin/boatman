@@ -19,13 +19,17 @@ fi
 echo "Which component do you want to release?"
 echo "  1) CLI only"
 echo "  2) Desktop only"
-echo "  3) Both (coordinated release)"
-read -p "Choice (1-3): " CHOICE
+echo "  3) Platform only"
+echo "  4) CLI + Desktop (coordinated release)"
+echo "  5) All (CLI + Desktop + Platform)"
+read -p "Choice (1-5): " CHOICE
 
 case $CHOICE in
     1) COMPONENTS="cli" ;;
     2) COMPONENTS="desktop" ;;
-    3) COMPONENTS="cli desktop" ;;
+    3) COMPONENTS="platform" ;;
+    4) COMPONENTS="cli desktop" ;;
+    5) COMPONENTS="cli desktop platform" ;;
     *) echo "Invalid choice"; exit 1 ;;
 esac
 
@@ -33,11 +37,13 @@ esac
 # Use simple variables instead of associative arrays for bash 3.x compatibility.
 VERSION_CLI=""
 VERSION_DESKTOP=""
+VERSION_PLATFORM=""
 
 get_version() {
     case "$1" in
         cli) echo "$VERSION_CLI" ;;
         desktop) echo "$VERSION_DESKTOP" ;;
+        platform) echo "$VERSION_PLATFORM" ;;
     esac
 }
 
@@ -45,6 +51,7 @@ set_version() {
     case "$1" in
         cli) VERSION_CLI="$2" ;;
         desktop) VERSION_DESKTOP="$2" ;;
+        platform) VERSION_PLATFORM="$2" ;;
     esac
 }
 
@@ -55,6 +62,8 @@ for COMPONENT in $COMPONENTS; do
     # Show current version
     if [ "$COMPONENT" = "cli" ]; then
         CURRENT=$(sed 's/v//' cli/VERSION)
+    elif [ "$COMPONENT" = "platform" ]; then
+        CURRENT=$(sed 's/v//' platform/VERSION 2>/dev/null || echo "0.1.0")
     else
         CURRENT=$(grep '"version"' desktop/wails.json | sed 's/.*"version": "\(.*\)".*/\1/')
     fi
@@ -84,6 +93,8 @@ for COMPONENT in $COMPONENTS; do
     if [ "$BUMP_TYPE" = "custom" ]; then
         if [ "$COMPONENT" = "cli" ]; then
             echo "v$NEW_VERSION" > cli/VERSION
+        elif [ "$COMPONENT" = "platform" ]; then
+            echo "v$NEW_VERSION" > platform/VERSION
         else
             if [[ "$OSTYPE" == "darwin"* ]]; then
                 sed -i '' "s/\"version\": \".*\"/\"version\": \"$NEW_VERSION\"/" desktop/wails.json
@@ -96,6 +107,8 @@ for COMPONENT in $COMPONENTS; do
         ./scripts/bump-version.sh $COMPONENT $BUMP_TYPE > /dev/null
         if [ "$COMPONENT" = "cli" ]; then
             set_version "$COMPONENT" "$(sed 's/v//' cli/VERSION)"
+        elif [ "$COMPONENT" = "platform" ]; then
+            set_version "$COMPONENT" "$(sed 's/v//' platform/VERSION)"
         else
             set_version "$COMPONENT" "$(grep '"version"' desktop/wails.json | sed 's/.*"version": "\(.*\)".*/\1/')"
         fi
@@ -146,8 +159,13 @@ echo ""
 echo "=== Commit and Tag ==="
 
 # Prepare commit message
-if [ "$COMPONENTS" = "cli desktop" ]; then
-    COMMIT_MSG="Release: CLI v${VERSION_CLI}, Desktop v${VERSION_DESKTOP}"
+COMPONENT_COUNT=$(echo $COMPONENTS | wc -w | tr -d ' ')
+if [ "$COMPONENT_COUNT" -gt 1 ]; then
+    COMMIT_MSG="Release:"
+    for COMPONENT in $COMPONENTS; do
+        COMMIT_MSG="$COMMIT_MSG $(echo $COMPONENT | awk '{print toupper(substr($0,1,1)) substr($0,2)}') v$(get_version "$COMPONENT"),"
+    done
+    COMMIT_MSG="${COMMIT_MSG%,}" # remove trailing comma
 else
     COMPONENT=${COMPONENTS}
     COMMIT_MSG="$COMPONENT: Release v$(get_version "$COMPONENT")"
@@ -195,6 +213,9 @@ if [ "$PUSH" = "y" ]; then
         if [ "$COMPONENT" = "cli" ]; then
             echo "  • Build CLI binaries for all platforms"
             echo "  • Create GitHub release for cli/v$(get_version "$COMPONENT")"
+        elif [ "$COMPONENT" = "platform" ]; then
+            echo "  • Build platform server binaries for all platforms"
+            echo "  • Create GitHub release for platform/v$(get_version "$COMPONENT")"
         else
             echo "  • Build desktop apps for macOS, Linux, Windows"
             echo "  • Create GitHub release for desktop/v$(get_version "$COMPONENT")"

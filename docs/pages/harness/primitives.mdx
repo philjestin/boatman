@@ -98,6 +98,17 @@ Persists patterns, issues, and preferences learned from previous sessions.
 | Preferences | Unlimited | - |
 | Statistics | 1 per project | - |
 
+### MemoryProvider Interface
+
+The `MemoryProvider` interface allows pluggable memory backends. The default `Store` implements it for local file storage, and the [Platform](/platform) provides `PlatformMemoryStore` for hierarchically merged organizational memory.
+
+```go
+type MemoryProvider interface {
+    Get(projectPath string) (*Memory, error)
+    Save(mem *Memory) error
+}
+```
+
 ### Usage
 
 ```go

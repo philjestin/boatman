@@ -1,0 +1,253 @@
+# Cost Governance
+
+The `platform/services/cost` package provides budget tracking, limit enforcement, and alerts for API usage across organizational scopes. It bridges the harness `cost.Tracker` (per-run token aggregation) with platform-level cost governance (daily/monthly budgets, alerts, and cross-team analytics).
+
+## Governor
+
+The `Governor` manages cost tracking, budget enforcement, and alerts. It wraps a `CostStore` for persistence and an event `Bus` for real-time notifications.
+
+```go
+type Governor struct {
+    costStore storage.CostStore
+    bus       *eventbus.Bus
+}
+
+func NewGovernor(costStore storage.CostStore, bus *eventbus.Bus) *Governor {
+    return &Governor{
+        costStore: costStore,
+        bus:       bus,
+    }
+}
+```
+
+---
+
+## RecordStep
+
+`RecordStep` records token usage from a `harness/cost.Usage` struct, persists it to storage, publishes a `cost.recorded` event, and checks the budget for alerts.
+
+```go
+func (g *Governor) RecordStep(ctx context.Context, runID, step string, usage harnesscost.Usage, scope storage.Scope) error {
+    record := &storage.UsageRecord{
+        ID:               fmt.Sprintf("%s-%s-%d", runID, step, time.Now().UnixNano()),
+        RunID:            runID,
+        Scope:            scope,
+        Step:             step,
+        InputTokens:      usage.InputTokens,
+        OutputTokens:     usage.OutputTokens,
+        CacheReadTokens:  usage.CacheReadTokens,
+        CacheWriteTokens: usage.CacheWriteTokens,
+        TotalCostUSD:     usage.TotalCostUSD,
+    }
+
+    if err := g.costStore.RecordUsage(ctx, record); err != nil {
+        return fmt.Errorf("record usage: %w", err)
+    }
+
+    // Publish cost event
+    if g.bus != nil {
+        g.bus.Publish(ctx, &storage.Event{
+            ID:    fmt.Sprintf("cost-%s-%s-%d", runID, step, time.Now().UnixNano()),
+            RunID: runID,
+            Scope: scope,
+            Type:  eventbus.SubjectCostRecorded,
+            Data: map[string]any{
+                "step":      step,
+                "cost_usd":  usage.TotalCostUSD,
+            },
+        })
+    }
+
+    // Check budget
+    status, err := g.CheckBudget(ctx, scope)
+    if err != nil {
+        return nil // don't fail on budget check errors
+    }
+
+    if status.AlertTriggered && g.bus != nil {
+        g.bus.Publish(ctx, &storage.Event{
+            ID:      fmt.Sprintf("budget-alert-%d", time.Now().UnixNano()),
+            Scope:   scope,
+            Type:    eventbus.SubjectBudgetAlert,
+            Message: fmt.Sprintf("Budget alert: daily spend $%.4f, monthly spend $%.4f",
+                status.DailySpend, status.MonthlySpend),
+            Data: map[string]any{
+                "daily_spend":   status.DailySpend,
+                "monthly_spend": status.MonthlySpend,
+            },
+        })
+    }
+
+    return nil
+}
+```
+
+The flow for each recorded step:
+
+1. Create a `UsageRecord` from the harness `cost.Usage`
+2. Persist the record to storage via `costStore.RecordUsage`
+3. Publish a `cost.recorded` event to the bus
+4. Call `CheckBudget` to evaluate current spend against limits
+5. If the alert threshold is crossed, publish a `budget.alert` event
+
+Budget check errors are swallowed to avoid failing a run due to monitoring issues.
+
+---
+
+## CheckBudget
+
+`CheckBudget` returns a `BudgetStatus` that reports current spend versus configured limits.
+
+```go
+type BudgetStatus struct {
+    Scope          storage.Scope  `json:"scope"`
+    Budget         *storage.Budget `json:"budget,omitempty"`
+    DailySpend     float64        `json:"daily_spend"`
+    MonthlySpend   float64        `json:"monthly_spend"`
+    AtLimit        bool           `json:"at_limit"`
+    AlertTriggered bool           `json:"alert_triggered"`
+}
+```
+
+The method aggregates usage records for the current day and month, then compares against the budget:
+
+```go
+func (g *Governor) CheckBudget(ctx context.Context, scope storage.Scope) (*BudgetStatus, error) {
+    budget, err := g.costStore.GetBudget(ctx, scope)
+    if err != nil {
+        return nil, fmt.Errorf("get budget: %w", err)
+    }
+
+    status := &BudgetStatus{
+        Scope:  scope,
+        Budget: budget,
+    }
+
+    if budget == nil {
+        return status, nil
+    }
+
+    now := time.Now().UTC()
+
+    // Daily spend
+    dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+    dailyRecords, err := g.costStore.GetUsage(ctx, storage.UsageFilter{
+        Scope: &scope,
+        Since: dayStart,
+        Until: now,
+    })
+    if err == nil {
+        for _, r := range dailyRecords {
+            status.DailySpend += r.TotalCostUSD
+        }
+    }
+
+    // Monthly spend
+    monthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+    monthlyRecords, err := g.costStore.GetUsage(ctx, storage.UsageFilter{
+        Scope: &scope,
+        Since: monthStart,
+        Until: now,
+    })
+    if err == nil {
+        for _, r := range monthlyRecords {
+            status.MonthlySpend += r.TotalCostUSD
+        }
+    }
+
+    // Check limits
+    if budget.DailyLimit > 0 && status.DailySpend >= budget.DailyLimit {
+        status.AtLimit = true
+    }
+    if budget.MonthlyLimit > 0 && status.MonthlySpend >= budget.MonthlyLimit {
+        status.AtLimit = true
+    }
+
+    // Check alert threshold
+    if budget.AlertAt > 0 {
+        if budget.DailyLimit > 0 && status.DailySpend >= budget.DailyLimit*budget.AlertAt {
+            status.AlertTriggered = true
+        }
+        if budget.MonthlyLimit > 0 && status.MonthlySpend >= budget.MonthlyLimit*budget.AlertAt {
+            status.AlertTriggered = true
+        }
+    }
+
+    return status, nil
+}
+```
+
+---
+
+## Budget Types
+
+Budgets are configured per scope and support three limit types:
+
+```go
+type Budget struct {
+    ID           string    `json:"id"`
+    Scope        Scope     `json:"scope"`
+    MonthlyLimit float64   `json:"monthly_limit"`
+    DailyLimit   float64   `json:"daily_limit"`
+    PerRunLimit  float64   `json:"per_run_limit"`
+    AlertAt      float64   `json:"alert_at"` // percentage (0-1) at which to alert
+    UpdatedAt    time.Time `json:"updated_at"`
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `MonthlyLimit` | Maximum USD spend per calendar month |
+| `DailyLimit` | Maximum USD spend per calendar day |
+| `PerRunLimit` | Maximum USD spend per individual run |
+| `AlertAt` | Percentage (0-1) at which to trigger alerts (e.g., `0.8` = alert at 80% of limit) |
+
+---
+
+## CostHooks
+
+`CostHooks` creates `runner.Hooks` that bridge the harness `cost.Tracker` to the platform `Governor`. After each pipeline step, the hook reads the tracker's total and records it with the governor for org-level tracking.
+
+```go
+func CostHooks(governor *Governor, tracker *harnesscost.Tracker, runID string, scope storage.Scope) runner.Hooks {
+    ctx := context.Background()
+
+    return runner.Hooks{
+        OnStepEnd: func(step string, _ time.Duration, _ error) {
+            if tracker == nil {
+                return
+            }
+            usage := tracker.Total()
+            governor.RecordStep(ctx, runID, step, usage, scope)
+        },
+    }
+}
+```
+
+This is the integration point between the harness and the platform. The harness `cost.Tracker` continues to aggregate token usage per-run; the `CostHooks` send each step's cumulative usage to the governor for org-level budget tracking and alerting.
+
+---
+
+## Relationship to harness cost.Tracker
+
+The harness `cost.Tracker` and the platform `Governor` serve complementary roles:
+
+| Component | Scope | Purpose |
+|-----------|-------|---------|
+| `harness/cost.Tracker` | Per-run | Aggregates token usage across steps within a single run |
+| `platform/services/cost.Governor` | Org-wide | Persists usage records, enforces budgets, publishes alerts |
+
+The `CostHooks` bridge connects them: the tracker does the counting, the governor does the governance.
+
+---
+
+## Event Types
+
+The governor publishes two event types:
+
+| Event | Subject | When |
+|-------|---------|------|
+| Cost recorded | `cost.recorded` | After each step's usage is persisted |
+| Budget alert | `budget.alert` | When spend crosses the `AlertAt` threshold |
+
+Both events appear in the dashboard's Live Events stream and include spend details in their `Data` field.

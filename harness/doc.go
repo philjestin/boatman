@@ -8,9 +8,15 @@
 //
 // Core packages:
 //
+//   - runner: Composable pipeline orchestrator with execute-test-review-refactor loop
+//   - runner (Observer): Run lifecycle event interface for logging and metrics
+//   - runner (Guard): Mid-run policy enforcement interface with GuardState
 //   - review: Canonical review types and the Reviewer interface
 //   - checkpoint: Progress saving with git integration
 //   - memory: Cross-session learning (patterns, preferences, issues)
+//   - memory (MemoryProvider): Pluggable memory backend interface
+//   - team: Composable agent teams with routing, parallel execution, and aggregation
+//   - team (Adapters): DeveloperTeam, PlannerTeam, TesterTeam, ReviewerTeam
 //   - cost: Token usage and cost tracking
 //   - filesummary: Intelligent file summarization
 //   - handoff: Structured context passing between pipeline stages

@@ -54,6 +54,56 @@ The loop runs up to `MaxIterations` times (default: 3). Each iteration saves a c
 
 ---
 
+## Observer
+
+The `Observer` interface receives lifecycle events during a run. Use it for logging, metrics, or publishing events to external systems.
+
+```go
+type Observer interface {
+    OnRunStart(ctx context.Context, req *Request)
+    OnRunComplete(ctx context.Context, result *Result)
+    OnStepStart(ctx context.Context, step string)
+    OnStepComplete(ctx context.Context, step string, duration time.Duration, err error)
+}
+```
+
+A `NopObserver` is provided as a no-op default. Attach an observer with `WithObserver`:
+
+```go
+r := runner.New(dev, rev, runner.WithObserver(myObserver))
+```
+
+The [Platform module](/platform) provides `ObserverAdapter`, which publishes lifecycle events to the NATS event bus.
+
+---
+
+## Guard
+
+The `Guard` interface enables mid-run policy enforcement. Before each step, the runner calls `AllowStep` — if it returns an error, the run is halted.
+
+```go
+type Guard interface {
+    AllowStep(ctx context.Context, step string, state *GuardState) error
+}
+
+type GuardState struct {
+    Iterations   int
+    ElapsedTime  time.Duration
+    TotalCostUSD float64
+    FilesChanged int
+}
+```
+
+A `NopGuard` is provided as a no-op default. Attach a guard with `WithGuard`:
+
+```go
+r := runner.New(dev, rev, runner.WithGuard(myGuard))
+```
+
+The [Platform module](/platform) provides `PolicyGuard`, which checks cost and file limits against the effective policy and publishes violation events.
+
+---
+
 ## Configuration
 
 ```go
@@ -76,6 +126,19 @@ type Config struct {
     Cost       *cost.Tracker
     Issues     *issuetracker.IssueTracker
 }
+```
+
+The runner also supports functional options for Observer, Guard, and Hooks:
+
+```go
+r := runner.New(dev, rev,
+    runner.WithPlanner(planner),
+    runner.WithTester(tester),
+    runner.WithObserver(observer),
+    runner.WithGuard(guard),
+    runner.WithHooks(hooks),
+    runner.WithMaxIterations(5),
+)
 ```
 
 ---

@@ -1,0 +1,238 @@
+# Platform Deployment
+
+This guide covers how to run the Boatman Platform server across different environments, from local development through production deployment.
+
+## Local Development
+
+The simplest way to get started is to run the platform server with default settings. It stores data in `~/.boatman/platform` and listens on port 8080.
+
+```bash
+go run ./platform/cmd/boatman-platform
+```
+
+You can override the defaults with flags:
+
+```bash
+go run ./platform/cmd/boatman-platform --port 9090 --data-dir /tmp/boatman-dev
+```
+
+### In-Memory Mode for Testing
+
+For integration tests or throwaway experiments, point `--data-dir` at a temporary directory. The SQLite database and embedded NATS data are created fresh each time:
+
+```bash
+DIR=$(mktemp -d)
+go run ./platform/cmd/boatman-platform --data-dir "$DIR"
+# Ctrl-C when done; rm -rf "$DIR" to clean up
+```
+
+Verify the server is running:
+
+```bash
+curl -s http://localhost:8080/api/v1/health | jq .
+```
+
+Expected response:
+
+```json
+{
+  "status": "ok",
+  "service": "boatman-platform"
+}
+```
+
+---
+
+## Team Server
+
+For a small team sharing a single Boatman Platform instance, run the server on a dedicated machine (or VM) that all team members can reach.
+
+### Starting the Server
+
+```bash
+boatman-platform --port 8080 --data-dir /var/lib/boatman
+```
+
+Point each developer's CLI at the shared server by setting the platform URL in their `~/.boatman.yaml`:
+
+```yaml
+platform:
+  url: http://your-server:8080
+```
+
+### Configuring Policies and Budgets
+
+Once the server is running, set up organizational policies and cost budgets via the API. The `X-Boatman-Org` header scopes requests to your organization:
+
+```bash
+# Set an org-wide policy
+curl -s -X PUT http://your-server:8080/api/v1/policies \
+  -H "Content-Type: application/json" \
+  -H "X-Boatman-Org: acme" \
+  -d '{
+    "max_iterations": 5,
+    "max_cost_per_run": 2.00,
+    "require_tests": true
+  }' | jq .
+
+# Set a monthly budget
+curl -s -X PUT http://your-server:8080/api/v1/costs/budget \
+  -H "Content-Type: application/json" \
+  -H "X-Boatman-Org: acme" \
+  -d '{
+    "monthly_limit": 500.00,
+    "daily_limit": 50.00,
+    "per_run_limit": 5.00,
+    "alert_at": 0.8
+  }' | jq .
+```
+
+---
+
+## Production Deployment
+
+### Building for Production
+
+Compile a statically-linked, stripped binary using `ldflags`:
+
+```bash
+go build -ldflags "-s -w" -o boatman-platform ./platform/cmd/boatman-platform
+```
+
+Copy the resulting `boatman-platform` binary to your production host.
+
+### systemd Service
+
+Create a systemd unit file to manage the process. Save the following as `/etc/systemd/system/boatman-platform.service`:
+
+```ini
+[Unit]
+Description=Boatman Platform Server
+After=network.target
+
+[Service]
+Type=simple
+User=boatman
+Group=boatman
+ExecStart=/usr/local/bin/boatman-platform --port 8080 --data-dir /var/lib/boatman
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65536
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/boatman
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Enable and start the service:
+
+```bash
+sudo useradd --system --home-dir /var/lib/boatman --shell /usr/sbin/nologin boatman
+sudo mkdir -p /var/lib/boatman
+sudo chown boatman:boatman /var/lib/boatman
+
+sudo systemctl daemon-reload
+sudo systemctl enable boatman-platform
+sudo systemctl start boatman-platform
+```
+
+### Data Persistence
+
+The platform stores all state in a SQLite database located at `<data-dir>/platform.db`. SQLite uses Write-Ahead Logging (WAL), so you will also see `platform.db-wal` and `platform.db-shm` files in the same directory. The embedded NATS event bus stores its data under `<data-dir>/nats/`.
+
+```
+/var/lib/boatman/
+  platform.db          # Main SQLite database
+  platform.db-wal      # Write-ahead log
+  platform.db-shm      # Shared memory file
+  nats/                 # Embedded NATS JetStream data
+```
+
+Do not move or delete the WAL/SHM files independently of the main database file.
+
+### Backup Strategy
+
+Use the SQLite `.backup` command to create a consistent, point-in-time snapshot of the database. This is safe to run while the server is active:
+
+```bash
+# Create a backup
+sqlite3 /var/lib/boatman/platform.db ".backup /var/lib/boatman/backups/platform-$(date +%Y%m%d-%H%M%S).db"
+```
+
+Automate backups with a cron job:
+
+```bash
+# /etc/cron.d/boatman-backup
+0 */6 * * * boatman sqlite3 /var/lib/boatman/platform.db ".backup /var/lib/boatman/backups/platform-$(date +\%Y\%m\%d-\%H\%M\%S).db"
+```
+
+Rotate old backups to avoid filling the disk:
+
+```bash
+# Keep backups from the last 7 days
+find /var/lib/boatman/backups -name "platform-*.db" -mtime +7 -delete
+```
+
+### Scaling Notes
+
+SQLite is a single-writer database, but for most team sizes (up to ~50 concurrent developers) this is more than sufficient. The platform uses WAL mode, which allows concurrent reads while a single write is in progress.
+
+If you outgrow SQLite (sustained high write volume from hundreds of concurrent users), a future PostgreSQL storage backend is planned. The storage interface in `platform/storage/storage.go` is designed to support multiple backends.
+
+---
+
+## Monitoring
+
+### Health Check Endpoint
+
+The platform exposes a health endpoint at `/api/v1/health` that returns a JSON response:
+
+```bash
+curl -s http://localhost:8080/api/v1/health
+```
+
+```json
+{
+  "status": "ok",
+  "service": "boatman-platform"
+}
+```
+
+Use this endpoint for load balancer health checks, uptime monitoring, or container orchestration liveness probes.
+
+### Log Output
+
+The server writes structured log lines to stdout. Each request is logged with its method, path, status code, and duration:
+
+```
+2026/02/24 10:30:00 platform server listening on :8080
+2026/02/24 10:30:05 GET /api/v1/health 200 1.2ms
+2026/02/24 10:30:12 PUT /api/v1/policies 200 4.8ms
+2026/02/24 10:30:15 GET /api/v1/events/stream 200 0s
+```
+
+Redirect stdout to a file or a log aggregator in production:
+
+```bash
+# With systemd (logs go to journald automatically)
+sudo journalctl -u boatman-platform -f
+
+# Or redirect manually
+boatman-platform --port 8080 --data-dir /var/lib/boatman 2>&1 | tee -a /var/log/boatman-platform.log
+```
+
+### Real-Time Event Stream
+
+For operational visibility, connect to the Server-Sent Events stream to watch platform events in real time:
+
+```bash
+curl -N http://localhost:8080/api/v1/events/stream \
+  -H "X-Boatman-Org: acme"
+```
+
+This streams events as they occur, which is useful for debugging and verifying that CLI clients are reporting runs correctly.

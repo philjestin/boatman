@@ -22,6 +22,8 @@ type Runner struct {
 	issueHistory *issuetracker.IssueHistory
 	checkpoint   *checkpoint.Manager
 	hooks        Hooks
+	observer     Observer
+	guard        Guard
 }
 
 // Option configures a Runner.
@@ -83,11 +85,15 @@ func (r *Runner) Run(ctx context.Context, req *Request) (*Result, error) {
 		CostTracker: r.costTracker,
 	}
 
+	if r.observer != nil {
+		r.observer.OnRunStart(ctx, req)
+	}
+
 	// --- 1. Plan (optional) ---
 	if r.planner != nil {
 		plan, stepRec, err := r.runStep(ctx, "plan", func() (any, error) {
 			return r.planner.Plan(ctx, req)
-		})
+		}, r.buildGuardState(start, 0, nil))
 		result.Steps = append(result.Steps, stepRec)
 		r.hooks.callOnPlanComplete(ctx, asPlan(plan), err)
 
@@ -96,6 +102,9 @@ func (r *Runner) Run(ctx context.Context, req *Request) (*Result, error) {
 				result.Status = StatusError
 				result.Error = fmt.Errorf("planning failed: %w", err)
 				result.Duration = time.Since(start)
+				if r.observer != nil {
+					r.observer.OnRunComplete(ctx, result)
+				}
 				return result, nil
 			}
 			// skip planning, continue without a plan
@@ -109,7 +118,7 @@ func (r *Runner) Run(ctx context.Context, req *Request) (*Result, error) {
 	// --- 2. Execute ---
 	execOut, stepRec, err := r.runStep(ctx, "execute", func() (any, error) {
 		return r.developer.Execute(ctx, req, result.Plan)
-	})
+	}, r.buildGuardState(start, 0, nil))
 	result.Steps = append(result.Steps, stepRec)
 	r.hooks.callOnExecuteComplete(ctx, asExecuteResult(execOut), err)
 
@@ -117,6 +126,9 @@ func (r *Runner) Run(ctx context.Context, req *Request) (*Result, error) {
 		result.Status = StatusExecuteFailed
 		result.Error = fmt.Errorf("execute failed: %w", err)
 		result.Duration = time.Since(start)
+		if r.observer != nil {
+			r.observer.OnRunComplete(ctx, result)
+		}
 		return result, nil
 	}
 
@@ -135,6 +147,9 @@ func (r *Runner) Run(ctx context.Context, req *Request) (*Result, error) {
 			result.Status = StatusCanceled
 			result.Error = err
 			result.Duration = time.Since(start)
+			if r.observer != nil {
+				r.observer.OnRunComplete(ctx, result)
+			}
 			return result, nil
 		}
 
@@ -142,7 +157,7 @@ func (r *Runner) Run(ctx context.Context, req *Request) (*Result, error) {
 		if r.tester != nil && r.config.TestBeforeReview {
 			testOut, tStepRec, tErr := r.runStep(ctx, fmt.Sprintf("test_%d", i), func() (any, error) {
 				return r.tester.Test(ctx, req, currentFiles)
-			})
+			}, r.buildGuardState(start, i, currentFiles))
 			result.Steps = append(result.Steps, tStepRec)
 
 			tr := asTestResult(testOut)
@@ -169,7 +184,7 @@ func (r *Runner) Run(ctx context.Context, req *Request) (*Result, error) {
 		// 3b. Review
 		revOut, rStepRec, rErr := r.runStep(ctx, fmt.Sprintf("review_%d", i), func() (any, error) {
 			return r.reviewer.Review(ctx, currentDiff, req.Description)
-		})
+		}, r.buildGuardState(start, i, currentFiles))
 		result.Steps = append(result.Steps, rStepRec)
 
 		rr := asReviewResult(revOut)
@@ -179,6 +194,9 @@ func (r *Runner) Run(ctx context.Context, req *Request) (*Result, error) {
 			result.Status = StatusError
 			result.Error = fmt.Errorf("review failed on iteration %d: %w", i, rErr)
 			result.Duration = time.Since(start)
+			if r.observer != nil {
+				r.observer.OnRunComplete(ctx, result)
+			}
 			return result, nil
 		}
 
@@ -215,7 +233,7 @@ func (r *Runner) Run(ctx context.Context, req *Request) (*Result, error) {
 
 			refOut, refStepRec, refErr := r.runStep(ctx, fmt.Sprintf("refactor_%d", i), func() (any, error) {
 				return r.developer.Refactor(ctx, req, issues, guidance, currentExec)
-			})
+			}, r.buildGuardState(start, i, currentFiles))
 			result.Steps = append(result.Steps, refStepRec)
 
 			rref := asRefactorResult(refOut)
@@ -225,6 +243,9 @@ func (r *Runner) Run(ctx context.Context, req *Request) (*Result, error) {
 				result.Status = StatusError
 				result.Error = fmt.Errorf("refactor failed on iteration %d: %w", i, refErr)
 				result.Duration = time.Since(start)
+				if r.observer != nil {
+					r.observer.OnRunComplete(ctx, result)
+				}
 				return result, nil
 			}
 
@@ -255,17 +276,51 @@ func (r *Runner) Run(ctx context.Context, req *Request) (*Result, error) {
 	stats := r.issueHistory.GetTracker().Stats()
 	result.IssueStats = &stats
 
+	if r.observer != nil {
+		r.observer.OnRunComplete(ctx, result)
+	}
+
 	return result, nil
 }
 
-// runStep executes fn, records timing, and fires step hooks.
-func (r *Runner) runStep(_ context.Context, name string, fn func() (any, error)) (any, StepRecord, error) {
+// buildGuardState creates a GuardState snapshot from the current run metrics.
+func (r *Runner) buildGuardState(runStart time.Time, iterations int, filesChanged []string) *GuardState {
+	state := &GuardState{
+		Iterations:   iterations,
+		ElapsedTime:  time.Since(runStart),
+		FilesChanged: len(filesChanged),
+	}
+	if r.costTracker != nil {
+		state.TotalCostUSD = r.costTracker.Total().TotalCostUSD
+	}
+	return state
+}
+
+// runStep executes fn, records timing, and fires step/observer/guard hooks.
+func (r *Runner) runStep(ctx context.Context, name string, fn func() (any, error), guardState *GuardState) (any, StepRecord, error) {
+	if r.observer != nil {
+		r.observer.OnStepStart(ctx, name)
+	}
 	r.hooks.callOnStepStart(name)
+
+	// Guard check
+	if r.guard != nil && guardState != nil {
+		if err := r.guard.AllowStep(ctx, name, guardState); err != nil {
+			if r.observer != nil {
+				r.observer.OnStepComplete(ctx, name, 0, err)
+			}
+			r.hooks.callOnStepEnd(name, 0, err)
+			return nil, StepRecord{Name: name, Duration: 0, Error: err}, err
+		}
+	}
+
 	start := time.Now()
-
 	val, err := fn()
-
 	dur := time.Since(start)
+
+	if r.observer != nil {
+		r.observer.OnStepComplete(ctx, name, dur, err)
+	}
 	r.hooks.callOnStepEnd(name, dur, err)
 
 	return val, StepRecord{Name: name, Duration: dur, Error: err}, err

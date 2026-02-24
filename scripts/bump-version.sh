@@ -8,18 +8,19 @@ COMPONENT=$1
 BUMP_TYPE=$2
 
 if [ -z "$COMPONENT" ] || [ -z "$BUMP_TYPE" ]; then
-    echo "Usage: $0 [cli|desktop] [major|minor|patch]"
+    echo "Usage: $0 [cli|desktop|platform] [major|minor|patch]"
     echo ""
     echo "Examples:"
-    echo "  $0 cli patch     # 1.2.3 -> 1.2.4"
-    echo "  $0 cli minor     # 1.2.3 -> 1.3.0"
-    echo "  $0 cli major     # 1.2.3 -> 2.0.0"
-    echo "  $0 desktop minor # 1.0.0 -> 1.1.0"
+    echo "  $0 cli patch      # 1.2.3 -> 1.2.4"
+    echo "  $0 cli minor      # 1.2.3 -> 1.3.0"
+    echo "  $0 cli major      # 1.2.3 -> 2.0.0"
+    echo "  $0 desktop minor  # 1.0.0 -> 1.1.0"
+    echo "  $0 platform patch # 1.0.0 -> 1.0.1"
     exit 1
 fi
 
-if [ "$COMPONENT" != "cli" ] && [ "$COMPONENT" != "desktop" ]; then
-    echo "Error: Component must be 'cli' or 'desktop'"
+if [ "$COMPONENT" != "cli" ] && [ "$COMPONENT" != "desktop" ] && [ "$COMPONENT" != "platform" ]; then
+    echo "Error: Component must be 'cli', 'desktop', or 'platform'"
     exit 1
 fi
 
@@ -34,6 +35,11 @@ if [ "$COMPONENT" = "cli" ]; then
         echo "v0.0.0" > cli/VERSION
     fi
     CURRENT_VERSION=$(cat cli/VERSION | sed 's/v//')
+elif [ "$COMPONENT" = "platform" ]; then
+    if [ ! -f "platform/VERSION" ]; then
+        echo "v0.1.0" > platform/VERSION
+    fi
+    CURRENT_VERSION=$(cat platform/VERSION | sed 's/v//')
 else
     # Desktop version from wails.json
     CURRENT_VERSION=$(grep '"version"' desktop/wails.json | sed 's/.*"version": "\(.*\)".*/\1/')
@@ -75,6 +81,11 @@ if [ "$COMPONENT" = "cli" ]; then
     fi
 
     echo "✓ Updated cli/VERSION"
+elif [ "$COMPONENT" = "platform" ]; then
+    # Update VERSION file
+    echo "v$NEW_VERSION" > platform/VERSION
+
+    echo "✓ Updated platform/VERSION"
 else
     # Update wails.json
     if [[ "$OSTYPE" == "darwin"* ]]; then

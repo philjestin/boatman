@@ -1,0 +1,13 @@
+{
+  "index": "Overview",
+  "getting-started": "Getting Started",
+  "storage": "Storage Layer",
+  "event-bus": "Event Bus",
+  "api": "HTTP API",
+  "memory-service": "Memory Service",
+  "policy-engine": "Policy Engine",
+  "cost-governance": "Cost Governance",
+  "dashboard": "Web Dashboard",
+  "cli-integration": "CLI Integration",
+  "configuration": "Configuration"
+}

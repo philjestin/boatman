@@ -1,0 +1,266 @@
+# Policy Engine
+
+The `platform/services/policy` package provides layered policy enforcement that is evaluated before and during agent runs. Policies define organizational guardrails -- iteration limits, cost caps, model restrictions, and quality requirements -- that are merged across scopes and enforced at runtime.
+
+## Policy Fields
+
+A `Policy` is stored per scope and defines the following enforcement rules:
+
+```go
+type Policy struct {
+    ID               string   `json:"id"`
+    Scope            Scope    `json:"scope"`
+    MaxIterations    int      `json:"max_iterations,omitempty"`
+    MaxCostPerRun    float64  `json:"max_cost_per_run,omitempty"`
+    MaxFilesChanged  int      `json:"max_files_changed,omitempty"`
+    AllowedModels    []string `json:"allowed_models,omitempty"`
+    BlockedPatterns  []string `json:"blocked_patterns,omitempty"`
+    RequireTests     bool     `json:"require_tests"`
+    RequireReview    bool     `json:"require_review"`
+    UpdatedAt        time.Time `json:"updated_at"`
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `MaxIterations` | `int` | Maximum review-refactor cycles allowed |
+| `MaxCostPerRun` | `float64` | Maximum USD spend per run |
+| `MaxFilesChanged` | `int` | Maximum number of files a run can modify |
+| `AllowedModels` | `[]string` | Models agents are permitted to use |
+| `BlockedPatterns` | `[]string` | File patterns agents must not modify |
+| `RequireTests` | `bool` | Whether tests must pass before review |
+| `RequireReview` | `bool` | Whether review is mandatory |
+
+---
+
+## Merge Rules
+
+When policies exist at multiple scope levels (org, team, repo), they are merged using the `GetEffectivePolicy` method on the `PolicyStore`. The merge strategy follows these rules:
+
+| Rule | Fields | Merge Behavior |
+|------|--------|---------------|
+| Most restrictive | `MaxIterations`, `MaxCostPerRun`, `MaxFilesChanged` | Minimum value wins |
+| Intersection | `AllowedModels` | Only models allowed at all levels |
+| Union | `BlockedPatterns` | Patterns blocked at any level are blocked |
+| OR | `RequireTests`, `RequireReview` | If required at any level, required everywhere |
+
+This ensures that broader organizational policies cannot be weakened by more specific scopes.
+
+---
+
+## Engine
+
+The `Engine` struct evaluates and enforces policies using a `PolicyStore`.
+
+```go
+type Engine struct {
+    store storage.PolicyStore
+}
+
+func NewEngine(store storage.PolicyStore) *Engine {
+    return &Engine{store: store}
+}
+```
+
+---
+
+## Engine.Evaluate
+
+`Evaluate` checks whether a request is allowed under the effective policy for a scope. If no policy exists, the request is allowed by default.
+
+```go
+func (e *Engine) Evaluate(ctx context.Context, scope storage.Scope) (*Decision, error) {
+    policy, err := e.store.GetEffectivePolicy(ctx, scope)
+    if err != nil {
+        return nil, fmt.Errorf("get effective policy: %w", err)
+    }
+
+    if policy == nil {
+        return &Decision{Allowed: true}, nil
+    }
+
+    return &Decision{Allowed: true}, nil
+}
+```
+
+The `Decision` type:
+
+```go
+type Decision struct {
+    Allowed bool   `json:"allowed"`
+    Reason  string `json:"reason,omitempty"`
+}
+```
+
+---
+
+## Engine.EnforceConfig
+
+`EnforceConfig` caps a `runner.Config` to comply with the effective policy. This is called before the run starts to ensure the pipeline configuration respects organizational limits.
+
+```go
+func (e *Engine) EnforceConfig(ctx context.Context, scope storage.Scope, cfg runner.Config) (runner.Config, error) {
+    policy, err := e.store.GetEffectivePolicy(ctx, scope)
+    if err != nil {
+        return cfg, fmt.Errorf("get effective policy: %w", err)
+    }
+
+    if policy == nil {
+        return cfg, nil
+    }
+
+    // Cap iterations
+    if policy.MaxIterations > 0 && (cfg.MaxIterations == 0 || cfg.MaxIterations > policy.MaxIterations) {
+        cfg.MaxIterations = policy.MaxIterations
+    }
+
+    // Enforce test requirement
+    if policy.RequireTests {
+        cfg.TestBeforeReview = true
+        cfg.FailOnTestFailure = true
+    }
+
+    return cfg, nil
+}
+```
+
+Key enforcement behaviors:
+- `MaxIterations` is capped to the policy value if the config value is higher (or zero)
+- `RequireTests` forces `TestBeforeReview` and `FailOnTestFailure` on the runner config
+
+---
+
+## Engine.GetEffectivePolicy
+
+`GetEffectivePolicy` retrieves the merged effective policy for a scope, delegating to the storage layer.
+
+```go
+func (e *Engine) GetEffectivePolicy(ctx context.Context, scope storage.Scope) (*storage.Policy, error) {
+    return e.store.GetEffectivePolicy(ctx, scope)
+}
+```
+
+---
+
+## PolicyGuard
+
+`PolicyGuard` implements the `runner.Guard` interface to enforce policy constraints during a run. It is consulted before each step in the pipeline and can halt execution if limits are exceeded.
+
+### Runner Guard Interface
+
+```go
+// Guard is consulted before each step execution.
+type Guard interface {
+    AllowStep(ctx context.Context, step string, state *GuardState) error
+}
+
+type GuardState struct {
+    Iterations   int
+    ElapsedTime  time.Duration
+    TotalCostUSD float64
+    FilesChanged int
+}
+```
+
+### PolicyGuard Implementation
+
+```go
+type PolicyGuard struct {
+    engine    *Engine
+    costStore storage.CostStore
+    scope     storage.Scope
+    bus       *eventbus.Bus
+}
+
+// Compile-time check that PolicyGuard implements runner.Guard.
+var _ runner.Guard = (*PolicyGuard)(nil)
+
+func NewPolicyGuard(engine *Engine, costStore storage.CostStore, scope storage.Scope, bus *eventbus.Bus) *PolicyGuard {
+    return &PolicyGuard{
+        engine:    engine,
+        costStore: costStore,
+        scope:     scope,
+        bus:       bus,
+    }
+}
+```
+
+### AllowStep
+
+`AllowStep` checks the effective policy before each step. It inspects:
+
+1. **Cost budget** -- compares `state.TotalCostUSD` against `policy.MaxCostPerRun`
+2. **Files changed limit** -- compares `state.FilesChanged` against `policy.MaxFilesChanged`
+
+If a limit is exceeded, the guard publishes a `policy.violation` event and returns an error to halt the run.
+
+```go
+func (g *PolicyGuard) AllowStep(ctx context.Context, step string, state *runner.GuardState) error {
+    policy, err := g.engine.GetEffectivePolicy(ctx, g.scope)
+    if err != nil {
+        return nil // fail open if we can't read policy
+    }
+    if policy == nil {
+        return nil
+    }
+
+    // Check cost budget
+    if policy.MaxCostPerRun > 0 && state.TotalCostUSD > policy.MaxCostPerRun {
+        reason := fmt.Sprintf("cost budget exceeded: $%.4f > $%.4f limit", state.TotalCostUSD, policy.MaxCostPerRun)
+        g.publishViolation(ctx, step, reason)
+        return fmt.Errorf("policy violation: %s", reason)
+    }
+
+    // Check files changed limit
+    if policy.MaxFilesChanged > 0 && state.FilesChanged > policy.MaxFilesChanged {
+        reason := fmt.Sprintf("files changed limit exceeded: %d > %d", state.FilesChanged, policy.MaxFilesChanged)
+        g.publishViolation(ctx, step, reason)
+        return fmt.Errorf("policy violation: %s", reason)
+    }
+
+    return nil
+}
+```
+
+The guard fails open: if the policy cannot be read, the step is allowed to proceed.
+
+### Violation Events
+
+When a violation is detected, a `policy.violation` event is published to the event bus:
+
+```go
+func (g *PolicyGuard) publishViolation(ctx context.Context, step, reason string) {
+    if g.bus == nil {
+        return
+    }
+    g.bus.Publish(ctx, &storage.Event{
+        ID:      fmt.Sprintf("violation-%s-%s", step, reason),
+        Scope:   g.scope,
+        Type:    eventbus.SubjectPolicyViolation,
+        Name:    "policy_violation",
+        Message: reason,
+        Data: map[string]any{
+            "step":   step,
+            "reason": reason,
+        },
+    })
+}
+```
+
+These events appear in the dashboard's Live Events stream and can trigger alerts.
+
+---
+
+## Wiring It Together
+
+To attach the policy guard to a runner pipeline:
+
+```go
+engine := policy.NewEngine(store.Policies())
+guard := policy.NewPolicyGuard(engine, store.Costs(), scope, bus)
+
+r := runner.New(dev, rev,
+    runner.WithGuard(guard),
+    runner.WithConfig(enforcedCfg),
+)
+```

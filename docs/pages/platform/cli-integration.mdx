@@ -1,0 +1,240 @@
+# CLI Integration
+
+The `cli/internal/platform` package provides connectivity between the Boatman CLI and the platform server. It uses a best-effort connection pattern: when the platform is unreachable, the CLI falls back to standalone operation with no loss of core functionality.
+
+## TryConnect Pattern
+
+The `Connector` struct wraps a platform client and tracks connection state. The `TryConnect` function is the entry point for establishing a connection.
+
+```go
+type Connector struct {
+    client    *platformclient.Client
+    connected bool
+}
+```
+
+### TryConnect
+
+`TryConnect` attempts to reach the platform server with a 3-second timeout. It is non-blocking and best-effort: the CLI never waits longer than 3 seconds and never fails if the server is unreachable.
+
+```go
+func TryConnect(ctx context.Context, serverURL string, scope storage.Scope) *Connector {
+    if serverURL == "" {
+        return &Connector{}
+    }
+
+    client := platformclient.New(serverURL, scope)
+
+    // Quick ping with short timeout
+    pingCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+    defer cancel()
+
+    if err := client.Ping(pingCtx); err != nil {
+        return &Connector{client: client, connected: false}
+    }
+
+    return &Connector{client: client, connected: true}
+}
+```
+
+Behavior by case:
+
+| Scenario | Result |
+|----------|--------|
+| No `server` URL configured | Returns empty `Connector`, `IsConnected()` is false |
+| Server URL configured but unreachable | Returns `Connector` with client, `IsConnected()` is false |
+| Server URL configured and reachable | Returns `Connector` with client, `IsConnected()` is true |
+
+### IsConnected / Client
+
+```go
+func (c *Connector) IsConnected() bool {
+    return c.connected
+}
+
+func (c *Connector) Client() *platformclient.Client {
+    return c.client
+}
+```
+
+`Client()` may return `nil` if no server URL was configured.
+
+---
+
+## Graceful Degradation
+
+The CLI works fully in standalone mode. Platform features are additive -- they enhance the CLI when connected but are never required:
+
+| Feature | Standalone | Connected |
+|---------|-----------|-----------|
+| Run execution | Local runner pipeline | Same, plus run recorded on platform |
+| Memory | Local file-based (`~/.boatman/memory/`) | Hierarchical org/team/repo patterns |
+| Cost tracking | Per-run cost.Tracker output | Plus org-level budgets and alerts |
+| Policy enforcement | CLI config only | Org/team policies merged and enforced |
+| Review | Local review loop | Same, plus results stored on platform |
+
+---
+
+## Platform Client API
+
+The `platform/client.Client` provides HTTP methods for all platform endpoints. Scope headers (`X-Boatman-Org`, `X-Boatman-Team`, `X-Boatman-Repo`) are set automatically on every request.
+
+```go
+type Client struct {
+    baseURL    string
+    httpClient *http.Client
+    scope      storage.Scope
+}
+
+func New(baseURL string, scope storage.Scope) *Client {
+    return &Client{
+        baseURL: baseURL,
+        httpClient: &http.Client{
+            Timeout: 30 * time.Second,
+        },
+        scope: scope,
+    }
+}
+```
+
+### Scope Headers
+
+Every request includes scope headers so the server knows which org/team/repo the request belongs to:
+
+```go
+func (c *Client) setHeaders(req *http.Request) {
+    req.Header.Set("X-Boatman-Org", c.scope.OrgID)
+    req.Header.Set("X-Boatman-Team", c.scope.TeamID)
+    req.Header.Set("X-Boatman-Repo", c.scope.RepoID)
+}
+```
+
+### Available Methods
+
+| Method | Description | Endpoint |
+|--------|-------------|----------|
+| `Ping` | Health check to verify server is reachable | `GET /api/v1/health` |
+| `CreateRun` | Record a new run on the platform | `POST /api/v1/runs` |
+| `UpdateRun` | Update an existing run's status and metrics | `POST /api/v1/runs` |
+| `GetEffectivePolicy` | Retrieve the merged policy for the client's scope | `GET /api/v1/policies/effective` |
+| `GetMemory` | Retrieve merged memory as a `harness/memory.Memory` struct | `GET /api/v1/memory/patterns` + `GET /api/v1/memory/preferences` |
+| `RecordUsage` | Record a usage record for cost tracking | `POST /api/v1/costs/usage` |
+| `CheckBudget` | Get current budget status (spend vs limits) | `GET /api/v1/costs/budget` |
+
+### GetMemory
+
+`GetMemory` fetches patterns and preferences from the platform and converts them to a `harness/memory.Memory` struct. This allows the runner pipeline to use platform memory with the same interface as local memory.
+
+```go
+func (c *Client) GetMemory(ctx context.Context) (*harnessmemory.Memory, error) {
+    var patterns []*storage.Pattern
+    if err := c.get(ctx, "/api/v1/memory/patterns", &patterns); err != nil {
+        return nil, fmt.Errorf("get patterns: %w", err)
+    }
+
+    var prefs storage.Preferences
+    if err := c.get(ctx, "/api/v1/memory/preferences", &prefs); err != nil {
+        return nil, fmt.Errorf("get preferences: %w", err)
+    }
+
+    mem := &harnessmemory.Memory{
+        ProjectID:    fmt.Sprintf("%s/%s/%s", c.scope.OrgID, c.scope.TeamID, c.scope.RepoID),
+        FilePatterns: make(map[string][]string),
+        Preferences: harnessmemory.Preferences{
+            PreferredTestFramework: prefs.PreferredTestFramework,
+            NamingConventions:      prefs.NamingConventions,
+            FileOrganization:       prefs.FileOrganization,
+            CodeStyle:              prefs.CodeStyle,
+            CommitMessageFormat:    prefs.CommitMessageFormat,
+            ReviewerThresholds:     prefs.ReviewerThresholds,
+        },
+    }
+
+    for _, p := range patterns {
+        mem.Patterns = append(mem.Patterns, harnessmemory.Pattern{
+            ID:          p.ID,
+            Type:        p.Type,
+            Description: p.Description,
+            Example:     p.Example,
+            FileMatcher: p.FileMatcher,
+            Weight:      p.Weight,
+            UsageCount:  p.UsageCount,
+            SuccessRate: p.SuccessRate,
+        })
+    }
+
+    return mem, nil
+}
+```
+
+---
+
+## Configuration
+
+The CLI reads platform settings from the `.boatman.yaml` config file under the `platform` section:
+
+```yaml
+platform:
+  server: http://localhost:8080
+  org_id: my-org
+  team_id: my-team
+```
+
+The corresponding Go config struct:
+
+```go
+type PlatformConfig struct {
+    Server string  // Platform server URL (empty = standalone mode)
+    OrgID  string  // Organization identifier
+    TeamID string  // Team identifier
+}
+```
+
+| Field | Config Key | Description |
+|-------|-----------|-------------|
+| `Server` | `platform.server` | Platform server URL. When empty, the CLI runs standalone. |
+| `OrgID` | `platform.org_id` | Organization identifier sent in scope headers. |
+| `TeamID` | `platform.team_id` | Team identifier sent in scope headers. |
+
+The `RepoID` is derived automatically from the current repository (e.g., the git remote origin).
+
+---
+
+## Usage Example
+
+A typical integration flow in the CLI:
+
+```go
+// Load config
+cfg, _ := config.Load()
+
+// Build scope from config
+scope := storage.Scope{
+    OrgID:  cfg.Platform.OrgID,
+    TeamID: cfg.Platform.TeamID,
+    RepoID: repoName,
+}
+
+// Try to connect (best-effort, 3s timeout)
+connector := platform.TryConnect(ctx, cfg.Platform.Server, scope)
+
+if connector.IsConnected() {
+    // Fetch merged policy and enforce it on runner config
+    policy, _ := connector.Client().GetEffectivePolicy(ctx)
+
+    // Fetch shared memory
+    mem, _ := connector.Client().GetMemory(ctx)
+
+    // Record the run
+    connector.Client().CreateRun(ctx, run)
+}
+
+// Run the pipeline (works with or without platform)
+result, _ := runner.Run(ctx, runnerCfg)
+
+if connector.IsConnected() {
+    // Report results back
+    connector.Client().UpdateRun(ctx, run)
+    connector.Client().RecordUsage(ctx, usageRecord)
+}
+```

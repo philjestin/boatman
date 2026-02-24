@@ -38,6 +38,14 @@ claude:
     preflight: claude-haiku-4        # Fast validation (90% cheaper)
     test_runner: claude-haiku-4      # Simple test output parsing (90% cheaper)
 
+# Platform server (optional -- CLI works standalone without it)
+# When configured, the CLI connects to the platform for shared memory,
+# cost tracking, policy enforcement, and analytics.
+# platform:
+#   server: ""          # e.g., "http://localhost:8080"
+#   org_id: ""          # Organization identifier
+#   team_id: ""         # Team identifier
+
 # Prerequisites (no config needed - just make sure they're installed & auth'd):
 # - claude CLI (authenticated via gcloud / Vertex AI)
 # - gh CLI (authenticated via `gh auth login`)

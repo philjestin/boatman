@@ -22,8 +22,9 @@ coverage.out
 # =============================================================================
 # Dependencies
 # =============================================================================
-/desktop/frontend/node_modules/
+node_modules/
 /desktop/frontend/dist/
+/platform/dashboard/frontend/dist/
 
 # =============================================================================
 # Git worktrees (created by boatmanmode)

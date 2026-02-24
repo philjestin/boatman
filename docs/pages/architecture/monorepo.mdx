@@ -2,10 +2,11 @@
 
 ## Why a Monorepo?
 
-The CLI and Desktop are tightly coupled:
+The components are tightly coupled:
 - They share a JSON event protocol that evolves together
 - Desktop is essentially a GUI wrapper for the CLI
-- Features often span both components
+- Platform implements harness interfaces (Guard, Observer, MemoryProvider)
+- Features often span multiple components
 - Single source of truth for integration contracts
 - Atomic commits for cross-cutting changes
 
@@ -58,6 +59,24 @@ boatman-ecosystem/
 │   ├── wails.json         # Wails configuration
 │   └── *.md               # Desktop-specific docs
 │
+├── harness/               # Reusable AI agent primitives
+│   ├── runner/            # Pipeline orchestrator
+│   ├── review/            # Canonical review types
+│   ├── memory/            # Cross-session learning
+│   ├── cost/              # Token tracking
+│   ├── checkpoint/        # Progress saving
+│   └── go.mod             # module github.com/philjestin/boatman-ecosystem/harness
+│
+├── platform/              # Organizational platform server
+│   ├── cmd/boatman-platform/  # Server entry point
+│   ├── server/            # HTTP API and handlers
+│   ├── storage/           # SQLite persistence
+│   ├── eventbus/          # Embedded NATS event bus
+│   ├── services/          # Memory, policy, cost services
+│   ├── client/            # Platform HTTP client
+│   ├── dashboard/         # React web dashboard
+│   └── go.mod             # module github.com/philjestin/boatman-ecosystem/platform
+│
 ├── shared/                # Shared Go packages
 │   └── go.mod             # module github.com/philjestin/boatman/shared
 │
@@ -79,7 +98,9 @@ go 1.24.1
 use (
     ./cli
     ./desktop
+    ./harness
     ./shared
+    ./platform
 )
 ```
 
@@ -98,9 +119,11 @@ Each component maintains its own `go.mod`:
 |-----------|-------------|------------------|
 | CLI | `github.com/philjestin/boatmanmode` | Yes (as a Go library) |
 | Desktop | `boatman` | No (application-only) |
+| Harness | `github.com/philjestin/boatman-ecosystem/harness` | Yes (stdlib only) |
+| Platform | `github.com/philjestin/boatman-ecosystem/platform` | No (server application) |
 | Shared | `github.com/philjestin/boatman/shared` | Yes |
 
-The CLI publishes as a versioned Go module. The Desktop is a standalone application.
+The CLI and Harness publish as versioned Go modules. The Desktop and Platform are standalone applications.
 
 ---
 
@@ -112,9 +135,11 @@ From the monorepo root:
 |---------|-------------|
 | `make build-cli` | Build the CLI binary |
 | `make build-desktop` | Build the desktop app (includes CLI) |
-| `make build-all` | Build both |
+| `make build-platform` | Build the platform server |
+| `make build-all` | Build all components |
 | `make test-cli` | Run CLI tests |
 | `make test-desktop` | Run desktop Go tests |
+| `make test-platform` | Run platform tests |
 | `make test-frontend` | Run frontend tests |
 | `make test-all` | Run all tests |
 | `make dev` | Start desktop in dev mode |
@@ -133,6 +158,7 @@ The components can be released independently:
 
 - **CLI**: Standalone releases for terminal users (via GoReleaser)
 - **Desktop**: Bundles the CLI internally, synchronized releases (via Wails build)
+- **Platform**: Standalone server releases (`platform/vX.Y.Z` tags)
 
 The CLI follows automatic versioning based on commit message prefixes.
 
@@ -143,6 +169,8 @@ The CLI follows automatic versioning based on commit message prefixes.
 ```
 [cli] Add metadata to agent_completed events
 [desktop] Update firefighter ticket list UI
+[harness] Add Guard interface to runner
+[platform] Add cost governance service
 [both] Update event protocol with data field
 [docs] Add architecture documentation
 [build] Update CI workflow

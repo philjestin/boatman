@@ -3,6 +3,7 @@
   "cli": "BoatmanMode CLI",
   "desktop": "Boatman Desktop",
   "harness": "Harness Module",
+  "platform": "Platform",
   "architecture": "Architecture",
   "guides": "Guides"
 }

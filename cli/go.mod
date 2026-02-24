@@ -4,12 +4,12 @@ go 1.24.1
 
 require (
 	github.com/philjestin/boatman-ecosystem/harness v0.0.0
+	github.com/philjestin/boatman-ecosystem/platform v0.0.0
 	github.com/spf13/cobra v1.8.1
 	github.com/spf13/viper v1.19.0
 )
 
 require (
-	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/niemeyer/pretty v0.0.0-20200227124842-a10e7caefd8e // indirect
 	github.com/stretchr/testify v1.10.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20200227125254-8fa46927fb4f // indirect
@@ -32,8 +32,8 @@ require (
 	github.com/subosito/gotenv v1.6.0 // indirect
 	go.uber.org/atomic v1.9.0 // indirect
 	go.uber.org/multierr v1.9.0 // indirect
-	golang.org/x/exp v0.0.0-20230905200255-921286631fa9 // indirect
-	golang.org/x/sys v0.30.0 // indirect
+	golang.org/x/exp v0.0.0-20251023183803-a4bb9ffd2546 // indirect
+	golang.org/x/sys v0.40.0 // indirect
 	golang.org/x/text v0.22.0 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
@@ -42,3 +42,5 @@ require (
 replace github.com/philjestin/boatman-ecosystem/harness => ../harness
 
 replace github.com/philjestin/boatman-ecosystem/shared => ../shared
+
+replace github.com/philjestin/boatman-ecosystem/platform => ../platform

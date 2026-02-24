@@ -165,3 +165,55 @@ Update event protocol docs in both components.
 - Use descriptive names and descriptions
 - Emit progress events for long-running operations
 - Keep the `data` field minimal (only phase-specific metadata)
+
+---
+
+## Platform Event Bus
+
+When the [Platform](/platform) is running, events are also published to an embedded NATS server for persistence, replay, and real-time streaming.
+
+### NATS Subject Hierarchy
+
+```
+boatman.{org_id}.{team_id}.{event_type}
+```
+
+Subject builders:
+- `BuildSubject(orgID, teamID, eventType)` — specific event
+- `OrgWildcard(orgID)` — `boatman.{org}.>` (all events for an org)
+- `TeamWildcard(orgID, teamID)` — `boatman.{org}.{team}.>` (all events for a team)
+- `AllEventsSubject` — `boatman.>` (all events)
+
+### Platform Event Types
+
+| Type | Purpose |
+|------|---------|
+| `run.started` | Run begins execution |
+| `run.completed` | Run finishes (success or failure) |
+| `step.{name}` | Individual pipeline step start/end |
+| `cost.recorded` | Cost usage recorded for a step |
+| `budget.alert` | Budget threshold crossed |
+| `policy.violation` | Policy limit exceeded |
+| `iteration.complete` | Review-refactor iteration finished |
+
+### Bridge Adapters
+
+The platform bridges CLI events to the NATS bus via adapters:
+
+| Adapter | Source | Purpose |
+|---------|--------|---------|
+| `HooksAdapter` | `runner.Hooks` | Converts step lifecycle hooks to platform events |
+| `ObserverAdapter` | `runner.Observer` | Converts run lifecycle events to platform events |
+| `LegacyBridge` | NATS subscription | Writes platform events to `io.Writer` in legacy NDJSON format |
+
+### SSE Streaming
+
+The platform exposes real-time events via Server-Sent Events at `/api/v1/events/stream`. Clients receive events scoped by the `X-Boatman-*` headers.
+
+```bash
+# Stream all events
+curl -N http://localhost:8080/api/v1/events/stream
+
+# Stream events for a specific org
+curl -N -H "X-Boatman-Org: my-org" http://localhost:8080/api/v1/events/stream
+```

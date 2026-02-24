@@ -1,0 +1,531 @@
+# HTTP API
+
+The Boatman Platform exposes a RESTful HTTP API for managing agent runs, memory,
+costs, policies, and real-time event streaming. All endpoints live under the
+`/api/v1` prefix and return JSON unless otherwise noted.
+
+## Server Configuration
+
+| Setting | Value | Notes |
+|---|---|---|
+| `ReadTimeout` | 30s | Maximum time to read the full request |
+| `WriteTimeout` | 0 | Disabled to allow unbounded SSE streaming |
+| `IdleTimeout` | 120s | How long an idle keep-alive connection stays open |
+
+## Middleware
+
+Every request passes through two middleware layers before reaching a handler:
+
+1. **Scope extraction** -- Reads organizational context from request headers and
+   injects it into the Go context. All scoped endpoints use these values to
+   filter or tag data.
+
+   | Header | Field | Description |
+   |---|---|---|
+   | `X-Boatman-Org` | `org_id` | Organization identifier |
+   | `X-Boatman-Team` | `team_id` | Team identifier |
+   | `X-Boatman-Repo` | `repo_id` | Repository identifier |
+
+2. **Request logging** -- Logs the method, path, status code, and duration of
+   every request.
+
+---
+
+## Health
+
+### `GET /api/v1/health`
+
+Returns the service health status.
+
+**Response** `200`
+
+```json
+{
+  "status": "ok",
+  "service": "boatman-platform"
+}
+```
+
+**Example**
+
+```bash
+curl http://localhost:8080/api/v1/health
+```
+
+---
+
+## Runs
+
+### `GET /api/v1/runs`
+
+Lists agent runs filtered by scope headers and optional query parameters.
+
+| Query Param | Type | Description |
+|---|---|---|
+| `status` | string | Filter by run status (`pending`, `running`, `passed`, `failed`, `canceled`, `error`) |
+| `user_id` | string | Filter by the user who initiated the run |
+
+**Response** `200` -- `[]*Run`
+
+```json
+[
+  {
+    "id": "run_abc123",
+    "scope": { "org_id": "acme", "team_id": "backend", "repo_id": "" },
+    "user_id": "user_1",
+    "status": "passed",
+    "prompt": "Refactor auth middleware",
+    "total_cost_usd": 0.42,
+    "iterations": 3,
+    "files_changed": ["auth/middleware.go", "auth/middleware_test.go"],
+    "duration": 45000000000,
+    "created_at": "2025-06-01T10:00:00Z",
+    "updated_at": "2025-06-01T10:02:30Z"
+  }
+]
+```
+
+**Example**
+
+```bash
+curl -H "X-Boatman-Org: acme" \
+     -H "X-Boatman-Team: backend" \
+     "http://localhost:8080/api/v1/runs?status=running"
+```
+
+---
+
+### `GET /api/v1/runs/{id}`
+
+Returns a single run by its ID.
+
+**Response** `200` -- `*Run`
+
+Returns `404` if the run does not exist.
+
+**Example**
+
+```bash
+curl http://localhost:8080/api/v1/runs/run_abc123
+```
+
+---
+
+### `POST /api/v1/runs`
+
+Creates a new run. If `scope.org_id` or `scope.team_id` are not set in the
+request body, they are filled from the `X-Boatman-Org` and `X-Boatman-Team`
+headers.
+
+**Request body** -- `Run`
+
+```json
+{
+  "user_id": "user_1",
+  "prompt": "Add rate limiting to the API gateway",
+  "status": "pending"
+}
+```
+
+**Response** `201` -- `*Run`
+
+**Example**
+
+```bash
+curl -X POST http://localhost:8080/api/v1/runs \
+     -H "Content-Type: application/json" \
+     -H "X-Boatman-Org: acme" \
+     -H "X-Boatman-Team: backend" \
+     -d '{"user_id":"user_1","prompt":"Add rate limiting to the API gateway","status":"pending"}'
+```
+
+---
+
+## Memory / Patterns
+
+### `GET /api/v1/memory/patterns`
+
+Returns patterns merged from all applicable scope levels (org, team, repo).
+
+**Response** `200` -- `[]*Pattern`
+
+```json
+[
+  {
+    "id": "pat_001",
+    "scope": { "org_id": "acme", "team_id": "", "repo_id": "" },
+    "type": "error_handling",
+    "description": "Wrap errors with fmt.Errorf and %w",
+    "example": "return fmt.Errorf(\"connect: %w\", err)",
+    "file_matcher": "*.go",
+    "weight": 0.85,
+    "usage_count": 42,
+    "success_rate": 0.93,
+    "created_at": "2025-05-15T08:00:00Z",
+    "updated_at": "2025-06-01T12:00:00Z"
+  }
+]
+```
+
+**Example**
+
+```bash
+curl -H "X-Boatman-Org: acme" \
+     -H "X-Boatman-Team: backend" \
+     -H "X-Boatman-Repo: api-gateway" \
+     http://localhost:8080/api/v1/memory/patterns
+```
+
+---
+
+### `POST /api/v1/memory/patterns`
+
+Creates a new pattern. If the body does not include a scope, the scope from
+headers is used.
+
+**Request body** -- `Pattern`
+
+```json
+{
+  "type": "naming",
+  "description": "Use camelCase for JSON field names",
+  "file_matcher": "*.go",
+  "weight": 0.7
+}
+```
+
+**Response** `201` -- `*Pattern`
+
+**Example**
+
+```bash
+curl -X POST http://localhost:8080/api/v1/memory/patterns \
+     -H "Content-Type: application/json" \
+     -H "X-Boatman-Org: acme" \
+     -d '{"type":"naming","description":"Use camelCase for JSON field names","file_matcher":"*.go","weight":0.7}'
+```
+
+---
+
+### `GET /api/v1/memory/preferences`
+
+Returns the preferences for the current scope.
+
+**Response** `200` -- `*Preferences`
+
+```json
+{
+  "id": "pref_001",
+  "scope": { "org_id": "acme", "team_id": "backend", "repo_id": "" },
+  "preferred_test_framework": "testing",
+  "naming_conventions": { "variables": "camelCase", "constants": "UPPER_SNAKE" },
+  "file_organization": { "tests": "_test.go suffix" },
+  "code_style": { "max_line_length": "120" },
+  "commit_message_format": "type(scope): description",
+  "reviewer_thresholds": { "max_critical": 0, "max_major": 2 },
+  "updated_at": "2025-06-01T12:00:00Z"
+}
+```
+
+**Example**
+
+```bash
+curl -H "X-Boatman-Org: acme" \
+     -H "X-Boatman-Team: backend" \
+     http://localhost:8080/api/v1/memory/preferences
+```
+
+---
+
+### `PUT /api/v1/memory/preferences`
+
+Creates or replaces preferences for the current scope. The scope is always set
+from headers, overriding any scope provided in the body.
+
+**Request body** -- `Preferences`
+
+```json
+{
+  "preferred_test_framework": "testing",
+  "naming_conventions": { "variables": "camelCase" },
+  "commit_message_format": "type(scope): description"
+}
+```
+
+**Response** `200` -- `*Preferences`
+
+**Example**
+
+```bash
+curl -X PUT http://localhost:8080/api/v1/memory/preferences \
+     -H "Content-Type: application/json" \
+     -H "X-Boatman-Org: acme" \
+     -H "X-Boatman-Team: backend" \
+     -d '{"preferred_test_framework":"testing","naming_conventions":{"variables":"camelCase"},"commit_message_format":"type(scope): description"}'
+```
+
+---
+
+## Cost & Budget
+
+### `GET /api/v1/costs/summary`
+
+Returns aggregated usage summaries for the current scope.
+
+| Query Param | Type | Default | Description |
+|---|---|---|---|
+| `group` | string | `day` | Grouping period: `hour`, `day`, `week`, or `month` |
+| `since` | RFC 3339 | 1 month ago | Start of the time window |
+| `until` | RFC 3339 | now | End of the time window |
+
+**Response** `200` -- `[]*UsageSummary`
+
+```json
+[
+  {
+    "period": "2025-06-01T00:00:00Z",
+    "total_runs": 14,
+    "total_cost_usd": 3.28,
+    "input_tokens": 125000,
+    "output_tokens": 42000
+  }
+]
+```
+
+**Example**
+
+```bash
+curl -H "X-Boatman-Org: acme" \
+     "http://localhost:8080/api/v1/costs/summary?group=week&since=2025-05-01T00:00:00Z&until=2025-06-01T00:00:00Z"
+```
+
+---
+
+### `GET /api/v1/costs/budget`
+
+Returns the budget for the current scope, or `{"budget": null}` if no budget is
+configured.
+
+**Response** `200` -- `*Budget`
+
+```json
+{
+  "id": "bdg_001",
+  "scope": { "org_id": "acme", "team_id": "", "repo_id": "" },
+  "monthly_limit": 500.0,
+  "daily_limit": 25.0,
+  "per_run_limit": 5.0,
+  "alert_at": 0.8,
+  "updated_at": "2025-06-01T00:00:00Z"
+}
+```
+
+**Example**
+
+```bash
+curl -H "X-Boatman-Org: acme" \
+     http://localhost:8080/api/v1/costs/budget
+```
+
+---
+
+### `PUT /api/v1/costs/budget`
+
+Creates or replaces the budget for the current scope. The scope is set from
+headers.
+
+**Request body** -- `Budget`
+
+```json
+{
+  "monthly_limit": 500.0,
+  "daily_limit": 25.0,
+  "per_run_limit": 5.0,
+  "alert_at": 0.8
+}
+```
+
+**Response** `200` -- `*Budget`
+
+**Example**
+
+```bash
+curl -X PUT http://localhost:8080/api/v1/costs/budget \
+     -H "Content-Type: application/json" \
+     -H "X-Boatman-Org: acme" \
+     -d '{"monthly_limit":500,"daily_limit":25,"per_run_limit":5,"alert_at":0.8}'
+```
+
+---
+
+## Policies
+
+### `GET /api/v1/policies`
+
+Returns the policy defined at the exact scope specified by headers. Returns
+`{"policy": null}` if no policy exists at that scope.
+
+**Response** `200` -- `*Policy`
+
+```json
+{
+  "id": "pol_001",
+  "scope": { "org_id": "acme", "team_id": "backend", "repo_id": "" },
+  "max_iterations": 5,
+  "max_cost_per_run": 5.0,
+  "max_files_changed": 20,
+  "allowed_models": ["claude-sonnet-4-20250514", "claude-opus-4-20250514"],
+  "blocked_patterns": ["*.env", "credentials.*"],
+  "require_tests": true,
+  "require_review": true,
+  "updated_at": "2025-06-01T00:00:00Z"
+}
+```
+
+**Example**
+
+```bash
+curl -H "X-Boatman-Org: acme" \
+     -H "X-Boatman-Team: backend" \
+     http://localhost:8080/api/v1/policies
+```
+
+---
+
+### `PUT /api/v1/policies`
+
+Creates or replaces the policy at the current scope. The scope is set from
+headers.
+
+**Request body** -- `Policy`
+
+```json
+{
+  "max_iterations": 5,
+  "max_cost_per_run": 5.0,
+  "max_files_changed": 20,
+  "require_tests": true,
+  "require_review": true
+}
+```
+
+**Response** `200` -- `*Policy`
+
+**Example**
+
+```bash
+curl -X PUT http://localhost:8080/api/v1/policies \
+     -H "Content-Type: application/json" \
+     -H "X-Boatman-Org: acme" \
+     -H "X-Boatman-Team: backend" \
+     -d '{"max_iterations":5,"max_cost_per_run":5.0,"require_tests":true,"require_review":true}'
+```
+
+---
+
+### `GET /api/v1/policies/effective`
+
+Returns the effective (merged) policy for the current scope. Policies are merged
+from org, team, and repo levels with more specific scopes overriding broader
+ones. Returns `{"policy": null}` if no policies exist at any level.
+
+**Response** `200` -- `*Policy`
+
+**Example**
+
+```bash
+curl -H "X-Boatman-Org: acme" \
+     -H "X-Boatman-Team: backend" \
+     -H "X-Boatman-Repo: api-gateway" \
+     http://localhost:8080/api/v1/policies/effective
+```
+
+---
+
+## Events
+
+### `GET /api/v1/events`
+
+Queries persisted events with optional filters.
+
+| Query Param | Type | Description |
+|---|---|---|
+| `run_id` | string | Filter events for a specific run |
+| `types` | string | Comma-separated list of event types to include |
+| `since` | RFC 3339 | Only return events after this timestamp |
+
+**Response** `200` -- `[]*Event`
+
+```json
+[
+  {
+    "id": "evt_001",
+    "run_id": "run_abc123",
+    "scope": { "org_id": "acme", "team_id": "backend", "repo_id": "" },
+    "type": "agent.started",
+    "name": "planner",
+    "message": "Planning phase started",
+    "data": {},
+    "version": 1,
+    "created_at": "2025-06-01T10:00:00Z"
+  }
+]
+```
+
+**Example**
+
+```bash
+curl -H "X-Boatman-Org: acme" \
+     "http://localhost:8080/api/v1/events?run_id=run_abc123&types=agent.started,agent.completed&since=2025-06-01T00:00:00Z"
+```
+
+---
+
+### `GET /api/v1/events/stream`
+
+Opens a Server-Sent Events (SSE) connection for real-time event streaming. The
+server subscribes to the NATS event bus using a subject derived from the scope
+headers:
+
+- Both `X-Boatman-Org` and `X-Boatman-Team` set: subscribes to the team wildcard subject
+- Only `X-Boatman-Org` set: subscribes to the org wildcard subject
+- Neither set: subscribes to all events
+
+**Response headers**
+
+| Header | Value |
+|---|---|
+| `Content-Type` | `text/event-stream` |
+| `Cache-Control` | `no-cache` |
+| `Connection` | `keep-alive` |
+| `Access-Control-Allow-Origin` | `*` |
+
+**SSE message format**
+
+```
+event: agent.started
+data: {"id":"evt_001","run_id":"run_abc123","scope":{"org_id":"acme","team_id":"backend","repo_id":""},"type":"agent.started","name":"planner","message":"Planning phase started","data":{},"version":1,"created_at":"2025-06-01T10:00:00Z"}
+
+```
+
+Each message consists of an `event:` line with the event type, a `data:` line
+with the full JSON-encoded event, and a trailing blank line.
+
+**Example**
+
+```bash
+curl -N -H "X-Boatman-Org: acme" \
+     -H "X-Boatman-Team: backend" \
+     http://localhost:8080/api/v1/events/stream
+```
+
+---
+
+## Dashboard
+
+### `GET /`
+
+Serves the embedded React single-page application. All paths that do not match a
+static asset are rewritten to `/` so that client-side routing works. If the
+dashboard has not been built, a plain-text fallback message is returned with
+build instructions.

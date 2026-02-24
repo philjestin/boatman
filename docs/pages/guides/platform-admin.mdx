@@ -1,0 +1,374 @@
+# Platform Administration
+
+This guide covers day-to-day administration of the Boatman Platform, including policy management, budget configuration, cost monitoring, shared memory patterns, and troubleshooting.
+
+All API requests use `X-Boatman-*` headers to specify the organizational scope. The hierarchy is **Org > Team > Repo**. Policies and budgets set at a higher level cascade down to lower levels unless overridden.
+
+## Setting Policies via API
+
+Policies control what agent runs are allowed to do. You can set policies at the org, team, or repo level.
+
+### Org-Level Policy
+
+An org-level policy applies to all teams and repos within the organization:
+
+```bash
+curl -s -X PUT http://localhost:8080/api/v1/policies \
+  -H "Content-Type: application/json" \
+  -H "X-Boatman-Org: acme" \
+  -d '{
+    "max_iterations": 5,
+    "max_cost_per_run": 2.00,
+    "max_files_changed": 20,
+    "allowed_models": ["claude-sonnet-4-5", "claude-haiku-4"],
+    "require_tests": true,
+    "require_review": true
+  }' | jq .
+```
+
+### Team-Level Policy
+
+A team-level policy overrides the org defaults for a specific team:
+
+```bash
+curl -s -X PUT http://localhost:8080/api/v1/policies \
+  -H "Content-Type: application/json" \
+  -H "X-Boatman-Org: acme" \
+  -H "X-Boatman-Team: platform" \
+  -d '{
+    "max_iterations": 8,
+    "max_cost_per_run": 5.00,
+    "allowed_models": ["claude-sonnet-4-5", "claude-opus-4-6"],
+    "require_tests": true,
+    "require_review": true
+  }' | jq .
+```
+
+### Repo-Level Policy
+
+A repo-level policy applies to a specific repository, overriding both org and team defaults:
+
+```bash
+curl -s -X PUT http://localhost:8080/api/v1/policies \
+  -H "Content-Type: application/json" \
+  -H "X-Boatman-Org: acme" \
+  -H "X-Boatman-Team: platform" \
+  -H "X-Boatman-Repo: boatman-ecosystem" \
+  -d '{
+    "max_iterations": 10,
+    "max_cost_per_run": 10.00,
+    "blocked_patterns": ["vendor/*", "generated/*"],
+    "require_tests": true,
+    "require_review": false
+  }' | jq .
+```
+
+### Viewing the Effective Policy
+
+The effective policy for a given scope merges all applicable levels (org, team, repo). Use this to verify what rules are actually in effect:
+
+```bash
+curl -s http://localhost:8080/api/v1/policies/effective \
+  -H "X-Boatman-Org: acme" \
+  -H "X-Boatman-Team: platform" \
+  -H "X-Boatman-Repo: boatman-ecosystem" | jq .
+```
+
+---
+
+## Managing Budgets
+
+Budgets set spending limits that the platform enforces. Each budget has daily, monthly, and per-run limits, plus an alert threshold.
+
+### Setting Budget Limits
+
+```bash
+curl -s -X PUT http://localhost:8080/api/v1/costs/budget \
+  -H "Content-Type: application/json" \
+  -H "X-Boatman-Org: acme" \
+  -d '{
+    "monthly_limit": 500.00,
+    "daily_limit": 50.00,
+    "per_run_limit": 5.00,
+    "alert_at": 0.8
+  }' | jq .
+```
+
+| Field | Description |
+|-------|-------------|
+| `monthly_limit` | Maximum spend in USD per calendar month |
+| `daily_limit` | Maximum spend in USD per day |
+| `per_run_limit` | Maximum cost for a single agent run |
+| `alert_at` | Percentage (0 to 1) of a limit at which alerts fire. A value of `0.8` triggers alerts at 80% usage. |
+
+### Team-Level Budget
+
+Override org defaults for a team that needs a higher or lower budget:
+
+```bash
+curl -s -X PUT http://localhost:8080/api/v1/costs/budget \
+  -H "Content-Type: application/json" \
+  -H "X-Boatman-Org: acme" \
+  -H "X-Boatman-Team: ml-infra" \
+  -d '{
+    "monthly_limit": 1000.00,
+    "daily_limit": 100.00,
+    "per_run_limit": 15.00,
+    "alert_at": 0.75
+  }' | jq .
+```
+
+### Viewing Current Budget
+
+```bash
+curl -s http://localhost:8080/api/v1/costs/budget \
+  -H "X-Boatman-Org: acme" | jq .
+```
+
+---
+
+## Viewing Cost Summaries
+
+The cost summary endpoint aggregates spending data over time. You can group by `hour`, `day`, `week`, or `month`.
+
+### Daily Breakdown (Last 30 Days)
+
+```bash
+curl -s "http://localhost:8080/api/v1/costs/summary?group=day" \
+  -H "X-Boatman-Org: acme" | jq .
+```
+
+### Monthly Overview
+
+```bash
+curl -s "http://localhost:8080/api/v1/costs/summary?group=month" \
+  -H "X-Boatman-Org: acme" | jq .
+```
+
+### Custom Date Range
+
+Use `since` and `until` query parameters in RFC 3339 format:
+
+```bash
+curl -s "http://localhost:8080/api/v1/costs/summary?group=day&since=2026-02-01T00:00:00Z&until=2026-02-24T23:59:59Z" \
+  -H "X-Boatman-Org: acme" | jq .
+```
+
+### Team-Scoped Costs
+
+```bash
+curl -s "http://localhost:8080/api/v1/costs/summary?group=week" \
+  -H "X-Boatman-Org: acme" \
+  -H "X-Boatman-Team: platform" | jq .
+```
+
+Each summary entry includes:
+
+```json
+{
+  "period": "2026-02-24T00:00:00Z",
+  "total_runs": 42,
+  "total_cost_usd": 12.34,
+  "input_tokens": 1500000,
+  "output_tokens": 320000
+}
+```
+
+---
+
+## Managing Shared Memory Patterns
+
+Shared memory patterns allow the platform to learn and distribute organizational coding conventions, common fixes, and preferences across all developers.
+
+### Creating a Pattern
+
+```bash
+curl -s -X POST http://localhost:8080/api/v1/memory/patterns \
+  -H "Content-Type: application/json" \
+  -H "X-Boatman-Org: acme" \
+  -d '{
+    "type": "naming",
+    "description": "Use camelCase for Go function names, PascalCase for exported functions",
+    "example": "func processOrder() for unexported, func ProcessOrder() for exported",
+    "file_matcher": "*.go",
+    "weight": 1.0
+  }' | jq .
+```
+
+### Viewing Merged Patterns
+
+List all patterns that apply to a given scope. This returns patterns from all levels (org, team, repo) merged together:
+
+```bash
+curl -s http://localhost:8080/api/v1/memory/patterns \
+  -H "X-Boatman-Org: acme" \
+  -H "X-Boatman-Team: platform" | jq .
+```
+
+### Team-Specific Pattern
+
+```bash
+curl -s -X POST http://localhost:8080/api/v1/memory/patterns \
+  -H "Content-Type: application/json" \
+  -H "X-Boatman-Org: acme" \
+  -H "X-Boatman-Team: platform" \
+  -d '{
+    "type": "testing",
+    "description": "Always use table-driven tests in Go with t.Run sub-tests",
+    "example": "for _, tc := range tests { t.Run(tc.name, func(t *testing.T) { ... }) }",
+    "file_matcher": "*_test.go",
+    "weight": 0.9
+  }' | jq .
+```
+
+### Updating Preferences
+
+Preferences store broader organizational conventions such as test framework choices, naming rules, and commit message formats:
+
+```bash
+curl -s -X PUT http://localhost:8080/api/v1/memory/preferences \
+  -H "Content-Type: application/json" \
+  -H "X-Boatman-Org: acme" \
+  -d '{
+    "preferred_test_framework": "testing",
+    "naming_conventions": {
+      "go_packages": "lowercase, single word",
+      "react_components": "PascalCase"
+    },
+    "file_organization": {
+      "go": "group by domain, not by layer",
+      "tests": "colocate with source files"
+    },
+    "code_style": {
+      "max_line_length": "120",
+      "error_handling": "wrap with fmt.Errorf and %w"
+    },
+    "commit_message_format": "type(scope): description"
+  }' | jq .
+```
+
+### Viewing Current Preferences
+
+```bash
+curl -s http://localhost:8080/api/v1/memory/preferences \
+  -H "X-Boatman-Org: acme" | jq .
+```
+
+---
+
+## Troubleshooting
+
+### CLI Not Connecting to Platform
+
+**Symptom:** The CLI reports connection errors or timeouts when `platform.url` is set.
+
+**Steps:**
+
+1. Verify the platform server is running:
+
+```bash
+curl -s http://your-server:8080/api/v1/health | jq .
+```
+
+2. Check that the URL in `~/.boatman.yaml` matches the server address and port:
+
+```bash
+grep -A2 "platform:" ~/.boatman.yaml
+```
+
+3. Confirm network connectivity from the client machine:
+
+```bash
+nc -zv your-server 8080
+```
+
+4. Check the server logs for incoming request errors:
+
+```bash
+sudo journalctl -u boatman-platform --since "5 minutes ago"
+```
+
+---
+
+### Events Not Flowing
+
+**Symptom:** The dashboard or event stream endpoint shows no events even though CLI runs are completing.
+
+**Steps:**
+
+1. Confirm the CLI is configured to report to the platform:
+
+```bash
+grep -A2 "platform:" ~/.boatman.yaml
+```
+
+The configuration should include:
+
+```yaml
+platform:
+  url: http://your-server:8080
+```
+
+2. Test the SSE event stream directly:
+
+```bash
+curl -N http://your-server:8080/api/v1/events/stream \
+  -H "X-Boatman-Org: acme"
+```
+
+3. Query stored events to see if they arrived:
+
+```bash
+curl -s "http://your-server:8080/api/v1/events?types=run.started,run.completed" \
+  -H "X-Boatman-Org: acme" | jq .
+```
+
+4. Ensure the `X-Boatman-Org` header matches between the CLI and your queries. A mismatch means events are stored but scoped to a different org.
+
+---
+
+### Dashboard Not Loading
+
+**Symptom:** Visiting `http://your-server:8080/` shows a plain text message instead of the web dashboard.
+
+**Steps:**
+
+1. If you see `Dashboard not built`, the embedded frontend assets were not compiled before building the server binary. Build them:
+
+```bash
+cd platform/dashboard/frontend && npm install && npm run build
+```
+
+Then rebuild the platform binary:
+
+```bash
+go build -ldflags "-s -w" -o boatman-platform ./platform/cmd/boatman-platform
+```
+
+2. If the dashboard loads but shows a blank page, check the browser console for errors. The most common cause is a mismatched base URL when behind a reverse proxy. Ensure the proxy passes the `Host` header correctly.
+
+3. If API calls from the dashboard fail with CORS errors, verify the dashboard is being served from the same origin as the API. The platform sets `Access-Control-Allow-Origin: *` on SSE streams, but the dashboard is designed to be served from the same host.
+
+---
+
+### High SQLite Lock Contention
+
+**Symptom:** API responses slow down under heavy load, or logs show `database is locked` errors.
+
+**Steps:**
+
+1. Confirm WAL mode is active (it should be by default):
+
+```bash
+sqlite3 /var/lib/boatman/platform.db "PRAGMA journal_mode;"
+```
+
+Expected output: `wal`
+
+2. Ensure only one `boatman-platform` process is running against the same data directory:
+
+```bash
+ps aux | grep boatman-platform
+```
+
+3. If contention persists with a large number of concurrent users, consider scaling out to the PostgreSQL backend when it becomes available.

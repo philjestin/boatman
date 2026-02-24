@@ -1,0 +1,532 @@
+# Storage Layer
+
+The `platform/storage` package defines the persistence contract for the Boatman platform. All platform services depend on these interfaces; backend implementations (SQLite, PostgreSQL, etc.) fulfill them. The package ships with a SQLite backend and a shared compliance test suite that any new backend must pass.
+
+---
+
+## Store Interface
+
+`Store` is the top-level entry point. It groups five domain-specific sub-stores and exposes lifecycle methods for schema migration and connection teardown.
+
+```go
+type Store interface {
+    Runs() RunStore
+    Memory() MemoryStore
+    Costs() CostStore
+    Policies() PolicyStore
+    Events() EventStore
+    Migrate(ctx context.Context) error
+    Close() error
+}
+```
+
+| Method | Purpose |
+|--------|---------|
+| `Runs()` | Returns the sub-store for agent run records |
+| `Memory()` | Returns the sub-store for patterns, preferences, and common issues |
+| `Costs()` | Returns the sub-store for token usage records and budgets |
+| `Policies()` | Returns the sub-store for enforcement policies |
+| `Events()` | Returns the sub-store for run events |
+| `Migrate()` | Applies all DDL migrations; must be idempotent |
+| `Close()` | Closes the underlying database connection |
+
+---
+
+## Scope
+
+Every stored entity is associated with a `Scope` that identifies its position in the organizational hierarchy: **Org > Team > Repo**. An empty field at any level means "all" -- for example, a `Scope` with only `OrgID` set applies to every team and repo under that organization.
+
+```go
+type Scope struct {
+    OrgID  string `json:"org_id"`
+    TeamID string `json:"team_id"`
+    RepoID string `json:"repo_id"`
+}
+```
+
+Scoping enables hierarchical policy inheritance, per-team budgets, and repo-level memory isolation.
+
+---
+
+## RunStore
+
+`RunStore` persists agent run records. Each `Run` captures the full lifecycle of a single agent invocation -- from the initial prompt through execution to a terminal status.
+
+### Run
+
+```go
+type RunStatus string
+
+const (
+    RunStatusPending   RunStatus = "pending"
+    RunStatusRunning   RunStatus = "running"
+    RunStatusPassed    RunStatus = "passed"
+    RunStatusFailed    RunStatus = "failed"
+    RunStatusCanceled  RunStatus = "canceled"
+    RunStatusError     RunStatus = "error"
+)
+
+type Run struct {
+    ID           string        `json:"id"`
+    Scope        Scope         `json:"scope"`
+    UserID       string        `json:"user_id"`
+    Status       RunStatus     `json:"status"`
+    Prompt       string        `json:"prompt"`
+    TotalCostUSD float64       `json:"total_cost_usd"`
+    Iterations   int           `json:"iterations"`
+    FilesChanged []string      `json:"files_changed"`
+    Duration     time.Duration `json:"duration"`
+    CreatedAt    time.Time     `json:"created_at"`
+    UpdatedAt    time.Time     `json:"updated_at"`
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `ID` | `string` | Unique run identifier |
+| `Scope` | `Scope` | Org/team/repo context |
+| `UserID` | `string` | The user who initiated the run |
+| `Status` | `RunStatus` | Current lifecycle state |
+| `Prompt` | `string` | The original task prompt |
+| `TotalCostUSD` | `float64` | Accumulated LLM spend for this run |
+| `Iterations` | `int` | Number of review-refactor cycles completed |
+| `FilesChanged` | `[]string` | Paths of files modified during the run |
+| `Duration` | `time.Duration` | Wall-clock duration of the run |
+| `CreatedAt` | `time.Time` | When the run was created |
+| `UpdatedAt` | `time.Time` | When the run was last modified |
+
+### RunFilter
+
+```go
+type RunFilter struct {
+    Scope  *Scope
+    UserID string
+    Status RunStatus
+    Since  time.Time
+    Until  time.Time
+    Limit  int
+    Offset int
+}
+```
+
+All filter fields are optional. When a field is zero-valued it is ignored. Combine fields to narrow results (e.g., all failed runs for a specific user within a date range).
+
+### Interface
+
+```go
+type RunStore interface {
+    Create(ctx context.Context, run *Run) error
+    Get(ctx context.Context, id string) (*Run, error)
+    Update(ctx context.Context, run *Run) error
+    List(ctx context.Context, filter RunFilter) ([]*Run, error)
+}
+```
+
+---
+
+## MemoryStore
+
+`MemoryStore` persists learned patterns, organizational preferences, and frequently encountered issues. These records enable the agent to improve over time by recalling what worked in previous runs.
+
+### Pattern
+
+```go
+type Pattern struct {
+    ID          string    `json:"id"`
+    Scope       Scope     `json:"scope"`
+    Type        string    `json:"type"`
+    Description string    `json:"description"`
+    Example     string    `json:"example,omitempty"`
+    FileMatcher string    `json:"file_matcher,omitempty"`
+    Weight      float64   `json:"weight"`
+    UsageCount  int       `json:"usage_count"`
+    SuccessRate float64   `json:"success_rate"`
+    CreatedAt   time.Time `json:"created_at"`
+    UpdatedAt   time.Time `json:"updated_at"`
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `ID` | `string` | Unique pattern identifier |
+| `Scope` | `Scope` | Org/team/repo context |
+| `Type` | `string` | Category (e.g., `"naming"`, `"testing"`, `"architecture"`) |
+| `Description` | `string` | Human-readable description of the pattern |
+| `Example` | `string` | Optional code example demonstrating the pattern |
+| `FileMatcher` | `string` | Optional glob pattern to match relevant files |
+| `Weight` | `float64` | Relative importance (higher = more relevant) |
+| `UsageCount` | `int` | How many times this pattern has been applied |
+| `SuccessRate` | `float64` | Fraction of applications that led to passing reviews |
+| `CreatedAt` | `time.Time` | When the pattern was first recorded |
+| `UpdatedAt` | `time.Time` | When the pattern was last modified |
+
+### Preferences
+
+```go
+type Preferences struct {
+    ID                     string            `json:"id"`
+    Scope                  Scope             `json:"scope"`
+    PreferredTestFramework string            `json:"preferred_test_framework"`
+    NamingConventions      map[string]string `json:"naming_conventions"`
+    FileOrganization       map[string]string `json:"file_organization"`
+    CodeStyle              map[string]string `json:"code_style"`
+    CommitMessageFormat    string            `json:"commit_message_format"`
+    ReviewerThresholds     map[string]int    `json:"reviewer_thresholds"`
+    UpdatedAt              time.Time         `json:"updated_at"`
+}
+```
+
+Preferences are scoped and unique per scope triple (org, team, repo). The map fields allow free-form key-value pairs so teams can express conventions without schema changes.
+
+### CommonIssue
+
+```go
+type CommonIssue struct {
+    ID          string    `json:"id"`
+    Scope       Scope     `json:"scope"`
+    Type        string    `json:"type"`
+    Description string    `json:"description"`
+    Solution    string    `json:"solution"`
+    Frequency   int       `json:"frequency"`
+    AutoFix     bool      `json:"auto_fix"`
+    FileMatcher string    `json:"file_matcher,omitempty"`
+    CreatedAt   time.Time `json:"created_at"`
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `Type` | `string` | Issue category (e.g., `"style"`, `"security"`, `"performance"`) |
+| `Description` | `string` | What the issue is |
+| `Solution` | `string` | How to fix it |
+| `Frequency` | `int` | How many times this issue has been encountered |
+| `AutoFix` | `bool` | Whether the agent should attempt automatic remediation |
+| `FileMatcher` | `string` | Optional glob to scope the issue to specific files |
+
+### Interface
+
+```go
+type MemoryStore interface {
+    // Patterns
+    CreatePattern(ctx context.Context, p *Pattern) error
+    UpdatePattern(ctx context.Context, p *Pattern) error
+    ListPatterns(ctx context.Context, scope Scope) ([]*Pattern, error)
+    DeletePattern(ctx context.Context, id string) error
+
+    // Preferences
+    GetPreferences(ctx context.Context, scope Scope) (*Preferences, error)
+    SetPreferences(ctx context.Context, prefs *Preferences) error
+
+    // Common issues
+    CreateIssue(ctx context.Context, issue *CommonIssue) error
+    UpdateIssue(ctx context.Context, issue *CommonIssue) error
+    ListIssues(ctx context.Context, scope Scope) ([]*CommonIssue, error)
+}
+```
+
+---
+
+## CostStore
+
+`CostStore` persists per-step token usage records and spending budgets. It supports both raw record retrieval and time-grouped summaries for dashboards and alerting.
+
+### UsageRecord
+
+```go
+type UsageRecord struct {
+    ID               string    `json:"id"`
+    RunID            string    `json:"run_id"`
+    Scope            Scope     `json:"scope"`
+    Step             string    `json:"step"`
+    InputTokens      int       `json:"input_tokens"`
+    OutputTokens     int       `json:"output_tokens"`
+    CacheReadTokens  int       `json:"cache_read_tokens"`
+    CacheWriteTokens int       `json:"cache_write_tokens"`
+    TotalCostUSD     float64   `json:"total_cost_usd"`
+    RecordedAt       time.Time `json:"recorded_at"`
+}
+```
+
+Each record captures the token usage for a single step (e.g., `"execute"`, `"review"`, `"refactor"`) within a run. The four token fields distinguish between fresh input/output tokens and cache hits/writes, which have different pricing.
+
+### UsageFilter
+
+```go
+type UsageFilter struct {
+    Scope *Scope
+    RunID string
+    Since time.Time
+    Until time.Time
+}
+```
+
+### UsageSummary
+
+Aggregated usage over a time period, used by dashboards and the cost governance service.
+
+```go
+type TimeGroup string
+
+const (
+    TimeGroupHour  TimeGroup = "hour"
+    TimeGroupDay   TimeGroup = "day"
+    TimeGroupWeek  TimeGroup = "week"
+    TimeGroupMonth TimeGroup = "month"
+)
+
+type UsageSummary struct {
+    Period       time.Time `json:"period"`
+    TotalRuns    int       `json:"total_runs"`
+    TotalCostUSD float64   `json:"total_cost_usd"`
+    InputTokens  int       `json:"input_tokens"`
+    OutputTokens int       `json:"output_tokens"`
+}
+```
+
+### Budget
+
+```go
+type Budget struct {
+    ID           string    `json:"id"`
+    Scope        Scope     `json:"scope"`
+    MonthlyLimit float64   `json:"monthly_limit"`
+    DailyLimit   float64   `json:"daily_limit"`
+    PerRunLimit  float64   `json:"per_run_limit"`
+    AlertAt      float64   `json:"alert_at"` // percentage (0-1) at which to alert
+    UpdatedAt    time.Time `json:"updated_at"`
+}
+```
+
+The `AlertAt` field is a fraction between 0 and 1. When spending reaches this percentage of any limit, an alert event is published via the event bus.
+
+### Interface
+
+```go
+type CostStore interface {
+    RecordUsage(ctx context.Context, record *UsageRecord) error
+    GetUsage(ctx context.Context, filter UsageFilter) ([]*UsageRecord, error)
+    GetUsageSummary(ctx context.Context, scope Scope, group TimeGroup, since, until time.Time) ([]*UsageSummary, error)
+    GetBudget(ctx context.Context, scope Scope) (*Budget, error)
+    SetBudget(ctx context.Context, budget *Budget) error
+}
+```
+
+---
+
+## PolicyStore
+
+`PolicyStore` persists enforcement rules that constrain agent behavior. Policies are scoped and support hierarchical inheritance -- a team policy overrides organization defaults, and a repo policy overrides team defaults.
+
+### Policy
+
+```go
+type Policy struct {
+    ID              string    `json:"id"`
+    Scope           Scope     `json:"scope"`
+    MaxIterations   int       `json:"max_iterations,omitempty"`
+    MaxCostPerRun   float64   `json:"max_cost_per_run,omitempty"`
+    MaxFilesChanged int       `json:"max_files_changed,omitempty"`
+    AllowedModels   []string  `json:"allowed_models,omitempty"`
+    BlockedPatterns []string  `json:"blocked_patterns,omitempty"`
+    RequireTests    bool      `json:"require_tests"`
+    RequireReview   bool      `json:"require_review"`
+    UpdatedAt       time.Time `json:"updated_at"`
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `MaxIterations` | `int` | Maximum review-refactor cycles per run |
+| `MaxCostPerRun` | `float64` | Spending ceiling in USD per run |
+| `MaxFilesChanged` | `int` | Maximum number of files a single run may modify |
+| `AllowedModels` | `[]string` | Allowlist of LLM model identifiers |
+| `BlockedPatterns` | `[]string` | File path patterns the agent must not touch |
+| `RequireTests` | `bool` | Whether the agent must run tests before completing |
+| `RequireReview` | `bool` | Whether a review pass is required |
+
+### Effective Policy Resolution
+
+`GetEffectivePolicy` merges policies from org, team, and repo levels into a single effective policy. The merge strategy is:
+
+- **Numeric limits:** the most restrictive (lowest non-zero) value wins.
+- **Boolean flags:** `true` at any level forces `true` at lower levels.
+- **Allowed models:** the intersection of all levels.
+- **Blocked patterns:** the union of all levels.
+
+```
+Org policy:  MaxIterations=5, RequireTests=true, AllowedModels=[opus, sonnet, haiku]
+Team policy: MaxIterations=3, AllowedModels=[opus, sonnet]
+                                ↓
+Effective:   MaxIterations=3, RequireTests=true, AllowedModels=[opus, sonnet]
+```
+
+### Interface
+
+```go
+type PolicyStore interface {
+    Get(ctx context.Context, scope Scope) (*Policy, error)
+    Set(ctx context.Context, policy *Policy) error
+    Delete(ctx context.Context, scope Scope) error
+    GetEffectivePolicy(ctx context.Context, scope Scope) (*Policy, error)
+}
+```
+
+---
+
+## EventStore
+
+`EventStore` persists structured events that occur during runs. Events power the real-time dashboard, audit logs, and the event bus bridge that forwards events to external consumers.
+
+### Event
+
+```go
+type Event struct {
+    ID        string         `json:"id"`
+    RunID     string         `json:"run_id,omitempty"`
+    Scope     Scope          `json:"scope"`
+    Type      string         `json:"type"`
+    Name      string         `json:"name,omitempty"`
+    Message   string         `json:"message,omitempty"`
+    Data      map[string]any `json:"data,omitempty"`
+    Version   int            `json:"version"`
+    CreatedAt time.Time      `json:"created_at"`
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `ID` | `string` | Unique event identifier |
+| `RunID` | `string` | The run this event belongs to (empty for system events) |
+| `Scope` | `Scope` | Org/team/repo context |
+| `Type` | `string` | Dot-delimited event type (e.g., `"step.complete"`, `"run.started"`) |
+| `Name` | `string` | Human-readable name for the event |
+| `Message` | `string` | Optional descriptive message |
+| `Data` | `map[string]any` | Arbitrary structured payload |
+| `Version` | `int` | Schema version for forward compatibility |
+| `CreatedAt` | `time.Time` | When the event occurred |
+
+### EventFilter
+
+```go
+type EventFilter struct {
+    Scope *Scope
+    RunID string
+    Types []string
+    Since time.Time
+    Until time.Time
+    Limit int
+}
+```
+
+The `Types` field accepts multiple event type strings. When set, only events matching at least one of the listed types are returned.
+
+### Interface
+
+```go
+type EventStore interface {
+    Publish(ctx context.Context, event *Event) error
+    Query(ctx context.Context, filter EventFilter) ([]*Event, error)
+}
+```
+
+---
+
+## SQLite Backend
+
+The default backend is `platform/storage/sqlite`. It stores all data in a single SQLite database file with the following configuration:
+
+| Setting | Value | Reason |
+|---------|-------|--------|
+| Journal mode | WAL | Allows concurrent readers during writes |
+| Max open connections | 1 | SQLite supports only one writer at a time |
+| Busy timeout | 5000 ms | Avoids immediate `SQLITE_BUSY` errors under contention |
+| Synchronous | NORMAL | Balances durability with write performance |
+
+### Creating the Store
+
+```go
+import "github.com/philjestin/boatman-ecosystem/platform/storage/sqlite"
+
+// File-backed store
+store, err := sqlite.New(sqlite.Options{Path: "/var/lib/boatman/platform.db"})
+if err != nil {
+    log.Fatal(err)
+}
+defer store.Close()
+
+// In-memory store (useful for tests)
+store, err := sqlite.New(sqlite.WithInMemory())
+```
+
+After creating the store, call `Migrate` before any other operation:
+
+```go
+if err := store.Migrate(ctx); err != nil {
+    log.Fatal(err)
+}
+```
+
+`Migrate` is idempotent -- it uses `CREATE TABLE IF NOT EXISTS` and `CREATE INDEX IF NOT EXISTS` throughout, so it is safe to call on every startup.
+
+### Database Schema
+
+The SQLite backend creates 8 tables:
+
+| Table | Primary Key | Indexes |
+|-------|-------------|---------|
+| `runs` | `id` | `(org_id, team_id, repo_id)`, `(status)`, `(created_at)` |
+| `patterns` | `id` | `(org_id, team_id, repo_id)` |
+| `preferences` | `id` | `(org_id, team_id, repo_id)` UNIQUE |
+| `common_issues` | `id` | `(org_id, team_id, repo_id)` |
+| `usage_records` | `id` | `(run_id)`, `(org_id, team_id, repo_id)`, `(recorded_at)` |
+| `budgets` | `id` | `(org_id, team_id, repo_id)` UNIQUE |
+| `policies` | `id` | `(org_id, team_id, repo_id)` UNIQUE |
+| `events` | `id` | `(run_id)`, `(org_id, team_id, repo_id)`, `(type)`, `(created_at)` |
+
+The `Scope` fields (`org_id`, `team_id`, `repo_id`) are stored as separate columns in every table and indexed as a composite for efficient scoped queries. Tables that enforce one-row-per-scope (preferences, budgets, policies) use a UNIQUE index on the scope triple.
+
+---
+
+## Compliance Test Suite
+
+The `storage` package exports `RunStoreTests`, a compliance test suite that exercises all sub-stores with standard CRUD operations. Any new backend must pass this suite to be considered conformant.
+
+### Usage
+
+```go
+package mybackend_test
+
+import (
+    "testing"
+
+    "github.com/philjestin/boatman-ecosystem/platform/storage"
+)
+
+func TestMyBackend(t *testing.T) {
+    store := newMyBackend(t) // your constructor
+    defer store.Close()
+
+    storage.RunStoreTests(t, store)
+}
+```
+
+### What It Covers
+
+`RunStoreTests` calls `Migrate` and then runs sub-tests for every sub-store:
+
+| Sub-test | Operations tested |
+|----------|-------------------|
+| `MigrateIdempotent` | Calling `Migrate` twice does not error |
+| `RunStore` | `Create`, `Get`, `Update`, `List` with scope and status filters |
+| `MemoryStore` | Pattern CRUD, preference get/set, common issue create/update/list |
+| `CostStore` | `RecordUsage`, `GetUsage` by run ID, `SetBudget` / `GetBudget` |
+| `PolicyStore` | `Set` at org and team levels, `GetEffectivePolicy` inheritance, `Delete` |
+| `EventStore` | `Publish` multiple events, `Query` with type filter and limit |
+
+The test suite uses fixed IDs and scopes so assertions are deterministic. It validates both positive paths (data round-trips correctly) and filter behavior (status filters return the correct subset, limits are respected).
+
+### Adding a New Backend
+
+1. Implement the `storage.Store` interface in a new package (e.g., `platform/storage/postgres`).
+2. Write a single test function that constructs your backend and calls `storage.RunStoreTests(t, store)`.
+3. All 6 sub-tests must pass before the backend is considered ready.

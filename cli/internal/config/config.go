@@ -35,11 +35,27 @@ type Config struct {
 	// Token budgets
 	TokenBudget TokenBudgetConfig
 
+	// Platform settings (optional -- CLI works standalone without it)
+	Platform PlatformConfig
+
 	// Debug enables verbose logging
 	Debug bool
 
 	// EnableTools enables Claude CLI tool capabilities for agents
 	EnableTools bool
+}
+
+// PlatformConfig holds settings for connecting to the Boatman platform server.
+type PlatformConfig struct {
+	// Server is the platform server URL (e.g., "http://localhost:8080").
+	// When empty, the CLI operates in standalone mode.
+	Server string
+
+	// OrgID is the organization identifier.
+	OrgID string
+
+	// TeamID is the team identifier.
+	TeamID string
 }
 
 // ReviewConfig holds review pass criteria settings.
@@ -185,6 +201,12 @@ func Load() (*Config, error) {
 			Context: getIntOrDefault("token_budget.context", 8000),
 			Plan:    getIntOrDefault("token_budget.plan", 2000),
 			Review:  getIntOrDefault("token_budget.review", 4000),
+		},
+
+		Platform: PlatformConfig{
+			Server: getStringOrDefault("platform.server", ""),
+			OrgID:  getStringOrDefault("platform.org_id", ""),
+			TeamID: getStringOrDefault("platform.team_id", ""),
 		},
 	}
 

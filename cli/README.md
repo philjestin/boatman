@@ -728,6 +728,30 @@ boatmanmode/
 └── README.md
 ```
 
+## Platform Integration
+
+When connected to a [Boatman Platform](../platform/README.md) server, the CLI gains organizational features:
+
+- **Shared Memory**: Patterns learned from successful runs are shared across the team
+- **Policy Enforcement**: Org and team policies are enforced during runs (iteration limits, cost caps, required tests)
+- **Cost Tracking**: Token usage is recorded per step and visible in the platform dashboard
+- **Event Streaming**: Run lifecycle events are published to the platform's event bus
+
+### Configuration
+
+Add to `.boatman.yaml`:
+
+```yaml
+platform:
+  server: http://localhost:8080
+  org_id: my-org
+  team_id: my-team
+```
+
+### Graceful Degradation
+
+The CLI uses a `TryConnect` pattern with a 3-second timeout. If the platform is unreachable or not configured, the CLI continues in standalone mode with full functionality. No platform dependency is required.
+
 ## Environment Variables
 
 | Variable | Description | Required |

@@ -199,7 +199,7 @@ make bump-desktop-major
 
 ## Coordinated Releases
 
-When releasing features that span both components:
+When releasing features that span multiple components (e.g., harness interface changes affecting platform):
 
 ```bash
 # 1. Bump both versions
@@ -253,6 +253,27 @@ Release workflows automatically trigger on tag push:
 - `boatman_Darwin_arm64.tar.gz`
 - `boatman_Windows_x86_64.zip`
 
+### Platform Release (`platform/v*` tags)
+
+**Workflow:** `.github/workflows/release-platform.yml`
+
+**Steps:**
+1. Checkout code
+2. Set up Go
+3. Run tests
+4. Build platform binary for:
+   - Linux (amd64, arm64)
+   - macOS (amd64, arm64)
+5. Build dashboard frontend
+6. Create GitHub release
+7. Upload binaries
+
+**Artifacts:**
+- `boatman-platform_Linux_x86_64.tar.gz`
+- `boatman-platform_Linux_arm64.tar.gz`
+- `boatman-platform_Darwin_x86_64.tar.gz`
+- `boatman-platform_Darwin_arm64.tar.gz`
+
 ### Desktop Release (`desktop/v*` tags)
 
 **Workflow:** `.github/workflows/release-desktop.yml`
@@ -275,6 +296,15 @@ Release workflows automatically trigger on tag push:
 - `boatman-desktop-windows.exe`
 
 ## Version Files
+
+### Platform
+
+**Location:** `platform/VERSION`
+```
+v0.1.0
+```
+
+**Usage in code:** Version is set via ldflags at build time.
 
 ### CLI
 
@@ -430,11 +460,11 @@ make bump-cli-patch  # Fix and release v1.3.1
 
 ## Version Compatibility Matrix
 
-| Desktop | Bundled CLI | Min CLI | Event Protocol |
-|---------|-------------|---------|----------------|
-| v1.0.x  | v1.0.0      | v1.0.0  | v1             |
-| v1.1.x  | v1.3.0      | v1.3.0  | v1             |
-| v2.0.x  | v2.0.0      | v2.0.0  | v2             |
+| Desktop | Bundled CLI | Min CLI | Event Protocol | Platform |
+|---------|-------------|---------|----------------|----------|
+| v1.0.x  | v1.0.0      | v1.0.0  | v1             | N/A      |
+| v1.1.x  | v1.3.0      | v1.3.0  | v1             | v0.1.0+  |
+| v2.0.x  | v2.0.0      | v2.0.0  | v2             | v0.2.0+  |
 
 ## Monitoring Releases
 
