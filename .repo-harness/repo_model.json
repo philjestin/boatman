@@ -1,0 +1,75 @@
+{
+  "root": "/Users/pmiddleton/workspace/personal/boatman-ecosystem",
+  "scanned_at": "2026-02-24T18:03:30.610651Z",
+  "monorepo": {
+    "tool": "go",
+    "config_file": "go.work",
+    "packages": [
+      {
+        "name": "cli",
+        "path": "./cli",
+        "language": "go"
+      },
+      {
+        "name": "desktop",
+        "path": "./desktop",
+        "language": "go"
+      },
+      {
+        "name": "harness",
+        "path": "./harness",
+        "language": "go"
+      },
+      {
+        "name": "shared",
+        "path": "./shared",
+        "language": "go"
+      }
+    ]
+  },
+  "languages": [
+    {
+      "language": "go",
+      "config_files": [
+        "go.work"
+      ]
+    }
+  ],
+  "build_systems": [
+    {
+      "tool": "make",
+      "config_file": "Makefile",
+      "commands": {
+        "clean": "make clean",
+        "dev": "make dev",
+        "lint": "make lint"
+      },
+      "confidence": 0.8
+    }
+  ],
+  "test_frameworks": null,
+  "ci_systems": [
+    {
+      "provider": "github_actions",
+      "config_file": ".github/workflows/release-cli.yml",
+      "jobs": [
+        "release"
+      ]
+    },
+    {
+      "provider": "github_actions",
+      "config_file": ".github/workflows/release-desktop.yml",
+      "jobs": [
+        "release"
+      ]
+    }
+  ],
+  "conventions": [
+    {
+      "type": "formatter",
+      "tool": "gofmt"
+    }
+  ],
+  "entrypoints": null,
+  "ambiguities": null
+}
