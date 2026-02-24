@@ -1,0 +1,12 @@
+{
+  "root": "/Users/pmiddleton/workspace/personal/boatman-ecosystem/agent",
+  "scanned_at": "2026-02-24T18:15:41.513485Z",
+  "monorepo": {},
+  "languages": null,
+  "build_systems": null,
+  "test_frameworks": null,
+  "ci_systems": null,
+  "conventions": null,
+  "entrypoints": null,
+  "ambiguities": null
+}
