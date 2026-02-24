@@ -1,0 +1,7 @@
+{
+  "answers": {
+    "constraints": "no circular deps",
+    "public_packages": "all public"
+  },
+  "timestamp": "2026-02-24T18:03:44.766931Z"
+}
