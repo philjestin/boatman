@@ -1,0 +1,48 @@
+{
+  "root": "/Users/pmiddleton/workspace/personal/boatman-ecosystem/desktop",
+  "scanned_at": "2026-02-24T18:12:53.729243Z",
+  "monorepo": {},
+  "languages": [
+    {
+      "language": "go",
+      "version": "1.24.1",
+      "config_files": [
+        "go.mod"
+      ]
+    }
+  ],
+  "build_systems": [
+    {
+      "tool": "go",
+      "config_file": "go.mod",
+      "commands": {
+        "build": "go build ./...",
+        "format": "gofmt -w .",
+        "test": "go test ./..."
+      },
+      "confidence": 0.95
+    }
+  ],
+  "test_frameworks": [
+    {
+      "framework": "go_test",
+      "command": "go test ./...",
+      "confidence": 0.95
+    }
+  ],
+  "ci_systems": null,
+  "conventions": [
+    {
+      "type": "formatter",
+      "tool": "gofmt"
+    }
+  ],
+  "entrypoints": [
+    {
+      "name": "desktop",
+      "type": "app",
+      "path": "."
+    }
+  ],
+  "ambiguities": null
+}
