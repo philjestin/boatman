@@ -175,3 +175,43 @@ Debug output includes token counts per agent invocation.
 | Quick prototype (mostly Haiku) | Minimal |
 
 Exact costs depend on codebase size, task complexity, and number of review iterations.
+
+---
+
+## Platform Cost Governance
+
+When using the [Boatman Platform](/platform), you get organizational cost governance features:
+
+### Budget Configuration
+
+Set daily, monthly, and per-run budgets via the API:
+
+```bash
+curl -X PUT http://localhost:8080/api/v1/costs/budget \
+  -H "Content-Type: application/json" \
+  -H "X-Boatman-Org: my-org" \
+  -d '{
+    "daily_limit": 50.00,
+    "monthly_limit": 500.00,
+    "per_run_limit": 10.00,
+    "alert_at": 0.8
+  }'
+```
+
+### Budget Alerts
+
+The platform automatically:
+- Tracks cost per step via `CostHooks` integration with the runner
+- Publishes `budget.alert` events when spend crosses the `alert_at` threshold
+- Publishes `policy.violation` events when per-run limits are exceeded
+- The `PolicyGuard` can halt runs that exceed cost limits
+
+### Cost Dashboard
+
+The web dashboard at `http://localhost:8080` provides:
+- Real-time cost charts with configurable time grouping (hour, day, week, month)
+- Per-run cost breakdowns
+- Budget utilization tracking
+- Historical cost summaries
+
+See the [Platform Cost Governance](/platform/cost-governance) docs for details.

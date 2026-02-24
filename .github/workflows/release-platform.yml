@@ -1,0 +1,106 @@
+name: Release Platform
+
+on:
+  push:
+    tags:
+      - 'platform/v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build Platform Server
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            goos: linux
+            goarch: amd64
+            suffix: linux-amd64
+          - os: ubuntu-22.04
+            goos: linux
+            goarch: arm64
+            suffix: linux-arm64
+          - os: macos-latest
+            goos: darwin
+            goarch: amd64
+            suffix: darwin-amd64
+          - os: macos-latest
+            goos: darwin
+            goarch: arm64
+            suffix: darwin-arm64
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract version
+        id: get_version
+        shell: bash
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/platform/v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=$GITHUB_REF_NAME" >> $GITHUB_OUTPUT
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.1'
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Build dashboard frontend
+        shell: bash
+        run: |
+          cd platform/dashboard/frontend
+          npm install
+          npm run build
+
+      - name: Run tests
+        shell: bash
+        run: |
+          cd platform
+          go test ./...
+
+      - name: Build platform binary
+        shell: bash
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          cd platform
+          go build -ldflags "-s -w" -o boatman-platform ./cmd/boatman-platform
+
+      - name: Create Release Archive (Unix)
+        if: matrix.goos != 'windows'
+        shell: bash
+        run: |
+          cd platform
+          tar czf boatman-platform-${{ steps.get_version.outputs.version }}-${{ matrix.suffix }}.tar.gz boatman-platform
+          rm boatman-platform
+
+      - name: Upload Release Assets
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.get_version.outputs.tag }}
+          files: |
+            platform/*.tar.gz
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: platform-${{ matrix.suffix }}-${{ steps.get_version.outputs.version }}
+          path: |
+            platform/*.tar.gz

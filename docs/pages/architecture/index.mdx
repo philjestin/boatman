@@ -1,36 +1,50 @@
 # Architecture Overview
 
-The Boatman Ecosystem is composed of two main components that communicate through a structured JSON event protocol.
+The Boatman Ecosystem is composed of four modules that communicate through structured events and HTTP APIs.
 
 ## High-Level Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    Boatman Ecosystem                             │
-│                                                                 │
-│  ┌─────────────────────┐         ┌─────────────────────┐       │
-│  │   BoatmanMode CLI   │         │   Boatman Desktop   │       │
-│  │   (cli/)            │ ──────▶ │   (desktop/)        │       │
-│  │                     │  JSON   │                     │       │
-│  │  Go CLI + Library   │ Events  │  Wails (Go+React)   │       │
-│  └─────────┬───────────┘         └──────────┬──────────┘       │
-│            │                                │                   │
-│            │                                │                   │
-│  ┌─────────▼───────────┐         ┌──────────▼──────────┐       │
-│  │  External Services  │         │   MCP Servers       │       │
-│  │  • Claude API       │         │   • Linear          │       │
-│  │  • Linear API       │         │   • Datadog         │       │
-│  │  • GitHub API       │         │   • Bugsnag         │       │
-│  │  • Git / tmux       │         │   • Slack           │       │
-│  └─────────────────────┘         └─────────────────────┘       │
-│                                                                 │
-│  ┌─────────────────────┐                                       │
-│  │   Shared (shared/)  │                                       │
-│  │   Common Go pkgs    │                                       │
-│  └─────────────────────┘                                       │
-│                                                                 │
-│  go.work ties modules together for development                  │
-└─────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                        Boatman Ecosystem                              │
+│                                                                      │
+│  ┌─────────────────────┐         ┌─────────────────────┐            │
+│  │   BoatmanMode CLI   │         │   Boatman Desktop   │            │
+│  │   (cli/)            │ ──────▶ │   (desktop/)        │            │
+│  │                     │  JSON   │                     │            │
+│  │  Go CLI + Library   │ Events  │  Wails (Go+React)   │            │
+│  └─────────┬───────────┘         └──────────┬──────────┘            │
+│            │                                │                        │
+│            │  HTTP (optional)               │                        │
+│            ▼                                │                        │
+│  ┌─────────────────────────────┐            │                        │
+│  │   Boatman Platform          │            │                        │
+│  │   (platform/)               │            │                        │
+│  │                             │            │                        │
+│  │  • Shared Memory Service    │            │                        │
+│  │  • Policy Engine            │            │                        │
+│  │  • Cost Governance          │            │                        │
+│  │  • Event Bus (NATS)         │            │                        │
+│  │  • Web Dashboard            │            │                        │
+│  │  • SQLite Storage           │            │                        │
+│  └─────────────────────────────┘            │                        │
+│                                              │                        │
+│  ┌─────────────────────┐         ┌──────────▼──────────┐            │
+│  │  External Services  │         │   MCP Servers       │            │
+│  │  • Claude API       │         │   • Linear          │            │
+│  │  • Linear API       │         │   • Datadog         │            │
+│  │  • GitHub API       │         │   • Bugsnag         │            │
+│  │  • Git / tmux       │         │   • Slack           │            │
+│  └─────────────────────┘         └─────────────────────┘            │
+│                                                                      │
+│  ┌─────────────────────┐  ┌─────────────────────┐                   │
+│  │  Harness (harness/) │  │   Shared (shared/)  │                   │
+│  │  Model-agnostic     │  │   Common Go pkgs    │                   │
+│  │  AI agent primitives│  └─────────────────────┘                   │
+│  └─────────────────────┘                                             │
+│                                                                      │
+│  go.work ties all modules together for development                   │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -50,6 +64,9 @@ The CLI emits structured JSON events to stdout. The Desktop captures these event
 - Desktop can handle any event-emitting process
 - Events are easily consumed by other tools (CI, dashboards)
 
+### Graceful Degradation
+The Platform is an optional add-on. The CLI works standalone with full functionality; the Platform adds organizational features when available. The CLI uses a `TryConnect` pattern with a 3-second timeout — if the platform is unreachable, it continues in standalone mode.
+
 ### Go Workspace
 The `go.work` file ties modules together for development while allowing independent `go.mod` files:
 
@@ -59,7 +76,9 @@ go 1.24.1
 use (
     ./cli
     ./desktop
+    ./harness
     ./shared
+    ./platform
 )
 ```
 
@@ -83,12 +102,20 @@ desktop/
   module: boatman
   deps: wails/v2, google/uuid, pkg/browser
 
+harness/
+  module: github.com/philjestin/boatman-ecosystem/harness
+  deps: (stdlib only)
+
+platform/
+  module: github.com/philjestin/boatman-ecosystem/platform
+  deps: nats-server, nats.go, modernc.org/sqlite, harness, shared
+
 shared/
   module: github.com/philjestin/boatman/shared
   deps: (none yet)
 ```
 
-The CLI and Desktop have independent dependency trees. The `shared/` module is reserved for common types that both need.
+Each component has its own dependency tree. The `harness/` is stdlib-only, while `platform/` depends on `harness/` and `shared/`.
 
 ---
 
@@ -111,6 +138,16 @@ Each step:
 ```
 User clicks "Boatman Mode" → Creates session → Spawns CLI subprocess
     → Parses stdout events → Emits Wails events → React updates UI
+```
+
+### Platform Data Flow
+```
+CLI starts run → TryConnect to Platform (3s timeout)
+    → If connected: fetch policy, fetch memory, create run record
+    → Execute pipeline with PolicyGuard, CostHooks, ObserverAdapter
+    → Each step: record cost, check budget, publish events
+    → On complete: update run, learn from results
+    → Dashboard shows real-time progress via SSE
 ```
 
 ### Firefighter Flow

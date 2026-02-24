@@ -12,6 +12,8 @@ The Boatman ecosystem uses **independent versioning** for CLI and Desktop compon
 |-----------|---------|------------|----------|
 | CLI       | v1.0.0  | `cli/v1.0.0` | `cli/` |
 | Desktop   | v1.0.0  | `desktop/v1.0.0` | `desktop/` |
+| Platform  | v0.1.0  | `platform/v0.1.0` | `platform/` |
+| Harness   | (internal) | No tags | `harness/` |
 | Shared    | (internal) | No tags | `shared/` |
 
 ## Quick Commands
@@ -27,6 +29,9 @@ make bump-cli-major        # CLI major: 1.0.0 -> 2.0.0
 make bump-desktop-patch    # Desktop patch
 make bump-desktop-minor    # Desktop minor
 make bump-desktop-major    # Desktop major
+make bump-platform-patch   # Platform patch: 0.1.0 -> 0.1.1
+make bump-platform-minor   # Platform minor: 0.1.0 -> 0.2.0
+make bump-platform-major   # Platform major: 0.1.0 -> 1.0.0
 
 # Interactive release (recommended)
 ./scripts/release.sh

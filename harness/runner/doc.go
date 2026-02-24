@@ -18,16 +18,25 @@
 // # Optional features
 //
 // Use functional options to add a Tester, Planner, cost tracker, checkpoint
-// manager, or lifecycle hooks:
+// manager, lifecycle hooks, Observer, or Guard:
 //
 //	r := runner.New(dev, rev,
 //	    runner.WithPlanner(planner),
 //	    runner.WithTester(runner.NewTestRunnerTester("/repo")),
 //	    runner.WithMaxIterations(5),
+//	    runner.WithObserver(observer),
+//	    runner.WithGuard(guard),
 //	    runner.WithHooks(runner.Hooks{
 //	        OnStepStart: func(name string) { log.Println("starting", name) },
 //	    }),
 //	)
+//
+// The Observer interface receives lifecycle events (OnRunStart, OnRunComplete,
+// OnStepStart, OnStepComplete) for logging, metrics, or event publishing.
+//
+// The Guard interface enables mid-run policy enforcement. Before each step,
+// AllowStep is called with the current GuardState (iterations, elapsed time,
+// cost, files changed). Return an error to halt the run.
 //
 // # Pipeline flow
 //

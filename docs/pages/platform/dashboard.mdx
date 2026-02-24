@@ -1,0 +1,244 @@
+# Web Dashboard
+
+The Boatman Platform includes a web dashboard for monitoring agent runs, costs, memory patterns, policies, and live events. The frontend is embedded into the Go binary via `go:embed` and served alongside the API.
+
+## Tech Stack
+
+| Technology | Version | Purpose |
+|-----------|---------|---------|
+| React | 18.3.1 | UI framework |
+| TypeScript | 5.5 | Type-safe JavaScript |
+| Vite | 5.3 | Build tool and dev server |
+| Tailwind CSS | 3.4 | Utility-first CSS |
+| Recharts | 2.12 | Chart components for cost visualization |
+
+---
+
+## Embedding
+
+The dashboard frontend is compiled to static assets and embedded into the Go binary using `go:embed`:
+
+```go
+package dashboard
+
+import (
+    "embed"
+    "io/fs"
+)
+
+//go:embed frontend/dist/*
+var assets embed.FS
+
+// Assets returns an fs.FS rooted at the frontend/dist directory.
+func Assets() (fs.FS, error) {
+    return fs.Sub(assets, "frontend/dist")
+}
+```
+
+The server serves these assets at the root path, so navigating to `http://localhost:8080` opens the dashboard.
+
+---
+
+## Pages
+
+The dashboard is a single-page app with five pages, controlled by a sidebar navigation:
+
+```tsx
+function App() {
+  const [page, setPage] = useState('runs');
+
+  const renderPage = () => {
+    switch (page) {
+      case 'runs': return <Runs />;
+      case 'costs': return <Costs />;
+      case 'memory': return <Memory />;
+      case 'policies': return <Policies />;
+      case 'events': return <LiveEvents />;
+      default: return <Runs />;
+    }
+  };
+
+  return (
+    <Layout currentPage={page} onNavigate={setPage}>
+      {renderPage()}
+    </Layout>
+  );
+}
+```
+
+### Runs
+
+Displays a table of agent runs with columns for ID, status, prompt, cost, iterations, files changed, and creation time. Each run shows a color-coded status badge (passed, running, pending, failed, error, canceled).
+
+### Costs
+
+A cost analytics dashboard with summary cards (total cost, total runs, average cost per run) and a daily cost chart powered by Recharts. Data is fetched from `/api/v1/costs/summary?group=day`.
+
+### Memory
+
+Lists learned patterns and preferences for the current scope. Uses the `PatternList` component to display pattern details including type, description, file matcher, weight, and success rate.
+
+### Policies
+
+A policy editor for viewing and updating policies at each scope level. Uses the `PolicyEditor` component to manage fields like `MaxIterations`, `MaxCostPerRun`, `AllowedModels`, and boolean flags.
+
+### LiveEvents
+
+A real-time event stream that displays events as they arrive via SSE. Shows a connection indicator, timestamp, event type, and message for each event.
+
+---
+
+## SSE Integration
+
+The `useSSE` hook provides real-time event streaming via Server-Sent Events (SSE):
+
+```typescript
+import { useState, useEffect, useRef } from 'react';
+import type { Event } from '../types';
+
+export function useSSE(org?: string, types?: string) {
+  const [events, setEvents] = useState<Event[]>([]);
+  const [connected, setConnected] = useState(false);
+  const esRef = useRef<EventSource | null>(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (org) params.set('org', org);
+    if (types) params.set('types', types);
+
+    const url = `/api/v1/events/stream?${params.toString()}`;
+    const es = new EventSource(url);
+    esRef.current = es;
+
+    es.onopen = () => setConnected(true);
+    es.onerror = () => setConnected(false);
+
+    es.onmessage = (msg) => {
+      try {
+        const event: Event = JSON.parse(msg.data);
+        setEvents(prev => [...prev.slice(-99), event]);
+      } catch {
+        // ignore parse errors
+      }
+    };
+
+    return () => {
+      es.close();
+      esRef.current = null;
+    };
+  }, [org, types]);
+
+  return { events, connected };
+}
+```
+
+Key behaviors:
+- Connects to `/api/v1/events/stream` with optional `org` and `types` query parameters
+- Keeps the last 100 events in state (sliding window)
+- Tracks connection status via `onopen` and `onerror`
+- Cleans up the `EventSource` on unmount
+
+---
+
+## useApi Hook
+
+The `useApi` hook provides data fetching for REST endpoints:
+
+```typescript
+export function useApi<T>(path: string) {
+  const [data, setData] = useState<T | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const resp = await fetch(`${BASE_URL}${path}`);
+      if (!resp.ok) {
+        throw new Error(`${resp.status} ${resp.statusText}`);
+      }
+      const json = await resp.json();
+      setData(json);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      setLoading(false);
+    }
+  }, [path]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  return { data, loading, error, refetch: fetchData };
+}
+```
+
+The hook also exports `apiPost` and `apiPut` functions for mutation operations used by the policy editor and other write interfaces.
+
+---
+
+## Building
+
+### Development
+
+Run the Vite dev server with hot module replacement:
+
+```bash
+cd platform/dashboard/frontend
+npm install
+npm run dev
+```
+
+The dev server proxies API requests to the Go backend. Make sure the platform server is running on port 8080.
+
+### Production
+
+Build the frontend for embedding into the Go binary:
+
+```bash
+cd platform/dashboard/frontend
+npm run build
+```
+
+This runs `tsc && vite build`, outputting optimized static assets to `frontend/dist/`. These assets are then embedded into the binary by the `go:embed` directive.
+
+To build the complete platform binary with the dashboard included:
+
+```bash
+make build-platform
+```
+
+---
+
+## Directory Structure
+
+```
+platform/dashboard/
+├── embed.go                    # go:embed directive
+└── frontend/
+    ├── package.json
+    ├── tsconfig.json
+    ├── vite.config.ts
+    └── src/
+        ├── main.tsx
+        ├── App.tsx
+        ├── types/
+        │   └── index.ts
+        ├── hooks/
+        │   ├── useApi.ts
+        │   └── useSSE.ts
+        ├── components/
+        │   ├── Layout.tsx
+        │   ├── Sidebar.tsx
+        │   ├── CostChart.tsx
+        │   ├── PatternList.tsx
+        │   └── PolicyEditor.tsx
+        └── pages/
+            ├── Runs.tsx
+            ├── Costs.tsx
+            ├── Memory.tsx
+            ├── Policies.tsx
+            └── LiveEvents.tsx
+```

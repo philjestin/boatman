@@ -1,6 +1,6 @@
 # Boatman Ecosystem
 
-A monorepo containing the Boatman CLI tool and desktop application for AI-powered autonomous software development.
+A monorepo containing the Boatman CLI, desktop application, harness primitives, and platform server for AI-powered autonomous software development.
 
 > 🆕 **[What's New in February 2026](./WHATS_NEW.md)** - See recent enhancements: monorepo architecture, advanced search, batch diff approval, BoatmanMode integration, agent logs, and more!
 
@@ -17,6 +17,19 @@ boatman-ecosystem/
 │   ├── frontend/     # React/TypeScript UI
 │   ├── agent/        # Go backend for desktop app
 │   └── wailsjs/      # Wails bindings
+│
+├── harness/          # Reusable AI agent primitives (stdlib only)
+│   ├── runner/       # Pipeline orchestrator
+│   ├── review/       # Canonical review types
+│   ├── memory/       # Cross-session learning
+│   └── ...           # 10+ primitive packages
+│
+├── platform/         # Organizational platform server
+│   ├── server/       # HTTP API and handlers
+│   ├── storage/      # SQLite persistence
+│   ├── eventbus/     # Embedded NATS event bus
+│   ├── services/     # Memory, policy, cost services
+│   └── dashboard/    # React web dashboard
 │
 ├── go.work           # Go workspace configuration
 └── README.md         # This file
@@ -85,6 +98,40 @@ wails dev
 ```
 
 See [desktop/README.md](./desktop/README.md) for detailed documentation.
+
+### Harness (`./harness`)
+
+Model-agnostic primitives for building AI agent harnesses with zero external dependencies.
+
+**Key features:**
+- Composable pipeline runner with execute-test-review-refactor loop
+- Observer and Guard interfaces for lifecycle events and policy enforcement
+- MemoryProvider interface for pluggable memory backends
+- 10+ primitive packages: review, checkpoint, memory, cost, handoff, and more
+
+See [harness/](./harness/) for detailed documentation.
+
+### Platform (`./platform`)
+
+An organizational server that adds shared intelligence and governance across your team.
+
+**Key features:**
+- Multi-tenant scoping with Org → Team → Repo hierarchy
+- Hierarchical policy enforcement (most-restrictive-wins merge)
+- Shared memory and learned patterns across repositories
+- Cost governance with daily/monthly budgets and alerts
+- Real-time event streaming via embedded NATS server
+- Web dashboard for runs, costs, memory, and policies
+- Graceful degradation — CLI works standalone; platform adds organizational features
+
+**Quick start:**
+```bash
+make build-platform
+./platform/boatman-platform --port 8080 --data-dir ~/.boatman/platform
+curl http://localhost:8080/api/v1/health
+```
+
+See [platform/README.md](./platform/README.md) for detailed documentation.
 
 ## Development
 
@@ -241,6 +288,7 @@ Components use **independent versioning** within the monorepo:
 
 - **CLI**: `cli/v1.2.3` - Standalone releases for terminal users
 - **Desktop**: `desktop/v1.0.5` - Bundles CLI, can release independently
+- **Platform**: `platform/v0.1.0` - Standalone server releases
 
 ### Quick Release
 
@@ -285,6 +333,10 @@ See [RELEASE_SUMMARY.md](./RELEASE_SUMMARY.md) for quick reference or [RELEASES.
 - **[BoatmanMode Events](./desktop/BOATMANMODE_EVENTS.md)** - Event specification
 - **[Desktop Changelog](./desktop/CHANGELOG.md)** - Desktop version history
 
+### Platform Documentation
+- **[Platform README](./platform/README.md)** - Platform module overview
+- **[Platform Changelog](./platform/CHANGELOG.md)** - Platform version history
+
 ### Architecture & Development
 - **[Hybrid Architecture](./HYBRID_ARCHITECTURE.md)** - Subprocess vs direct imports
 - **[Contributing](./CONTRIBUTING.md)** - Development guidelines
@@ -294,8 +346,8 @@ See [RELEASE_SUMMARY.md](./RELEASE_SUMMARY.md) for quick reference or [RELEASES.
 
 ## Contributing
 
-1. Make changes in the appropriate directory (`cli/` or `desktop/`)
-2. Run tests in both if you modify the event protocol
+1. Make changes in the appropriate directory (`cli/`, `desktop/`, `harness/`, or `platform/`)
+2. Run tests in affected components (`make test-all` for broad changes)
 3. Update documentation in component READMEs and relevant guides
 4. Create a PR with a clear description of changes
 
@@ -314,27 +366,19 @@ See [RELEASE_SUMMARY.md](./RELEASE_SUMMARY.md) for quick reference or [RELEASES.
 └────────┬────────┘
          │ Emits JSON events to stdout
          │ agent_started, claude_stream, agent_completed, progress
-         ▼
-┌─────────────────┐
-│  Integration    │ (desktop/boatmanmode/integration.go)
-│    Layer        │ Captures stdout, parses JSON
-│                 │ Calls MessageCallback for session routing
-└────────┬────────┘
          │
-    ┌────┴─────────────────────────┐
-    │                              │
-    ▼                              ▼
-┌─────────────┐          ┌─────────────────────────┐
-│ Wails emit  │          │ app.go → Session methods │
-│ boatmanmode │          │ RegisterBoatmanAgent()   │
-│ :event      │          │ SetCurrentAgent()        │
-│             │          │ AddBoatmanMessage()      │
-│             │          │ ProcessExternalStream    │
-│             │          │ Line() (claude_stream)   │
-└──────┬──────┘          └───────────┬──────────────┘
-       │                             │
-       │                             │ agent:message (Wails)
-       ▼                             ▼
+    ┌────┴────────────────────────────────────┐
+    │                                         │
+    ▼                                         ▼
+┌─────────────────┐                ┌──────────────────────┐
+│  Integration    │ (desktop/)     │  Boatman Platform    │
+│    Layer        │                │  (platform/)         │
+│  Parses JSON,   │                │                      │
+│  routes to UI   │                │  Records runs, costs │
+│                 │                │  Enforces policies   │
+└────────┬────────┘                │  Publishes to NATS   │
+         │                         │  Streams via SSE     │
+         ▼                         └──────────────────────┘
 ┌──────────────────────────────────────┐
 │   Desktop UI (React)                 │
 │   useAgent.ts handles events         │

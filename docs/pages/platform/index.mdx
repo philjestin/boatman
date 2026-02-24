@@ -1,0 +1,189 @@
+# Platform Module
+
+The platform module is the organizational layer of the Boatman ecosystem. It provides shared memory, cost governance, policy enforcement, and analytics for teams running AI agents across multiple repositories. While the CLI and Desktop operate at the individual developer level, the platform sits alongside them as a server component that adds multi-tenant coordination, budget controls, and real-time visibility.
+
+## Architecture
+
+```
+                         ┌──────────────────────────────────┐
+                         │       Boatman Platform           │
+                         │                                  │
+                         │  ┌────────────┐  ┌───────────┐  │
+                         │  │  HTTP API   │  │ Dashboard │  │
+                         │  │  /api/v1/*  │  │ React+Vite│  │
+                         │  └─────┬──────┘  └─────┬─────┘  │
+                         │        │               │         │
+                         │  ┌─────▼───────────────▼─────┐  │
+                         │  │        Services            │  │
+                         │  │  Memory · Policy · Cost    │  │
+                         │  └─────┬─────────────────────┘  │
+                         │        │                         │
+                         │  ┌─────▼──────┐  ┌───────────┐  │
+                         │  │  SQLite     │  │ NATS Bus  │  │
+                         │  │  (WAL mode) │  │ (embedded)│  │
+                         │  └────────────┘  └───────────┘  │
+                         └──────────┬───────────────────────┘
+                                    │
+                    ┌───────────────┼───────────────┐
+                    │               │               │
+              ┌─────▼─────┐  ┌─────▼─────┐  ┌─────▼─────┐
+              │  CLI (1)   │  │  CLI (2)   │  │  CLI (N)  │
+              │  boatman   │  │  boatman   │  │  boatman   │
+              │  run ...   │  │  run ...   │  │  run ...   │
+              └───────────┘  └───────────┘  └───────────┘
+```
+
+Each CLI instance connects to the platform over HTTP. The platform persists all data in SQLite (WAL mode for concurrent reads), routes real-time events through an embedded NATS server (no external dependencies), and serves a web dashboard for organizational visibility.
+
+---
+
+## Key Capabilities
+
+| Capability | Description |
+|------------|-------------|
+| **Multi-Tenant Scoping** | Every entity is scoped to Org / Team / Repo. Queries and policies respect the hierarchy. |
+| **Hierarchical Policy** | Policies defined at the org level cascade down. More specific scopes override with a most-restrictive-wins merge. |
+| **Shared Memory** | Patterns, preferences, and common issues are stored per scope and merged hierarchically so teams share learnings. |
+| **Cost Tracking** | Token usage is recorded per step per run. Budgets with daily, monthly, and per-run limits trigger alerts and enforce caps. |
+| **Real-Time Events** | An embedded NATS event bus publishes run lifecycle, cost, and policy events. Clients subscribe via SSE or NATS subjects. |
+| **Web Dashboard** | A React + TypeScript + Vite + Tailwind + Recharts SPA is embedded in the server binary and served at the root path. |
+
+---
+
+## Scope Model
+
+All platform entities are tagged with a `Scope` that defines where they belong in the organizational hierarchy:
+
+```go
+type Scope struct {
+    OrgID  string `json:"org_id"`
+    TeamID string `json:"team_id"`
+    RepoID string `json:"repo_id"`
+}
+```
+
+The hierarchy works top-down:
+
+```
+Org (acme-corp)
+ └── Team (backend)
+      ├── Repo (api-service)
+      └── Repo (worker)
+ └── Team (frontend)
+      └── Repo (web-app)
+```
+
+- **Org-level** settings apply to every team and repo underneath.
+- **Team-level** settings narrow or override org defaults for that team.
+- **Repo-level** settings are the most specific and take final precedence.
+
+Scope headers are sent with every HTTP request:
+
+| Header | Purpose |
+|--------|---------|
+| `X-Boatman-Org` | Organization identifier |
+| `X-Boatman-Team` | Team identifier |
+| `X-Boatman-Repo` | Repository identifier |
+
+---
+
+## Storage
+
+The platform uses an interface-based storage design. The top-level `Store` groups five sub-stores:
+
+| Sub-Store | Responsibility |
+|-----------|---------------|
+| `RunStore` | Agent run lifecycle records (status, duration, cost, files changed) |
+| `MemoryStore` | Patterns, preferences, and common issues per scope |
+| `CostStore` | Token usage records, usage summaries, and budget definitions |
+| `PolicyStore` | Policy rules with effective-policy merge across scopes |
+| `EventStore` | Persisted event log for replay and audit |
+
+The default backend is SQLite with WAL mode enabled for concurrent read access. The interface-based design allows swapping in other backends (e.g., PostgreSQL) without changing service code.
+
+---
+
+## Services
+
+### Memory Service
+
+Provides hierarchical pattern merging: patterns at the org level are combined with team and repo patterns, with more specific scopes taking precedence. The service implements the harness `MemoryProvider` interface so the runner pipeline uses platform-backed memory transparently.
+
+### Policy Engine
+
+Evaluates the effective policy for a scope by merging org, team, and repo policies with a most-restrictive-wins strategy. The engine caps runner configuration values (e.g., `MaxIterations`) and enforces requirements (e.g., `RequireTests`). A `PolicyGuard` adapter implements the harness `runner.Guard` interface for mid-run enforcement.
+
+### Cost Governor
+
+Tracks token usage per step and per run. Checks daily and monthly spend against budgets and publishes alert events when thresholds are crossed. Integrates with the harness cost tracker via `CostHooks` that record each step's usage at the org level.
+
+---
+
+## Bridge Adapters
+
+The platform connects to the harness/runner system through three bridge adapters:
+
+| Adapter | Implements | Purpose |
+|---------|-----------|---------|
+| `HooksAdapter` | `runner.Hooks` | Publishes step start/end and iteration events to the event bus |
+| `ObserverAdapter` | `runner.Observer` | Publishes run lifecycle events (start, complete) to the event bus |
+| `LegacyBridge` | -- | Converts bus events to the `shared/events.Event` JSON format for backward compatibility with the Desktop subprocess integration |
+
+---
+
+## Graceful Degradation
+
+The CLI is designed to work independently of the platform. When a platform server is configured, the CLI uses the `TryConnect` pattern on startup:
+
+1. The CLI sends a health-check ping to the platform URL with a **3-second timeout**.
+2. If the server responds, the CLI enables platform features (shared memory, cost reporting, policy enforcement).
+3. If the server is unreachable or times out, the CLI continues in **standalone mode** with no loss of core functionality.
+
+```go
+conn := platform.TryConnect(ctx, serverURL, scope)
+if conn.IsConnected() {
+    // Use platform-backed memory, cost reporting, policies
+} else {
+    // Continue with local memory, no org-level features
+}
+```
+
+This means the platform is always additive. Individual developers can use the CLI without any server infrastructure. Organizations adopt the platform to gain cross-repo visibility and governance.
+
+---
+
+## Project Structure
+
+```
+platform/
+├── cmd/boatman-platform/    # Server binary entry point
+├── client/                  # HTTP client for CLI integration
+├── dashboard/               # Embedded React+Vite web dashboard
+│   └── frontend/            # TypeScript + Tailwind + Recharts
+├── eventbus/                # Embedded NATS event bus
+│   └── bridge/              # HooksAdapter, ObserverAdapter, LegacyBridge
+├── server/                  # HTTP server
+│   └── api/                 # REST handlers, middleware, routes
+├── services/
+│   ├── memory/              # Hierarchical memory merge + MemoryProvider adapter
+│   ├── policy/              # Policy engine + PolicyGuard adapter
+│   └── cost/                # Cost governor + CostHooks adapter
+└── storage/
+    ├── sqlite/              # SQLite backend (WAL mode)
+    └── s3/                  # Artifact storage (local or S3)
+```
+
+---
+
+## Sub-Pages
+
+- [Getting Started](/platform/getting-started) -- Build, run, and connect to the platform
+- [Storage Layer](/platform/storage) -- Persistence interfaces and SQLite backend
+- [Event Bus](/platform/event-bus) -- Embedded NATS, subjects, and subscriptions
+- [HTTP API](/platform/api) -- REST endpoints and scope middleware
+- [Memory Service](/platform/memory-service) -- Hierarchical pattern merge and learning
+- [Policy Engine](/platform/policy-engine) -- Layered policy evaluation and enforcement
+- [Cost Governance](/platform/cost-governance) -- Budgets, alerts, and usage tracking
+- [Web Dashboard](/platform/dashboard) -- React SPA for organizational visibility
+- [CLI Integration](/platform/cli-integration) -- TryConnect, graceful degradation, and adapters
+- [Configuration](/platform/configuration) -- Server flags and environment variables

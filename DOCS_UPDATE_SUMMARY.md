@@ -353,6 +353,78 @@ Users can now easily discover, understand, and use all features!
 
 ---
 
+---
+
+## Platform Documentation Update (February 2026)
+
+A comprehensive documentation update wave to reflect the new platform module and its integration points across the ecosystem.
+
+### New Files Created
+
+**Docs Site — Platform Section (`docs/pages/platform/`):**
+- `_meta.json` — Navigation structure
+- `index.mdx` — Platform overview with architecture diagram and scope model
+- `getting-started.mdx` — Prerequisites, build, run, verify, connect CLI
+- `storage.mdx` — Storage interfaces, domain types, SQLite backend, compliance tests
+- `event-bus.mdx` — NATS integration, subjects, bridge adapters
+- `api.mdx` — Full endpoint reference with curl examples
+- `memory-service.mdx` — Hierarchical merge, MemoryProvider adapter
+- `policy-engine.mdx` — Policy merge rules, PolicyGuard
+- `cost-governance.mdx` — Governor, budgets, CostHooks
+- `dashboard.mdx` — React dashboard, SSE integration
+- `cli-integration.mdx` — TryConnect pattern, graceful degradation
+- `configuration.mdx` — Server flags, CLI config, deployment examples
+
+**Docs Site — Guides:**
+- `docs/pages/guides/platform-deployment.mdx` — Local, team, production deployment
+- `docs/pages/guides/platform-admin.mdx` — Policies, budgets, memory, troubleshooting
+
+**Platform Module:**
+- `platform/README.md` — Module overview with architecture and API summary
+- `platform/CHANGELOG.md` — Initial v0.1.0 entry
+
+### Updated Files
+
+**Docs Site:**
+- `docs/pages/_meta.json` — Added "Platform" section
+- `docs/pages/index.mdx` — Added Platform to ecosystem, updated diagram and repo structure
+- `docs/pages/architecture/index.mdx` — Updated architecture diagram, added Platform data flow
+- `docs/pages/architecture/monorepo.mdx` — Added harness/ and platform/ to layout, modules, commands
+- `docs/pages/architecture/event-protocol.mdx` — Added Platform Event Bus section with NATS subjects
+- `docs/pages/harness/index.mdx` — Added Observer, Guard, MemoryProvider; Platform Integration section
+- `docs/pages/harness/runner.mdx` — Added Observer and Guard interface documentation
+- `docs/pages/harness/primitives.mdx` — Added MemoryProvider interface
+- `docs/pages/cli/configuration.mdx` — Added Platform Configuration section
+- `docs/pages/guides/cost-optimization.mdx` — Added Platform Cost Governance section
+- `docs/pages/guides/index.mdx` — Added links to platform guides
+- `docs/pages/guides/_meta.json` — Added platform guide entries
+
+**Root Markdown:**
+- `README.md` — Added platform/harness to structure, components, release strategy, docs index
+- `QUICKSTART.md` — Added platform to structure, server usage, CLI connection, commands
+- `CONTRIBUTING.md` — Updated to four components, added harness/platform workflows
+- `WHATS_NEW.md` — Added Platform Module section, updated architecture diagram
+- `HYBRID_ARCHITECTURE.md` — Added Platform HTTP API path and TryConnect pattern
+- `RELEASES.md` — Added Platform Release section and version compatibility
+- `RELEASE_SUMMARY.md` — Added Platform row and bump commands
+- `VERSIONING.md` — Added platform version, tags, FAQ update
+- `MIGRATION.md` — Added "Adopting the Platform" section
+- `DOCS_UPDATE_SUMMARY.md` — This section
+
+**Go Source:**
+- `platform/doc.go` — Expanded package documentation
+- `harness/doc.go` — Added Observer, Guard, MemoryProvider to package list
+- `harness/runner/doc.go` — Added Observer and Guard to optional features
+- `cli/README.md` — Added Platform Integration section
+
+### Metrics
+
+- **New files created**: 16
+- **Existing files updated**: 26
+- **Total files affected**: 42
+
+---
+
 **Documentation Update Date**: February 19, 2026
 **Updated By**: Claude (AI Documentation Assistant)
 **Review Status**: Ready for human review

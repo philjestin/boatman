@@ -8,6 +8,8 @@ Each component has its own semantic version:
 
 - **CLI**: `cli/v1.2.3`
 - **Desktop**: `desktop/v1.0.5`
+- **Platform**: `platform/v0.1.0`
+- **Harness**: Internal library, no independent releases
 - **Shared**: Internal library, no independent releases
 
 ## Semantic Versioning
@@ -47,7 +49,11 @@ git tag cli/v1.3.0
 git tag desktop/v1.0.5
 git tag desktop/v1.1.0
 
-# Can also tag both together for coordinated releases
+# Platform releases
+git tag platform/v0.1.0
+git tag platform/v0.2.0
+
+# Can also tag multiple together for coordinated releases
 git tag cli/v1.3.0 desktop/v1.1.0
 ```
 
@@ -226,6 +232,13 @@ git tag desktop/v1.1.0
 
 ## Version Files
 
+### Platform Version
+
+```bash
+# platform/VERSION
+v0.1.0
+```
+
 ### CLI Version
 
 ```bash
@@ -282,7 +295,7 @@ var Version = "1.3.0"
 
 ### Can I release CLI without Desktop?
 
-Yes! They're independent. Just tag `cli/v1.3.0` and only the CLI workflow runs.
+Yes! They're independent. Just tag `cli/v1.3.0` and only the CLI workflow runs. The same applies to the platform — tag `platform/v0.2.0` independently.
 
 ### Does Desktop always need a new CLI?
 
@@ -310,11 +323,11 @@ Technically yes (CLI is separate), but:
 
 ## Version Matrix
 
-| Desktop | Bundled CLI | Event Protocol | Compatible CLI Range |
-|---------|-------------|----------------|---------------------|
-| v1.0.0  | v1.2.0      | v1             | v1.2.0 - v1.x.x     |
-| v1.1.0  | v1.3.0      | v1             | v1.3.0 - v1.x.x     |
-| v2.0.0  | v2.0.0      | v2             | v2.0.0+             |
+| Desktop | Bundled CLI | Event Protocol | Compatible CLI Range | Platform |
+|---------|-------------|----------------|---------------------|----------|
+| v1.0.0  | v1.2.0      | v1             | v1.2.0 - v1.x.x     | N/A      |
+| v1.1.0  | v1.3.0      | v1             | v1.3.0 - v1.x.x     | v0.1.0+  |
+| v2.0.0  | v2.0.0      | v2             | v2.0.0+             | v0.2.0+  |
 
 ## Deprecation Policy
 

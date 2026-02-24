@@ -15,9 +15,12 @@ go get github.com/philjestin/boatman/harness
 | Package | Purpose |
 |---------|---------|
 | **runner** | Composable pipeline orchestrator with execute-test-review-refactor loop |
+| **runner/observer** | Run lifecycle event interface (`OnRunStart`, `OnRunComplete`, `OnStepStart`, `OnStepComplete`) |
+| **runner/guard** | Mid-run policy enforcement interface (`AllowStep` with `GuardState`) |
 | **review** | Canonical review types and the `Reviewer` interface |
 | **checkpoint** | Progress saving with git integration for resumable workflows |
 | **memory** | Cross-session learning (patterns, preferences, issues) |
+| **memory/provider** | `MemoryProvider` interface for pluggable memory backends |
 | **cost** | Token usage and cost tracking across pipeline steps |
 | **filesummary** | Language-aware file summarization to save tokens |
 | **handoff** | Structured context passing between pipeline stages |
@@ -34,11 +37,14 @@ go get github.com/philjestin/boatman/harness
 ```
 harness/
 ├── runner/          # Pipeline orchestration (the main entry point)
-│   └── Roles: Developer, Reviewer, Tester, Planner
+│   ├── Roles: Developer, Reviewer, Tester, Planner
+│   ├── observer.go  # Observer interface for lifecycle events
+│   └── guard.go     # Guard interface for mid-run policy checks
 │
 ├── review/          # Canonical types (Issue, ReviewResult, Reviewer)
 ├── checkpoint/      # Save/resume workflow progress
 ├── memory/          # Cross-session learning
+│   └── provider.go  # MemoryProvider interface
 ├── cost/            # Token tracking
 │
 ├── filesummary/     # Smart file summarization
@@ -97,6 +103,21 @@ CLI internal/testrunner → wraps harness/testrunner.Runner
 ```
 
 The runner orchestrates them through the standard pipeline while checkpoint, memory, cost, and issuetracker primitives handle cross-cutting concerns.
+
+---
+
+## Platform Integration
+
+The [Platform module](/platform) implements several harness interfaces, connecting the standalone primitives to organizational infrastructure:
+
+| Harness Interface | Platform Implementation | Purpose |
+|-------------------|------------------------|---------|
+| `runner.Observer` | `ObserverAdapter` | Publishes run lifecycle events to the event bus |
+| `runner.Guard` | `PolicyGuard` | Enforces cost and file limits mid-run |
+| `memory.MemoryProvider` | `PlatformMemoryStore` | Provides hierarchically merged memory from org/team/repo scopes |
+| `runner.Hooks` | `HooksAdapter`, `CostHooks` | Records step events and cost data |
+
+This integration is transparent — the runner doesn't know whether it's using local or platform-backed implementations.
 
 ---
 

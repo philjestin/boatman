@@ -1,0 +1,84 @@
+# Getting Started
+
+This guide walks you through building, running, and connecting to the Boatman Platform service.
+
+## Prerequisites
+
+| Tool | Version | Purpose |
+|------|---------|---------|
+| Go | 1.24.1+ | Build the platform binary |
+| Node.js | 18+ | Build the web dashboard |
+
+---
+
+## Building
+
+From the monorepo root, build the platform binary:
+
+```bash
+make build-platform
+```
+
+This compiles the Go server and bundles the dashboard frontend into a single binary at `platform/boatman-platform`.
+
+---
+
+## Running
+
+Start the platform server:
+
+```bash
+./platform/boatman-platform --port 8080 --data-dir ~/.boatman/platform
+```
+
+| Flag | Description |
+|------|-------------|
+| `--port` | HTTP port the server listens on |
+| `--data-dir` | Directory for persistent data (events, memory, policies) |
+
+---
+
+## Verify
+
+Confirm the server is healthy:
+
+```bash
+curl http://localhost:8080/api/v1/health
+```
+
+Expected response:
+
+```json
+{"status":"ok","service":"boatman-platform"}
+```
+
+---
+
+## Connect the CLI
+
+Add a `platform:` section to your `.boatman.yaml` configuration file so the CLI knows where to send events and retrieve shared memory:
+
+```yaml
+platform:
+  server: http://localhost:8080
+  org_id: my-org
+  team_id: my-team
+```
+
+Once configured, CLI commands like `boatman run` will automatically report events, costs, and review results to the platform.
+
+---
+
+## Open the Dashboard
+
+Navigate to [http://localhost:8080](http://localhost:8080) in your browser. The dashboard provides a real-time view of agent activity, cost trends, and review history across your team.
+
+---
+
+## Next Steps
+
+- [Storage Layer](/platform/storage) -- Understand event persistence and data retention
+- [HTTP API](/platform/api) -- Explore the REST endpoints the platform exposes
+- [Web Dashboard](/platform/dashboard) -- Configure and customize the dashboard UI
+- [CLI Integration](/platform/cli-integration) -- Deep dive into how the CLI communicates with the platform
+- [Configuration](/platform/configuration) -- Full reference for server flags and environment variables

@@ -127,12 +127,54 @@ boatman-ecosystem/
 │   ├── services/     # Hybrid integration
 │   └── boatmanmode/  # Subprocess integration
 │
+├── harness/          # Reusable AI agent primitives
+│   ├── runner/       # Pipeline orchestrator
+│   ├── review/       # Canonical review types
+│   └── memory/       # Cross-session learning
+│
+├── platform/         # Organizational platform server
+│   ├── server/       # HTTP API
+│   ├── storage/      # SQLite persistence
+│   ├── eventbus/     # Embedded NATS event bus
+│   └── dashboard/    # React web dashboard
+│
 ├── shared/           # Shared types
 │   ├── events/       # Event protocol
 │   └── types/        # Common structs
 │
 └── scripts/          # Setup and utilities
 ```
+
+## Platform Server
+
+### Start the Platform
+
+```bash
+# Build
+make build-platform
+
+# Run
+./platform/boatman-platform --port 8080 --data-dir ~/.boatman/platform
+
+# Verify
+curl http://localhost:8080/api/v1/health
+
+# Open dashboard
+open http://localhost:8080
+```
+
+### Connecting CLI to Platform
+
+Add to your `.boatman.yaml`:
+
+```yaml
+platform:
+  server: http://localhost:8080
+  org_id: my-org
+  team_id: my-team
+```
+
+The CLI will automatically connect when the platform is available and fall back to standalone mode if it's not.
 
 ## Common Tasks
 
@@ -294,6 +336,7 @@ go work sync                    # Sync workspace
 # Building
 make build-cli                  # Build CLI only
 make build-desktop              # Build desktop only
+make build-platform             # Build platform server
 make build-all                  # Build everything
 
 # Development
@@ -303,11 +346,18 @@ make install-cli                # Install CLI to ~/bin
 # Testing
 make test-cli                   # Test CLI
 make test-desktop               # Test desktop
+make test-platform              # Test platform
 make test-all                   # Test everything
+
+# Platform
+make bump-platform-patch        # Bump platform patch version
+make bump-platform-minor        # Bump platform minor version
+make bump-platform-major        # Bump platform major version
 
 # Utilities
 make clean                      # Clean build artifacts
 make fmt                        # Format code
+make show-versions              # Show all component versions
 make help                       # Show all commands
 ```
 

@@ -32,6 +32,19 @@ A cross-platform desktop application built with Wails (Go + React) that wraps th
 
 [Get started with the Desktop app →](/desktop)
 
+### Boatman Platform
+
+The organizational layer that adds shared memory, cost governance, policy enforcement, and analytics across your team.
+
+- Multi-tenant scoping: Org → Team → Repo hierarchy
+- Hierarchical policy enforcement with most-restrictive-wins merging
+- Shared memory and learned patterns across repositories
+- Cost tracking with daily/monthly budgets and alerts
+- Real-time event streaming via embedded NATS
+- Web dashboard for runs, costs, memory, and policies
+
+[Get started with the Platform →](/platform)
+
 ---
 
 ## How It Works
@@ -53,19 +66,19 @@ A cross-platform desktop application built with Wails (Go + React) that wraps th
 │                          9. Create PR                       │
 │                                                             │
 │  Emits structured JSON events ─────────────────────────┐    │
-└─────────────────────────────────────────────────────────┼────┘
-                                                          │
-         ┌────────────────────────────────────────────────┘
-         │
-         ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    Boatman Desktop                           │
-│                                                             │
-│  • Captures JSON events from CLI subprocess                 │
-│  • Displays real-time agent progress in Tasks tab           │
-│  • Provides Firefighter Mode for incident investigation     │
-│  • Integrates with Linear, Bugsnag, Datadog via MCP         │
-└─────────────────────────────────────────────────────────────┘
+└──────────────────────────────────────────────┬──────────┼────┘
+                                               │          │
+         ┌─────────────────────────────────────┘          │
+         │          ┌─────────────────────────────────────┘
+         ▼          ▼
+┌──────────────────────────────┐  ┌───────────────────────────┐
+│       Boatman Desktop        │  │    Boatman Platform        │
+│                              │  │                           │
+│  • JSON event capture        │  │  • Shared memory          │
+│  • Real-time agent progress  │  │  • Cost governance        │
+│  • Firefighter Mode          │  │  • Policy enforcement     │
+│  • MCP integration           │  │  • Web dashboard          │
+└──────────────────────────────┘  └───────────────────────────┘
 ```
 
 ---
@@ -99,6 +112,22 @@ make build-cli
 make dev
 ```
 
+### Platform
+
+```bash
+# Build the platform server
+make build-platform
+
+# Run it
+./platform/boatman-platform --port 8080 --data-dir ~/.boatman/platform
+
+# Verify
+curl http://localhost:8080/api/v1/health
+
+# Open dashboard
+open http://localhost:8080
+```
+
 ---
 
 ## Prerequisites
@@ -129,6 +158,19 @@ boatman-ecosystem/
 │   ├── agent/        # Session management
 │   ├── boatmanmode/  # CLI integration layer
 │   └── config/       # Configuration
+│
+├── harness/          # Reusable AI agent primitives
+│   ├── runner/       # Pipeline orchestrator
+│   ├── review/       # Canonical review types
+│   ├── memory/       # Cross-session learning
+│   └── ...           # 10+ primitive packages
+│
+├── platform/         # Organizational platform server
+│   ├── server/       # HTTP API and dashboard
+│   ├── storage/      # SQLite persistence
+│   ├── eventbus/     # Embedded NATS event bus
+│   ├── services/     # Memory, policy, cost services
+│   └── dashboard/    # React web dashboard
 │
 ├── shared/           # Shared Go packages
 ├── docs/             # This documentation site

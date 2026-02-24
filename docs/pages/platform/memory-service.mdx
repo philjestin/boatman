@@ -1,0 +1,295 @@
+# Memory Service
+
+The `platform/services/memory` package provides hierarchical shared memory that merges patterns across organizational scopes (org, team, repo). It bridges platform-level storage with the harness memory system so the runner pipeline works without modification.
+
+## Service
+
+The `Service` struct wraps the platform `MemoryStore` and exposes methods for merged retrieval, learning, and harness conversion.
+
+```go
+type Service struct {
+    store storage.MemoryStore
+}
+
+func NewService(store storage.MemoryStore) *Service {
+    return &Service{store: store}
+}
+```
+
+---
+
+## GetMergedPatterns
+
+`GetMergedPatterns` fetches patterns from all three scope levels and merges them. The merge strategy is:
+
+1. Collect patterns at org, team, and repo levels
+2. Deduplicate by `ID` -- when the same ID appears at multiple levels, the more specific scope wins (repo > team > org)
+3. Sort by `Weight` descending so the highest-confidence patterns come first
+
+```go
+func (s *Service) GetMergedPatterns(ctx context.Context, scope storage.Scope) ([]*storage.Pattern, error) {
+    var all []*storage.Pattern
+
+    // Org-level patterns
+    if scope.OrgID != "" {
+        orgPatterns, err := s.store.ListPatterns(ctx, storage.Scope{OrgID: scope.OrgID})
+        if err != nil {
+            return nil, fmt.Errorf("list org patterns: %w", err)
+        }
+        all = append(all, orgPatterns...)
+    }
+
+    // Team-level patterns
+    if scope.OrgID != "" && scope.TeamID != "" {
+        teamPatterns, err := s.store.ListPatterns(ctx, storage.Scope{OrgID: scope.OrgID, TeamID: scope.TeamID})
+        if err != nil {
+            return nil, fmt.Errorf("list team patterns: %w", err)
+        }
+        all = append(all, teamPatterns...)
+    }
+
+    // Repo-level patterns
+    if scope.OrgID != "" && scope.TeamID != "" && scope.RepoID != "" {
+        repoPatterns, err := s.store.ListPatterns(ctx, scope)
+        if err != nil {
+            return nil, fmt.Errorf("list repo patterns: %w", err)
+        }
+        all = append(all, repoPatterns...)
+    }
+
+    // Deduplicate by ID, preferring more specific scope
+    seen := make(map[string]*storage.Pattern)
+    for _, p := range all {
+        seen[p.ID] = p
+    }
+
+    var merged []*storage.Pattern
+    for _, p := range seen {
+        merged = append(merged, p)
+    }
+
+    // Sort by weight descending
+    sort.Slice(merged, func(i, j int) bool {
+        return merged[i].Weight > merged[j].Weight
+    })
+
+    return merged, nil
+}
+```
+
+Because patterns are iterated org first and repo last, the `seen` map naturally retains the most specific scope for each ID.
+
+---
+
+## LearnFromRun
+
+`LearnFromRun` extracts patterns from a completed run. It only learns from runs with a `reviewScore >= 70` to avoid reinforcing poor patterns.
+
+For each changed file, a new `Pattern` is created with:
+- `Weight` set to `reviewScore / 100`
+- `SuccessRate` set to `reviewScore / 100`
+- `Type` set to `"success"`
+
+```go
+func (s *Service) LearnFromRun(ctx context.Context, run *storage.Run, reviewScore int) error {
+    if reviewScore < 70 {
+        return nil // only learn from reasonably successful runs
+    }
+
+    for _, file := range run.FilesChanged {
+        pattern := &storage.Pattern{
+            ID:          fmt.Sprintf("run-%s-%s", run.ID, file),
+            Scope:       run.Scope,
+            Type:        "success",
+            Description: fmt.Sprintf("Pattern from run %s on file %s (score: %d)", run.ID, file, reviewScore),
+            FileMatcher: file,
+            Weight:      float64(reviewScore) / 100.0,
+            UsageCount:  1,
+            SuccessRate: float64(reviewScore) / 100.0,
+        }
+
+        if err := s.store.CreatePattern(ctx, pattern); err != nil {
+            return fmt.Errorf("create pattern for %s: %w", file, err)
+        }
+    }
+
+    return nil
+}
+```
+
+---
+
+## ToHarnessMemory
+
+`ToHarnessMemory` builds a `harness/memory.Memory` struct from platform data so the existing runner pipeline works without modification. It merges patterns, fetches preferences and common issues, then converts everything to harness types.
+
+```go
+func (s *Service) ToHarnessMemory(ctx context.Context, scope storage.Scope) (*harnessmemory.Memory, error) {
+    patterns, err := s.GetMergedPatterns(ctx, scope)
+    if err != nil {
+        return nil, err
+    }
+
+    prefs, err := s.store.GetPreferences(ctx, scope)
+    if err != nil {
+        return nil, err
+    }
+
+    issues, err := s.store.ListIssues(ctx, scope)
+    if err != nil {
+        return nil, err
+    }
+
+    // Convert to harness types
+    mem := &harnessmemory.Memory{
+        ProjectID:    fmt.Sprintf("%s/%s/%s", scope.OrgID, scope.TeamID, scope.RepoID),
+        FilePatterns: make(map[string][]string),
+    }
+
+    for _, p := range patterns {
+        mem.Patterns = append(mem.Patterns, harnessmemory.Pattern{
+            ID:          p.ID,
+            Type:        p.Type,
+            Description: p.Description,
+            Example:     p.Example,
+            FileMatcher: p.FileMatcher,
+            Weight:      p.Weight,
+            UsageCount:  p.UsageCount,
+            SuccessRate: p.SuccessRate,
+            CreatedAt:   p.CreatedAt,
+            UpdatedAt:   p.UpdatedAt,
+        })
+    }
+
+    for _, i := range issues {
+        mem.CommonIssues = append(mem.CommonIssues, harnessmemory.CommonIssue{
+            ID:          i.ID,
+            Type:        i.Type,
+            Description: i.Description,
+            Solution:    i.Solution,
+            Frequency:   i.Frequency,
+            AutoFix:     i.AutoFix,
+            FileMatcher: i.FileMatcher,
+            CreatedAt:   i.CreatedAt,
+        })
+    }
+
+    if prefs != nil {
+        mem.Preferences = harnessmemory.Preferences{
+            PreferredTestFramework: prefs.PreferredTestFramework,
+            NamingConventions:      prefs.NamingConventions,
+            FileOrganization:       prefs.FileOrganization,
+            CodeStyle:              prefs.CodeStyle,
+            CommitMessageFormat:    prefs.CommitMessageFormat,
+            ReviewerThresholds:     prefs.ReviewerThresholds,
+        }
+    }
+
+    return mem, nil
+}
+```
+
+---
+
+## PlatformMemoryStore Adapter
+
+`PlatformMemoryStore` implements `harness/memory.MemoryProvider` so the CLI can transparently swap in platform-backed memory. The harness runner and other consumers interact with the same `MemoryProvider` interface regardless of whether memory is local or platform-backed.
+
+```go
+// MemoryProvider is the harness interface:
+type MemoryProvider interface {
+    Get(projectPath string) (*Memory, error)
+    Save(mem *Memory) error
+}
+```
+
+The adapter:
+
+```go
+type PlatformMemoryStore struct {
+    service *Service
+    scope   storage.Scope
+}
+
+// Compile-time check that PlatformMemoryStore implements MemoryProvider.
+var _ harnessmemory.MemoryProvider = (*PlatformMemoryStore)(nil)
+
+func NewPlatformMemoryStore(service *Service, scope storage.Scope) *PlatformMemoryStore {
+    return &PlatformMemoryStore{
+        service: service,
+        scope:   scope,
+    }
+}
+```
+
+### Get
+
+`Get` ignores the `projectPath` parameter because platform memory is scoped by org/team/repo rather than filesystem path.
+
+```go
+func (s *PlatformMemoryStore) Get(_ string) (*harnessmemory.Memory, error) {
+    return s.service.ToHarnessMemory(context.Background(), s.scope)
+}
+```
+
+### Save
+
+`Save` converts harness patterns and preferences back to platform storage types. For patterns, it attempts a create first and falls back to update if the pattern already exists.
+
+```go
+func (s *PlatformMemoryStore) Save(mem *harnessmemory.Memory) error {
+    ctx := context.Background()
+
+    // Save patterns
+    for _, p := range mem.Patterns {
+        sp := &storage.Pattern{
+            ID:          p.ID,
+            Scope:       s.scope,
+            Type:        p.Type,
+            Description: p.Description,
+            Example:     p.Example,
+            FileMatcher: p.FileMatcher,
+            Weight:      p.Weight,
+            UsageCount:  p.UsageCount,
+            SuccessRate: p.SuccessRate,
+            CreatedAt:   p.CreatedAt,
+            UpdatedAt:   p.UpdatedAt,
+        }
+        // Try create, fall back to update
+        if err := s.service.store.CreatePattern(ctx, sp); err != nil {
+            if err := s.service.store.UpdatePattern(ctx, sp); err != nil {
+                return err
+            }
+        }
+    }
+
+    // Save preferences
+    prefs := &storage.Preferences{
+        ID:                     "prefs-" + s.scope.OrgID + "-" + s.scope.TeamID + "-" + s.scope.RepoID,
+        Scope:                  s.scope,
+        PreferredTestFramework: mem.Preferences.PreferredTestFramework,
+        NamingConventions:      mem.Preferences.NamingConventions,
+        FileOrganization:       mem.Preferences.FileOrganization,
+        CodeStyle:              mem.Preferences.CodeStyle,
+        CommitMessageFormat:    mem.Preferences.CommitMessageFormat,
+        ReviewerThresholds:     mem.Preferences.ReviewerThresholds,
+    }
+    if err := s.service.store.SetPreferences(ctx, prefs); err != nil {
+        return err
+    }
+
+    return nil
+}
+```
+
+---
+
+## Scope Hierarchy
+
+Memory merges across three levels. More specific scopes override broader ones:
+
+| Level | Scope Fields | Example |
+|-------|-------------|---------|
+| Org | `OrgID` only | Company-wide coding standards |
+| Team | `OrgID` + `TeamID` | Team-specific patterns and preferences |
+| Repo | `OrgID` + `TeamID` + `RepoID` | Repository-specific learned patterns |

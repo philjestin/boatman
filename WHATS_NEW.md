@@ -1,6 +1,32 @@
 # What's New in Boatman Ecosystem
 
-Recent enhancements and new features across CLI and Desktop components.
+Recent enhancements and new features across CLI, Desktop, and Platform components.
+
+## Platform Module (v0.1.0)
+
+The Boatman Platform is a new organizational server that adds shared intelligence and governance across your team. Built in 10 phases, it provides:
+
+**Storage Layer**: Interface-based persistence with SQLite backend, supporting runs, patterns, preferences, issues, usage records, budgets, policies, and events. Includes a compliance test suite for alternative backends.
+
+**Event Bus**: Embedded NATS server (no external dependencies) with hierarchical subject patterns (`boatman.{org}.{team}.{type}`), persistent event storage, and replay capability.
+
+**HTTP API**: Full REST API with scope-based multi-tenancy via `X-Boatman-Org/Team/Repo` headers. Endpoints for runs, memory/patterns, costs/budgets, policies, and real-time SSE event streaming.
+
+**Memory Service**: Hierarchical pattern merging across org, team, and repo scopes. Learns from successful runs and provides a `MemoryProvider` adapter for transparent harness integration.
+
+**Policy Engine**: Hierarchical policy enforcement with most-restrictive-wins merging. `PolicyGuard` implements the harness `runner.Guard` interface for mid-run enforcement of cost and file limits.
+
+**Cost Governance**: Budget tracking with daily, monthly, and per-run limits. Automatic alerts via the event bus when thresholds are crossed. `CostHooks` integration with the runner pipeline.
+
+**Web Dashboard**: React + TypeScript + Vite + Tailwind + Recharts SPA with pages for Runs, Costs, Memory, Policies, and Live Events. Embedded in the Go binary via `go:embed`.
+
+**CLI Integration**: `TryConnect` pattern with 3-second timeout for graceful degradation. CLI works standalone; platform features are purely additive.
+
+**Bridge Adapters**: `HooksAdapter`, `ObserverAdapter`, and `LegacyBridge` connect harness runner interfaces to platform event publishing.
+
+See [platform/README.md](./platform/README.md) for details.
+
+---
 
 ## February 2026 - Monorepo & Feature Expansion
 
@@ -407,7 +433,9 @@ New features are available but not required:
 boatman-ecosystem/
 ├── cli/              # CLI with pkg/ exports
 ├── desktop/          # Desktop with hybrid integration
-├── shared/           # Shared types (future)
+├── harness/          # Reusable AI agent primitives
+├── platform/         # Organizational platform server
+├── shared/           # Shared types
 └── docs/             # Unified documentation
 ```
 
@@ -448,7 +476,7 @@ boatman-ecosystem/
 **CLI:**
 - Plugin system
 - Custom review skills
-- Cost tracking
+- ~~Cost tracking~~ (completed via Platform)
 - Performance profiling
 
 **Integration:**

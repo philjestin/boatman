@@ -331,6 +331,44 @@ func TestHybridUsage(t *testing.T) {
 }
 ```
 
+## Platform HTTP API (Third Path)
+
+The [Boatman Platform](/platform) introduces a third integration path: HTTP API. This is used by the CLI to access organizational features.
+
+### When to Use
+
+- Shared memory across org/team/repo scopes
+- Policy enforcement and cost governance
+- Event publishing and real-time streaming
+- Cross-repository analytics
+
+### TryConnect Pattern
+
+The CLI connects to the platform opportunistically:
+
+```go
+connector := platform.TryConnect(cfg.Platform)
+if connector.IsConnected() {
+    // Use platform features (policy, memory, cost tracking)
+    client := connector.Client()
+    policy, _ := client.GetEffectivePolicy(ctx)
+} else {
+    // Continue in standalone mode — full functionality preserved
+}
+```
+
+### Adapter Pattern
+
+The platform implements harness interfaces, so integration is transparent:
+
+```go
+// Platform provides these implementations:
+// - memory.MemoryProvider → PlatformMemoryStore
+// - runner.Guard          → PolicyGuard
+// - runner.Observer       → ObserverAdapter
+// - runner.Hooks          → HooksAdapter, CostHooks
+```
+
 ## Decision Tree
 
 ```
@@ -348,9 +386,15 @@ Need to interact with boatmanmode?
 │           │        - Validation
 │           │        - Stats
 │           │
-│           └─ NO → Use subprocess
-│                    - When in doubt, subprocess
-│                    - Easier to migrate later
+│           └─ NO → Need organizational features?
+│                    ├─ YES → Use Platform HTTP API
+│                    │        - Shared memory
+│                    │        - Policy enforcement
+│                    │        - Cost governance
+│                    │
+│                    └─ NO → Use subprocess
+│                             - When in doubt, subprocess
+│                             - Easier to migrate later
 ```
 
 ## Future Enhancements

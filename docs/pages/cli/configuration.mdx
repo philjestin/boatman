@@ -206,3 +206,31 @@ token_budget:
 | Plan to Executor | Summary, approach, files | ~4000 tokens |
 | Executor to Reviewer | Requirements, diff, test results | ~3000 tokens |
 | Reviewer to Refactor | Issues (deduplicated), guidance | ~2000 tokens |
+
+---
+
+## Platform Configuration
+
+Connect the CLI to a [Boatman Platform](/platform) server for shared memory, cost governance, and policy enforcement:
+
+```yaml
+platform:
+  server: http://localhost:8080    # Platform server URL
+  org_id: my-org                   # Organization identifier
+  team_id: my-team                 # Team identifier
+```
+
+| Field | Description | Required |
+|-------|-------------|----------|
+| `server` | URL of the platform server | Yes (to enable) |
+| `org_id` | Organization scope identifier | Recommended |
+| `team_id` | Team scope identifier | Optional |
+
+The repo ID is automatically detected from the current git repository.
+
+### Graceful Degradation
+
+The CLI uses a `TryConnect` pattern with a 3-second timeout when connecting to the platform. If the platform is unreachable or not configured, the CLI continues in standalone mode with full functionality. Platform features are purely additive:
+
+- **Without platform**: Local memory, no shared policies, no cost tracking
+- **With platform**: Hierarchical memory, policy enforcement, cost governance, event streaming

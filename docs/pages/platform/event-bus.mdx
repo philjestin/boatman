@@ -1,0 +1,442 @@
+# Event Bus
+
+The `eventbus` package provides a NATS-backed event bus with built-in persistence. It embeds a full NATS server directly into the process, so there are no external dependencies to install or manage. Events are published to NATS for real-time delivery and optionally persisted to an `EventStore` for later replay.
+
+```
+platform/eventbus/
+  bus.go          # Bus struct, lifecycle, pub/sub, replay
+  subjects.go     # Subject hierarchy, wildcards, constants
+  bridge/
+    bridge.go     # HooksAdapter, ObserverAdapter
+    legacy.go     # LegacyBridge for backward compatibility
+```
+
+---
+
+## Architecture
+
+The `Bus` struct wraps four components:
+
+```go
+type Bus struct {
+    server     *server.Server       // Embedded NATS server
+    conn       *nats.Conn           // Client connection to the embedded server
+    eventStore storage.EventStore   // Optional persistence backend
+    subs       []*nats.Subscription // Tracked subscriptions for cleanup
+}
+```
+
+On creation, the bus starts a NATS server in-process, connects a client, and is immediately ready for publishing and subscribing. The embedded server uses `NoLog` and `NoSigs` for clean integration, with an 8 MB max payload.
+
+---
+
+## Options
+
+Create a bus with functional options:
+
+```go
+bus, err := eventbus.New(
+    eventbus.WithPort(4222),
+    eventbus.WithDataDir("/var/data/boatman/nats"),
+    eventbus.WithEventStore(store.Events()),
+)
+```
+
+| Option | Signature | Description |
+|--------|-----------|-------------|
+| `WithPort` | `WithPort(port int) Option` | Sets the NATS listen port. `0` or `-1` picks a random available port (the default). |
+| `WithDataDir` | `WithDataDir(dir string) Option` | Sets the NATS data directory for on-disk persistence. |
+| `WithEventStore` | `WithEventStore(es storage.EventStore) Option` | Attaches an `EventStore` for event persistence. Required for `Replay`. |
+
+---
+
+## API
+
+### Publish
+
+```go
+func (b *Bus) Publish(ctx context.Context, event *storage.Event) error
+```
+
+Persists the event to the `EventStore` (if configured), then serializes it as JSON and publishes it to NATS on the subject derived from the event's scope and type. The publish is followed by a `Flush()` to guarantee delivery.
+
+```go
+err := bus.Publish(ctx, &storage.Event{
+    ID:    "evt-abc-123",
+    RunID: "run-42",
+    Scope: storage.Scope{OrgID: "acme", TeamID: "platform"},
+    Type:  eventbus.SubjectRunStarted,
+    Name:  "deploy pipeline",
+})
+```
+
+The persistence-first design means events survive even if no subscribers are connected at publish time. They can be replayed later.
+
+---
+
+### Subscribe
+
+```go
+func (b *Bus) Subscribe(ctx context.Context, subject string) (<-chan *storage.Event, func(), error)
+```
+
+Returns a receive-only channel of events matching the given NATS subject pattern, plus a cancel function that unsubscribes and closes the channel. The channel has a capacity of 64. If the channel is full, new events are dropped (non-blocking send) to prevent slow consumers from stalling the bus.
+
+```go
+ch, cancel, err := bus.Subscribe(ctx, eventbus.TeamWildcard("acme", "platform"))
+if err != nil {
+    return err
+}
+defer cancel()
+
+for event := range ch {
+    fmt.Printf("[%s] %s: %s\n", event.Type, event.Name, event.Message)
+}
+```
+
+All subscriptions are tracked internally and cleaned up on `Close()`.
+
+---
+
+### Replay
+
+```go
+func (b *Bus) Replay(ctx context.Context, filter storage.EventFilter) (<-chan *storage.Event, error)
+```
+
+Queries persisted events from the `EventStore` matching the given filter and streams them through a channel. The channel is sized to the result set and closed once all events have been sent. Returns an error if no `EventStore` is configured.
+
+```go
+replayCh, err := bus.Replay(ctx, storage.EventFilter{
+    RunID: "run-42",
+    Types: []string{"run.started", "run.completed"},
+    Since: time.Now().Add(-24 * time.Hour),
+})
+if err != nil {
+    return err
+}
+
+for event := range replayCh {
+    fmt.Printf("Replayed: %s at %s\n", event.Type, event.CreatedAt)
+}
+```
+
+The `EventFilter` supports these fields:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `Scope` | `*storage.Scope` | Filter by org/team/repo |
+| `RunID` | `string` | Filter to a single run |
+| `Types` | `[]string` | Match specific event types |
+| `Since` | `time.Time` | Events created after this time |
+| `Until` | `time.Time` | Events created before this time |
+| `Limit` | `int` | Maximum number of events to return |
+
+---
+
+### Close
+
+```go
+func (b *Bus) Close() error
+```
+
+Gracefully shuts down the bus. Unsubscribes all tracked subscriptions, closes the NATS client connection, and shuts down the embedded NATS server.
+
+```go
+defer bus.Close()
+```
+
+---
+
+### ClientURL
+
+```go
+func (b *Bus) ClientURL() string
+```
+
+Returns the NATS client connection URL for the embedded server. Useful for testing or connecting external NATS clients.
+
+```go
+fmt.Println(bus.ClientURL()) // e.g., "nats://127.0.0.1:58231"
+```
+
+---
+
+## Subject Hierarchy
+
+All subjects follow the pattern:
+
+```
+boatman.{org_id}.{team_id}.{event_type}
+```
+
+This hierarchical scheme enables scoped subscriptions using NATS wildcards. A subscriber can listen to an entire organization, a single team, or a specific event type.
+
+### Event Type Constants
+
+```go
+const (
+    SubjectRunStarted      = "run.started"
+    SubjectRunCompleted    = "run.completed"
+    SubjectStepPrefix      = "step."          // e.g., "step.execute", "step.review"
+    SubjectCostRecorded    = "cost.recorded"
+    SubjectBudgetAlert     = "budget.alert"
+    SubjectPolicyViolation = "policy.violation"
+)
+```
+
+The `iteration.complete` event type is also used by the bridge adapters.
+
+### Subject Builders
+
+```go
+// Fully qualified subject
+eventbus.BuildSubject("acme", "platform", "run.started")
+// => "boatman.acme.platform.run.started"
+
+// All events for an organization
+eventbus.OrgWildcard("acme")
+// => "boatman.acme.>"
+
+// All events for a team
+eventbus.TeamWildcard("acme", "platform")
+// => "boatman.acme.platform.>"
+
+// All events across all organizations
+eventbus.AllEventsSubject
+// => "boatman.>"
+```
+
+| Builder | Signature | Result |
+|---------|-----------|--------|
+| `BuildSubject` | `BuildSubject(orgID, teamID, eventType string) string` | `boatman.{org}.{team}.{type}` |
+| `OrgWildcard` | `OrgWildcard(orgID string) string` | `boatman.{org}.>` |
+| `TeamWildcard` | `TeamWildcard(orgID, teamID string) string` | `boatman.{org}.{team}.>` |
+| `AllEventsSubject` | `const` | `boatman.>` |
+
+---
+
+## Event Structure
+
+Events use the `storage.Event` type:
+
+```go
+type Event struct {
+    ID        string         `json:"id"`
+    RunID     string         `json:"run_id,omitempty"`
+    Scope     Scope          `json:"scope"`
+    Type      string         `json:"type"`
+    Name      string         `json:"name,omitempty"`
+    Message   string         `json:"message,omitempty"`
+    Data      map[string]any `json:"data,omitempty"`
+    Version   int            `json:"version"`
+    CreatedAt time.Time      `json:"created_at"`
+}
+```
+
+The `Scope` struct carries the organizational context:
+
+```go
+type Scope struct {
+    OrgID  string `json:"org_id"`
+    TeamID string `json:"team_id"`
+    RepoID string `json:"repo_id"`
+}
+```
+
+---
+
+## Bridge Adapters
+
+The `bridge` package connects the event bus to the harness runner's observation interfaces. This lets existing runner pipelines emit structured events without any code changes to the runner itself.
+
+### HooksAdapter
+
+Converts a `runner.Hooks` struct into event bus publications. It wires up `OnStepStart`, `OnStepEnd`, and `OnIterationComplete`.
+
+```go
+import "github.com/philjestin/boatman-ecosystem/platform/eventbus/bridge"
+
+scope := storage.Scope{OrgID: "acme", TeamID: "platform"}
+hooks := bridge.HooksAdapter(bus, "run-42", scope)
+
+cfg := runner.Config{
+    // ... roles ...
+    Hooks: &hooks,
+}
+```
+
+Events produced by `HooksAdapter`:
+
+| Hook | Event Type | Data |
+|------|------------|------|
+| `OnStepStart` | `step.{stepName}` | `{"phase": "start"}` |
+| `OnStepEnd` | `step.{stepName}` | `{"phase": "end", "duration": "...", "error": "..."}` |
+| `OnIterationComplete` | `iteration.complete` | `{"iteration": N, "passed": bool}` |
+
+---
+
+### ObserverAdapter
+
+Creates a `runner.Observer` implementation that publishes events to the bus. It covers the full run lifecycle: `OnRunStart`, `OnRunComplete`, `OnStepStart`, and `OnStepComplete`.
+
+```go
+obs := bridge.ObserverAdapter(bus, "run-42", scope)
+
+cfg := runner.Config{
+    // ... roles ...
+    Observer: obs,
+}
+```
+
+Events produced by `ObserverAdapter`:
+
+| Method | Event Type | Data |
+|--------|------------|------|
+| `OnRunStart` | `run.started` | Message set to request description |
+| `OnRunComplete` | `run.completed` | `{"status": "...", "iterations": N, "duration": "...", "error": "..."}` |
+| `OnStepStart` | `step.{step}` | `{"phase": "start"}` |
+| `OnStepComplete` | `step.{step}` | `{"phase": "complete", "duration": "...", "error": "..."}` |
+
+---
+
+### LegacyBridge
+
+Provides backward compatibility with the desktop subprocess integration. It subscribes to the event bus and writes events to an `io.Writer` in the `shared/events.Event` JSON format (one JSON object per line).
+
+```go
+import "github.com/philjestin/boatman-ecosystem/platform/eventbus/bridge"
+
+lb, err := bridge.NewLegacyBridge(bus, os.Stdout, eventbus.AllEventsSubject)
+if err != nil {
+    return err
+}
+defer lb.Close()
+```
+
+The bridge runs a background goroutine that reads from the subscription channel and encodes each event using `json.Encoder`. The conversion strips platform-specific fields and maps to the legacy `shared/events.Event` structure:
+
+```go
+// Legacy event written to the io.Writer
+{
+    "type": "run.started",
+    "id": "evt-abc-123",
+    "name": "deploy pipeline",
+    "message": "...",
+    "data": { ... }
+}
+```
+
+---
+
+## Full Example
+
+Setting up an event bus with persistence, bridge adapters, and a subscriber:
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "log"
+
+    "github.com/philjestin/boatman-ecosystem/platform/eventbus"
+    "github.com/philjestin/boatman-ecosystem/platform/eventbus/bridge"
+    "github.com/philjestin/boatman-ecosystem/platform/storage"
+    "github.com/philjestin/boatman-ecosystem/platform/storage/sqlite"
+)
+
+func main() {
+    ctx := context.Background()
+
+    // 1. Set up storage
+    store, err := sqlite.New(sqlite.WithPath("/var/data/boatman/platform.db"))
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer store.Close()
+
+    if err := store.Migrate(ctx); err != nil {
+        log.Fatal(err)
+    }
+
+    // 2. Create the bus with persistence
+    bus, err := eventbus.New(
+        eventbus.WithEventStore(store.Events()),
+    )
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer bus.Close()
+
+    // 3. Subscribe to all events for an org
+    ch, cancel, err := bus.Subscribe(ctx, eventbus.OrgWildcard("acme"))
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer cancel()
+
+    // 4. Process events in a goroutine
+    go func() {
+        for event := range ch {
+            fmt.Printf("[%s] %s (run=%s)\n", event.Type, event.Name, event.RunID)
+        }
+    }()
+
+    // 5. Wire up bridge adapters for the runner
+    scope := storage.Scope{OrgID: "acme", TeamID: "platform"}
+    hooks := bridge.HooksAdapter(bus, "run-42", scope)
+    obs := bridge.ObserverAdapter(bus, "run-42", scope)
+
+    // Use hooks and obs in runner.Config...
+    _ = hooks
+    _ = obs
+
+    // 6. Replay past events
+    replayCh, err := bus.Replay(ctx, storage.EventFilter{
+        RunID: "run-42",
+    })
+    if err != nil {
+        log.Fatal(err)
+    }
+    for event := range replayCh {
+        fmt.Printf("Replay: %s at %s\n", event.Type, event.CreatedAt)
+    }
+}
+```
+
+---
+
+## Testing
+
+The bus is straightforward to test. Use an in-memory SQLite store and a random port:
+
+```go
+func newTestBus(t *testing.T) *eventbus.Bus {
+    t.Helper()
+    store, err := sqlite.New(sqlite.WithInMemory())
+    if err != nil {
+        t.Fatal(err)
+    }
+    if err := store.Migrate(context.Background()); err != nil {
+        t.Fatal(err)
+    }
+
+    bus, err := eventbus.New(
+        eventbus.WithEventStore(store.Events()),
+    )
+    if err != nil {
+        t.Fatal(err)
+    }
+
+    t.Cleanup(func() {
+        bus.Close()
+        store.Close()
+    })
+
+    return bus
+}
+```
+
+Since `WithPort` defaults to `-1` (random port), each test gets its own isolated NATS server. Use `bus.ClientURL()` if you need to connect additional clients in tests.

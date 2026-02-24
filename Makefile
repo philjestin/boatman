@@ -1,4 +1,4 @@
-.PHONY: help build-cli build-desktop build-all test-cli test-desktop test-all clean dev install
+.PHONY: help build-cli build-desktop build-platform build-all test-cli test-desktop test-platform test-frontend test-all clean dev install
 
 help: ## Show this help message
 	@echo 'Usage: make [target]'
@@ -16,7 +16,12 @@ build-desktop: build-cli ## Build the desktop app (requires CLI)
 	cd desktop && wails build
 	@echo "✓ Desktop app built at desktop/build/"
 
-build-all: build-cli build-desktop ## Build both CLI and desktop
+build-platform: ## Build the platform server binary
+	@echo "Building platform server..."
+	cd platform && go build -o boatman-platform ./cmd/boatman-platform
+	@echo "✓ Platform built at platform/boatman-platform"
+
+build-all: build-cli build-desktop build-platform ## Build CLI, desktop, and platform
 
 test-cli: ## Run CLI tests
 	@echo "Running CLI tests..."
@@ -30,11 +35,16 @@ test-frontend: ## Run desktop frontend tests
 	@echo "Running desktop frontend tests..."
 	cd desktop/frontend && npm test
 
-test-all: test-cli test-desktop ## Run all tests
+test-platform: ## Run platform Go tests
+	@echo "Running platform tests..."
+	cd platform && go test ./...
+
+test-all: test-cli test-desktop test-platform ## Run all tests
 
 clean: ## Clean build artifacts
 	@echo "Cleaning build artifacts..."
 	rm -f cli/boatman
+	rm -f platform/boatman-platform
 	rm -rf desktop/build/
 	rm -rf cli/.worktrees/
 	rm -rf desktop/.worktrees/
@@ -58,18 +68,22 @@ fmt: ## Format all Go code
 	@echo "Formatting Go code..."
 	cd cli && go fmt ./...
 	cd desktop && go fmt ./...
+	cd platform && go fmt ./...
 	@echo "✓ Code formatted"
 
 lint: ## Run linters
 	@echo "Running linters..."
 	cd cli && golangci-lint run || true
 	cd desktop && golangci-lint run || true
+	cd platform && golangci-lint run || true
 
 deps: ## Download dependencies
 	@echo "Downloading dependencies..."
 	cd cli && go mod download
 	cd desktop && go mod download
+	cd platform && go mod download
 	cd desktop/frontend && npm install
+	cd platform/dashboard/frontend && npm install
 	@echo "✓ Dependencies downloaded"
 
 # =============================================================================
@@ -94,10 +108,20 @@ bump-desktop-minor: ## Bump desktop minor version (1.0.0 -> 1.1.0)
 bump-desktop-major: ## Bump desktop major version (1.0.0 -> 2.0.0)
 	./scripts/bump-version.sh desktop major
 
+bump-platform-patch: ## Bump platform patch version (1.0.0 -> 1.0.1)
+	./scripts/bump-version.sh platform patch
+
+bump-platform-minor: ## Bump platform minor version (1.0.0 -> 1.1.0)
+	./scripts/bump-version.sh platform minor
+
+bump-platform-major: ## Bump platform major version (1.0.0 -> 2.0.0)
+	./scripts/bump-version.sh platform major
+
 show-versions: ## Show current versions
 	@echo "Current versions:"
-	@echo "  CLI:     $$(cat cli/VERSION 2>/dev/null || echo 'not set')"
-	@echo "  Desktop: $$(grep '"version"' desktop/wails.json | sed 's/.*"version": "\(.*\)".*/v\1/')"
+	@echo "  CLI:      $$(cat cli/VERSION 2>/dev/null || echo 'not set')"
+	@echo "  Desktop:  $$(grep '"version"' desktop/wails.json | sed 's/.*"version": "\(.*\)".*/v\1/')"
+	@echo "  Platform: $$(cat platform/VERSION 2>/dev/null || echo 'not set')"
 
 release: ## Interactive release wizard
 	./scripts/release.sh
@@ -109,7 +133,8 @@ release-guide: ## Show release documentation
 	@echo "  • VERSIONING.md      - Strategy details"
 	@echo ""
 	@echo "Quick commands:"
-	@echo "  make show-versions   - Show current versions"
-	@echo "  make release         - Interactive release wizard"
-	@echo "  make bump-cli-minor  - Bump CLI minor version"
+	@echo "  make show-versions      - Show current versions"
+	@echo "  make release            - Interactive release wizard"
+	@echo "  make bump-cli-minor     - Bump CLI minor version"
 	@echo "  make bump-desktop-minor - Bump desktop minor version"
+	@echo "  make bump-platform-minor - Bump platform minor version"

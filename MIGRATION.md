@@ -192,6 +192,48 @@ make deps
 2. Does `cli/boatman` exist? (`ls cli/boatman`)
 3. Check desktop logs for actual path being used
 
+---
+
+## Adopting the Platform
+
+The Boatman Platform is an optional addition that provides organizational features. Adoption is incremental and non-disruptive.
+
+### Step 1: Build and Start the Platform
+
+```bash
+make build-platform
+./platform/boatman-platform --port 8080 --data-dir ~/.boatman/platform
+```
+
+### Step 2: Configure CLI
+
+Add to your `.boatman.yaml`:
+
+```yaml
+platform:
+  server: http://localhost:8080
+  org_id: my-org
+  team_id: my-team
+```
+
+### Step 3: Verify Connection
+
+Run a task — the CLI will log whether it connected to the platform or is running in standalone mode.
+
+### What Changes
+
+- **Memory**: Patterns are stored on the platform and shared across the team instead of local `~/.boatman/memory/` files
+- **Policies**: Org and team policies are enforced during runs (iteration limits, cost caps, required tests)
+- **Cost tracking**: Usage is recorded per step and visible in the dashboard
+- **Events**: Run lifecycle events are published to the NATS bus and available via SSE
+
+### What Doesn't Change
+
+- CLI commands and flags remain the same
+- Local config files still work
+- If the platform is down, the CLI falls back to standalone mode
+- All existing workflows continue to function
+
 ## Questions?
 
 Open an issue in the monorepo with the `migration` label.
