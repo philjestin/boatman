@@ -21,6 +21,7 @@ boatman-ecosystem/
 ├── harness/          # Reusable AI agent primitives (stdlib only)
 │   ├── runner/       # Pipeline orchestrator
 │   ├── review/       # Canonical review types
+│   ├── team/         # Composable agent teams (routing, parallel exec, aggregation)
 │   ├── memory/       # Cross-session learning
 │   └── ...           # 10+ primitive packages
 │
@@ -105,6 +106,8 @@ Model-agnostic primitives for building AI agent harnesses with zero external dep
 
 **Key features:**
 - Composable pipeline runner with execute-test-review-refactor loop
+- Agent teams: multi-agent routing, parallel execution, and result aggregation within pipeline stages
+- Team adapters to plug multi-agent teams into any runner role (Developer, Planner, Tester, Reviewer)
 - Observer and Guard interfaces for lifecycle events and policy enforcement
 - MemoryProvider interface for pluggable memory backends
 - 10+ primitive packages: review, checkpoint, memory, cost, handoff, and more

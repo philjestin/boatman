@@ -15,6 +15,8 @@
 //   - checkpoint: Progress saving with git integration
 //   - memory: Cross-session learning (patterns, preferences, issues)
 //   - memory (MemoryProvider): Pluggable memory backend interface
+//   - team: Composable agent teams with routing, parallel execution, and aggregation
+//   - team (Adapters): DeveloperTeam, PlannerTeam, TesterTeam, ReviewerTeam
 //   - cost: Token usage and cost tracking
 //   - filesummary: Intelligent file summarization
 //   - handoff: Structured context passing between pipeline stages

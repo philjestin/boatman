@@ -130,6 +130,7 @@ boatman-ecosystem/
 ├── harness/          # Reusable AI agent primitives
 │   ├── runner/       # Pipeline orchestrator
 │   ├── review/       # Canonical review types
+│   ├── team/         # Composable agent teams
 │   └── memory/       # Cross-session learning
 │
 ├── platform/         # Organizational platform server
