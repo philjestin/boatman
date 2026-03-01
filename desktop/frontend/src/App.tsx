@@ -165,7 +165,7 @@ function App() {
   };
 
   // Handle boatmanmode session creation
-  const handleStartBoatmanMode = async (input: string, mode: 'ticket' | 'prompt') => {
+  const handleStartBoatmanMode = async (input: string, mode: 'ticket' | 'prompt', config: any) => {
     if (activeProject) {
       // Get Linear API key from preferences (only needed for ticket mode)
       const linearAPIKey = preferences?.linearAPIKey || '';
@@ -173,7 +173,7 @@ function App() {
         setError('Please configure Linear API key in settings');
         return;
       }
-      await createBoatmanModeSession(activeProject.path, input, mode, linearAPIKey);
+      await createBoatmanModeSession(activeProject.path, input, mode, linearAPIKey, config);
       setBoatmanModeDialogOpen(false);
     } else {
       setError('Please open a project first');
@@ -372,6 +372,13 @@ function App() {
         onClose={() => setBoatmanModeDialogOpen(false)}
         onStart={handleStartBoatmanMode}
         projectPath={activeProject?.path || ''}
+        defaultConfig={{
+          maxIterations: preferences?.boatmanMaxIterations,
+          baseBranch: preferences?.boatmanBaseBranch,
+          autoPR: preferences?.boatmanAutoPR,
+          reviewSkill: preferences?.boatmanReviewSkill,
+          timeout: preferences?.boatmanTimeout,
+        }}
       />
 
       {/* Task Detail Modal - look up latest task from store to get updated metadata */}
@@ -528,3 +535,4 @@ function App() {
 }
 
 export default App;
+git rm <path-to-snippet-file>

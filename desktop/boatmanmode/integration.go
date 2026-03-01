@@ -119,23 +119,50 @@ type BoatmanEvent struct {
 // MessageCallback is called for non-JSON output lines to route them as session messages
 type MessageCallback func(role, content string)
 
+// Config contains configuration for boatmanmode execution
+type Config struct {
+	MaxIterations int
+	BaseBranch    string
+	AutoPR        bool
+	ReviewSkill   string
+	Timeout       int
+}
+
 // StreamExecution runs the workflow with live streaming output
 // It parses structured JSON events for agent/task tracking and emits them via Wails runtime
 // mode can be "ticket" or "prompt"
 // onMessage, if non-nil, receives non-JSON output lines as messages for the session
-func (i *Integration) StreamExecution(ctx context.Context, sessionID string, input string, mode string, outputChan chan<- string, onMessage MessageCallback) (map[string]interface{}, error) {
-	var cmd *exec.Cmd
+func (i *Integration) StreamExecution(ctx context.Context, sessionID string, input string, mode string, outputChan chan<- string, onMessage MessageCallback, config *Config) (map[string]interface{}, error) {
+	// Build command arguments
+	args := []string{"work"}
+
 	if mode == "ticket" {
-		cmd = exec.CommandContext(ctx, i.boatmanmodePath,
-			"work", input,
-		)
+		args = append(args, input)
 	} else {
 		// prompt mode
-		cmd = exec.CommandContext(ctx, i.boatmanmodePath,
-			"work",
-			"--prompt", input,
-		)
+		args = append(args, "--prompt", input)
 	}
+
+	// Add configuration flags if provided
+	if config != nil {
+		if config.MaxIterations > 0 {
+			args = append(args, "--max-iterations", fmt.Sprintf("%d", config.MaxIterations))
+		}
+		if config.BaseBranch != "" {
+			args = append(args, "--base-branch", config.BaseBranch)
+		}
+		if !config.AutoPR {
+			args = append(args, "--auto-pr=false")
+		}
+		if config.ReviewSkill != "" {
+			args = append(args, "--review-skill", config.ReviewSkill)
+		}
+		if config.Timeout > 0 {
+			args = append(args, "--timeout", fmt.Sprintf("%d", config.Timeout))
+		}
+	}
+
+	cmd := exec.CommandContext(ctx, i.boatmanmodePath, args...)
 	cmd.Dir = i.repoPath
 
 	// Set environment variables for authentication

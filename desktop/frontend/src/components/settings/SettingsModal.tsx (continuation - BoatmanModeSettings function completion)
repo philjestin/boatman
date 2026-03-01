@@ -1,0 +1,76 @@
+// Replace the BoatmanModeSettings function starting from the Timeout section:
+
+          {/* Timeout */}
+          <div>
+            <label className="block text-sm font-medium text-slate-300 mb-2">
+              Agent Timeout (minutes)
+            </label>
+            <input
+              type="number"
+              min="5"
+              max="180"
+              value={preferences.boatmanTimeout || 60}
+              onChange={(e) => onChange({ ...preferences, boatmanTimeout: parseInt(e.target.value) || 60 })}
+              className="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-slate-100 focus:outline-none focus:border-blue-500"
+            />
+            <p className="text-xs text-slate-500 mt-1">
+              Timeout in minutes for each Claude agent (default: 60)
+            </p>
+          </div>
+
+          {/* Auto PR */}
+          <label className="flex items-center justify-between p-4 rounded-lg border border-slate-700 cursor-pointer hover:bg-slate-800 transition-colors">
+            <div>
+              <p className="text-sm text-slate-100">Auto-create Pull Request</p>
+              <p className="text-xs text-slate-400">
+                Automatically create PR when execution succeeds
+              </p>
+            </div>
+            <input
+              type="checkbox"
+              checked={preferences.boatmanAutoPR ?? true}
+              onChange={(e) => onChange({ ...preferences, boatmanAutoPR: e.target.checked })}
+              className="w-4 h-4 rounded"
+            />
+          </label>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// About Tab
+function AboutSettings() {
+  return (
+    <div className="space-y-6">
+      <div className="text-center py-8">
+        <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-blue-500/20 flex items-center justify-center">
+          <Bot className="w-8 h-8 text-blue-500" />
+        </div>
+        <h3 className="text-lg font-semibold text-slate-100">Boatman</h3>
+        <p className="text-sm text-slate-400">Claude Code Desktop App</p>
+        <p className="text-xs text-slate-500 mt-2">Version 0.1.0</p>
+      </div>
+
+      <div className="space-y-2 text-sm text-slate-400">
+        <p>
+          Built with Wails and React for a native desktop experience.
+        </p>
+        <p>
+          Powered by Claude, Anthropic's AI assistant.
+        </p>
+      </div>
+
+      <div className="pt-4 border-t border-slate-700">
+        <a
+          href="https://github.com"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-sm text-blue-500 hover:underline"
+        >
+          View on GitHub
+        </a>
+      </div>
+    </div>
+  );
+}
