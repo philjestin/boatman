@@ -237,6 +237,7 @@ export namespace config {
 	    oktaClientID?: string;
 	    oktaClientSecret?: string;
 	    linearAPIKey?: string;
+	    slackAlertChannels?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new UserPreferences(source);
@@ -269,6 +270,7 @@ export namespace config {
 	        this.oktaClientID = source["oktaClientID"];
 	        this.oktaClientSecret = source["oktaClientSecret"];
 	        this.linearAPIKey = source["linearAPIKey"];
+	        this.slackAlertChannels = source["slackAlertChannels"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

@@ -4,19 +4,22 @@ import { X, Flame, AlertTriangle } from 'lucide-react';
 interface FirefighterDialogProps {
   isOpen: boolean;
   onClose: () => void;
-  onStart: (scope: string, enableMonitoring: boolean) => void;
+  onStart: (scope: string, slackChannels: string, enableMonitoring: boolean) => void;
   projectPath: string;
+  defaultSlackChannels?: string;
 }
 
-export function FirefighterDialog({ isOpen, onClose, onStart, projectPath }: FirefighterDialogProps) {
+export function FirefighterDialog({ isOpen, onClose, onStart, projectPath, defaultSlackChannels }: FirefighterDialogProps) {
   const [scope, setScope] = useState('');
+  const [slackChannels, setSlackChannels] = useState(defaultSlackChannels || '');
   const [enableMonitoring, setEnableMonitoring] = useState(true);
 
   if (!isOpen) return null;
 
   const handleStart = () => {
-    onStart(scope, enableMonitoring);
+    onStart(scope, slackChannels, enableMonitoring);
     setScope('');
+    setSlackChannels(defaultSlackChannels || '');
     setEnableMonitoring(true);
     onClose();
   };
@@ -40,7 +43,7 @@ export function FirefighterDialog({ isOpen, onClose, onStart, projectPath }: Fir
         </div>
 
         {/* Content */}
-        <div className="p-6 space-y-4">
+        <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
           <div className="bg-slate-900/50 border border-slate-700 rounded-lg p-4">
             <h3 className="text-sm font-medium text-slate-200 mb-2">What is Firefighter Mode?</h3>
             <p className="text-sm text-slate-400 mb-3">
@@ -49,8 +52,9 @@ export function FirefighterDialog({ isOpen, onClose, onStart, projectPath }: Fir
             <ul className="text-sm text-slate-400 space-y-1 ml-4 list-disc">
               <li>Continuously monitors Bugsnag for new errors</li>
               <li>Watches Datadog for alerts and anomalies</li>
+              <li>Monitors Slack channels for Datadog alert messages</li>
               <li>Automatically investigates high-severity issues</li>
-              <li>Creates fixes in isolated git worktrees</li>
+              <li>Spawns sub-agents to fix issues in isolated worktrees</li>
               <li>Runs tests and generates draft PRs</li>
               <li>Alerts you to new issues in real-time</li>
             </ul>
@@ -91,17 +95,33 @@ export function FirefighterDialog({ isOpen, onClose, onStart, projectPath }: Fir
 
           <div>
             <label className="block text-sm font-medium text-slate-200 mb-2">
-              Investigation Scope (Optional)
+              Slack Alert Channels (Optional)
             </label>
             <input
               type="text"
-              value={scope}
-              onChange={(e) => setScope(e.target.value)}
-              placeholder="e.g., payment-service, user-auth, checkout-flow"
+              value={slackChannels}
+              onChange={(e) => setSlackChannels(e.target.value)}
+              placeholder="#datadog-alerts, #prod-incidents"
               className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-md text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
             />
             <p className="mt-1 text-xs text-slate-500">
-              Optionally specify a service, component, or team to focus the investigation on.
+              Comma-separated Slack channels to monitor for Datadog alert messages. Requires Slack MCP server.
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-200 mb-2">
+              Focus Area
+            </label>
+            <textarea
+              value={scope}
+              onChange={(e) => setScope(e.target.value)}
+              placeholder={"e.g., I'm on call for the employer side of the handshake monolith. Only care about employer-graphql, promotion-service, and the employer squad's Datadog dashboards and monitors. Ignore student-facing services."}
+              rows={4}
+              className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-md text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent resize-y"
+            />
+            <p className="mt-1 text-xs text-slate-500">
+              Describe what you're on call for. The agent will discover relevant dashboards, monitors, and services based on your description and ignore everything else.
             </p>
           </div>
 

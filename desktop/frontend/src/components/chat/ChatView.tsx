@@ -1,8 +1,8 @@
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useCallback, useState } from 'react';
 import { MessageBubble } from './MessageBubble';
 import { InputArea } from './InputArea';
 import { AgentLogsPanel } from './AgentLogsPanel';
-import { Loader2, StopCircle } from 'lucide-react';
+import { Loader2, StopCircle, ArrowDown } from 'lucide-react';
 import type { Message, SessionStatus } from '../../types';
 
 interface ChatViewProps {
@@ -35,9 +35,26 @@ export function ChatView({
   onReasoningEffortChange,
 }: ChatViewProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const isNearBottomRef = useRef(true);
+  const [showScrollButton, setShowScrollButton] = useState(false);
+
+  const checkIfNearBottom = useCallback(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 150;
+    isNearBottomRef.current = nearBottom;
+    setShowScrollButton(!nearBottom);
+  }, []);
+
+  const scrollToBottom = useCallback(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, []);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (isNearBottomRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
   }, [messages]);
 
   // Debug: log messages
@@ -69,7 +86,7 @@ export function ChatView({
   return (
     <div className="flex flex-col h-full">
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto relative" ref={scrollContainerRef} onScroll={checkIfNearBottom}>
         {messages.length === 0 ? (
           <div className="flex items-center justify-center h-full">
             <div className="text-center">
@@ -109,6 +126,17 @@ export function ChatView({
             ))}
             <div ref={messagesEndRef} />
           </div>
+        )}
+
+        {/* Scroll to bottom button */}
+        {showScrollButton && messages.length > 0 && (
+          <button
+            onClick={scrollToBottom}
+            className="sticky bottom-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-slate-700 text-slate-200 rounded-full shadow-lg hover:bg-slate-600 transition-colors border border-slate-600"
+          >
+            <ArrowDown className="w-3.5 h-3.5" />
+            New messages
+          </button>
         )}
       </div>
 

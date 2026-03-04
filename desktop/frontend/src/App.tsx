@@ -12,6 +12,7 @@ import { OnboardingWizard } from './components/onboarding/OnboardingWizard';
 import { SearchModal } from './components/search/SearchModal';
 import { FirefighterDialog } from './components/firefighter/FirefighterDialog';
 import { FirefighterMonitor } from './components/firefighter/FirefighterMonitor';
+import { FirefighterView } from './components/firefighter/FirefighterView';
 import { BoatmanModeDialog } from './components/boatmanmode/BoatmanModeDialog';
 import { HarnessView } from './components/harness/HarnessView';
 import { useAgent } from './hooks/useAgent';
@@ -152,9 +153,9 @@ function App() {
   };
 
   // Handle firefighter session creation
-  const handleStartFirefighter = async (scope: string, enableMonitoring: boolean = true) => {
+  const handleStartFirefighter = async (scope: string, slackChannels: string, enableMonitoring: boolean = true) => {
     if (activeProject) {
-      const sessionId = await createFirefighterSession(activeProject.path, scope);
+      const sessionId = await createFirefighterSession(activeProject.path, scope, slackChannels);
       if (sessionId && enableMonitoring) {
         // Auto-start monitoring if enabled
         await toggleFirefighterMonitoring(sessionId, true);
@@ -364,6 +365,7 @@ function App() {
         onClose={() => setFirefighterDialogOpen(false)}
         onStart={handleStartFirefighter}
         projectPath={activeProject?.path || ''}
+        defaultSlackChannels={preferences?.slackAlertChannels || ''}
       />
 
       {/* Boatman Mode Dialog */}
@@ -407,15 +409,6 @@ function App() {
           onNewSession={handleNewSession}
           onOpenProject={handleOpenProject}
         >
-          {/* Firefighter Monitor */}
-          {hasActiveSession && activeSession.mode === 'firefighter' && (
-            <FirefighterMonitor
-              sessionId={activeSession.id}
-              isActive={monitoringActive}
-              onToggle={handleToggleMonitoring}
-            />
-          )}
-
           {/* Tab Navigation - always visible */}
           <div className="flex items-center border-b border-slate-700 bg-slate-800">
             {hasActiveSession && (
@@ -480,7 +473,24 @@ function App() {
 
           {/* Tab Content */}
           <div className="flex-1 overflow-hidden">
-            {hasActiveSession && activeTab === 'chat' && (
+            {hasActiveSession && activeTab === 'chat' && activeSession.mode === 'firefighter' && (
+              <FirefighterView
+                sessionId={activeSession.id}
+                messages={activeSession.messages}
+                status={activeSession.status}
+                onSendMessage={handleSendMessage}
+                onStop={handleStopSession}
+                hasMoreMessages={currentPagination?.hasMore ?? false}
+                onLoadMore={handleLoadMore}
+                monitoringActive={monitoringActive}
+                onToggleMonitoring={handleToggleMonitoring}
+                model={activeSession.model}
+                reasoningEffort={activeSession.reasoningEffort}
+                onModelChange={handleModelChange}
+                onReasoningEffortChange={handleReasoningEffortChange}
+              />
+            )}
+            {hasActiveSession && activeTab === 'chat' && activeSession.mode !== 'firefighter' && (
               <ChatView
                 messages={activeSession.messages}
                 status={activeSession.status}

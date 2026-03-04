@@ -197,10 +197,10 @@ export function useAgent() {
   }, [addSession, setActiveSession, setLoading, setError]);
 
   // Create a firefighter session
-  const createFirefighterSession = useCallback(async (projectPath: string, scope: string): Promise<string | null> => {
+  const createFirefighterSession = useCallback(async (projectPath: string, scope: string, slackChannels: string = ''): Promise<string | null> => {
     try {
       setLoading('sessions', true);
-      const info = await CreateFirefighterSession(projectPath, scope);
+      const info = await CreateFirefighterSession(projectPath, scope, slackChannels);
 
       const session: AgentSession = {
         id: info.id,

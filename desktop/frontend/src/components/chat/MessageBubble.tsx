@@ -62,7 +62,7 @@ export const MessageBubble = memo(function MessageBubble({ message }: MessageBub
   };
 
   return (
-    <div className={`flex gap-3 px-4 py-3 ${isUser ? 'flex-row-reverse' : ''}`}>
+    <div id={`message-${message.id}`} className={`flex gap-3 px-4 py-3 ${isUser ? 'flex-row-reverse' : ''}`}>
       <div
         className={`flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center ${
           isUser ? 'bg-blue-500/20' : 'bg-slate-700'

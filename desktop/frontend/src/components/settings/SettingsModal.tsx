@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, Moon, Sun, Bell, BellOff, Shield, Zap, Bot, Server, Key, Eye, EyeOff, Database, Trash2, Plus, Flame } from 'lucide-react';
+import { X, Moon, Sun, Bell, BellOff, Shield, Zap, Bot, Server, Key, Eye, EyeOff, Database, Trash2, Plus, Flame, Pencil } from 'lucide-react';
 import type { UserPreferences, ApprovalMode, Theme, MCPServer } from '../../types';
 import { CleanupOldSessions, GetSessionStats, GetMCPServers, GetMCPPresets, AddMCPServer, RemoveMCPServer, UpdateMCPServer } from '../../../wailsjs/go/main/App';
 import { MCPServerDialog } from './MCPServerDialog';
@@ -106,6 +106,7 @@ export function SettingsModal({ isOpen, onClose, preferences, onSave }: Settings
                 oktaClientID={localPrefs.oktaClientID}
                 oktaClientSecret={localPrefs.oktaClientSecret}
                 linearAPIKey={localPrefs.linearAPIKey}
+                slackAlertChannels={localPrefs.slackAlertChannels}
                 onOktaDomainChange={(domain) =>
                   setLocalPrefs({ ...localPrefs, oktaDomain: domain })
                 }
@@ -117,6 +118,9 @@ export function SettingsModal({ isOpen, onClose, preferences, onSave }: Settings
                 }
                 onLinearAPIKeyChange={(key) =>
                   setLocalPrefs({ ...localPrefs, linearAPIKey: key })
+                }
+                onSlackAlertChannelsChange={(channels) =>
+                  setLocalPrefs({ ...localPrefs, slackAlertChannels: channels })
                 }
               />
             )}
@@ -650,18 +654,48 @@ function MCPSettings({
     }
   };
 
-  const handleRemoveServer = async (name: string) => {
-    if (!confirm(`Are you sure you want to remove the "${name}" server?`)) {
-      return;
-    }
+  const [pendingRemove, setPendingRemove] = useState<string | null>(null);
 
+  const handleRemoveServer = (name: string) => {
+    setPendingRemove(name);
+  };
+
+  const confirmRemoveServer = async () => {
+    if (!pendingRemove) return;
     try {
-      await RemoveMCPServer(name);
+      await RemoveMCPServer(pendingRemove);
       await loadServers();
     } catch (err) {
       console.error('Failed to remove MCP server:', err);
       setError('Failed to remove server');
+    } finally {
+      setPendingRemove(null);
     }
+  };
+
+  const [editingServer, setEditingServer] = useState<MCPServer | null>(null);
+  const [editEnvValues, setEditEnvValues] = useState<Record<string, string>>({});
+
+  const handleEditServer = (server: MCPServer) => {
+    setEditingServer(server);
+    setEditEnvValues({ ...(server.env || {}) });
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingServer) return;
+    try {
+      await UpdateMCPServer({ ...editingServer, env: { ...editEnvValues } });
+      await loadServers();
+      setEditingServer(null);
+      setEditEnvValues({});
+    } catch (err) {
+      console.error('Failed to update MCP server:', err);
+      setError('Failed to update server');
+    }
+  };
+
+  const handleAddEditEnvVar = () => {
+    setEditEnvValues({ ...editEnvValues, '': '' });
   };
 
   const handleToggleServer = async (server: MCPServer) => {
@@ -734,9 +768,14 @@ function MCPSettings({
                         <p className="text-xs text-slate-500 mt-0.5">{server.description}</p>
                       )}
                       <p className="text-xs text-slate-600 mt-1">{server.command} {server.args?.join(' ')}</p>
+                      {server.env && Object.values(server.env).some((v) => !v) && (
+                        <p className="text-xs text-amber-400 mt-1">
+                          Missing configuration — click edit to set up
+                        </p>
+                      )}
                     </div>
                   </div>
-                  <div className="flex items-center gap-3 flex-shrink-0">
+                  <div className="flex items-center gap-2 flex-shrink-0">
                     <label className="flex items-center gap-2 cursor-pointer">
                       <span className="text-xs text-slate-400">
                         {server.enabled ? 'Enabled' : 'Disabled'}
@@ -748,6 +787,13 @@ function MCPSettings({
                         className="w-4 h-4 rounded"
                       />
                     </label>
+                    <button
+                      onClick={() => handleEditServer(server)}
+                      className="p-1.5 hover:bg-slate-600 rounded transition-colors"
+                      aria-label="Edit server"
+                    >
+                      <Pencil className="w-4 h-4 text-slate-400 hover:text-blue-400" />
+                    </button>
                     <button
                       onClick={() => handleRemoveServer(server.name)}
                       className="p-1.5 hover:bg-slate-600 rounded transition-colors"
@@ -776,8 +822,140 @@ function MCPSettings({
         onAdd={handleAddServer}
         presets={availablePresets}
       />
+
+      {/* Remove confirmation dialog */}
+      {pendingRemove && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 no-drag">
+          <div className="bg-slate-800 rounded-lg shadow-xl w-full max-w-sm mx-4 border border-slate-700 p-6">
+            <h3 className="text-sm font-medium text-slate-100 mb-2">Remove MCP Server</h3>
+            <p className="text-sm text-slate-400 mb-4">
+              Are you sure you want to remove <span className="text-slate-200 font-medium">"{pendingRemove}"</span>? This will delete it from your MCP config.
+            </p>
+            <div className="flex items-center justify-end gap-3">
+              <button
+                onClick={() => setPendingRemove(null)}
+                className="px-4 py-2 text-sm text-slate-300 hover:text-slate-100 hover:bg-slate-700 rounded-md transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmRemoveServer}
+                className="px-4 py-2 text-sm bg-red-500 text-white rounded-md hover:bg-red-600 transition-colors"
+              >
+                Remove
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit server dialog */}
+      {editingServer && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 no-drag">
+          <div className="bg-slate-800 rounded-lg shadow-xl w-full max-w-lg mx-4 border border-slate-700 max-h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b border-slate-700 flex-shrink-0">
+              <div className="flex items-center gap-2">
+                <Pencil className="w-4 h-4 text-blue-400" />
+                <h3 className="text-sm font-medium text-slate-100">
+                  Edit {editingServer.name}
+                </h3>
+              </div>
+              <button
+                onClick={() => { setEditingServer(null); setEditEnvValues({}); }}
+                className="p-1 rounded-md hover:bg-slate-700 transition-colors"
+              >
+                <X className="w-4 h-4 text-slate-400" />
+              </button>
+            </div>
+
+            <div className="p-4 overflow-y-auto flex-1 space-y-4">
+              <div>
+                <p className="text-xs text-slate-400 mb-1">Command</p>
+                <p className="text-sm text-slate-300 font-mono bg-slate-900/50 px-3 py-2 rounded-md">
+                  {editingServer.command} {editingServer.args?.join(' ')}
+                </p>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-sm font-medium text-slate-200">Environment Variables</h4>
+                  <button
+                    onClick={handleAddEditEnvVar}
+                    className="flex items-center gap-1 px-2 py-1 text-xs text-blue-400 hover:text-blue-300 hover:bg-slate-700 rounded transition-colors"
+                  >
+                    <Plus className="w-3 h-3" />
+                    Add Variable
+                  </button>
+                </div>
+
+                {Object.keys(editEnvValues).length === 0 ? (
+                  <p className="text-xs text-slate-500">No environment variables configured.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {Object.entries(editEnvValues).map(([key, value]) => (
+                      <div key={key}>
+                        <label className="block text-xs font-medium text-slate-300 mb-1">{key}</label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type={key.toLowerCase().includes('token') || key.toLowerCase().includes('secret') || key.toLowerCase().includes('key') ? 'password' : 'text'}
+                            value={value}
+                            onChange={(e) =>
+                              setEditEnvValues({ ...editEnvValues, [key]: e.target.value })
+                            }
+                            placeholder={getEnvPlaceholder(key)}
+                            className="flex-1 px-3 py-2 bg-slate-900 border border-slate-600 rounded-md text-slate-100 placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                          <button
+                            onClick={() => {
+                              const updated = { ...editEnvValues };
+                              delete updated[key];
+                              setEditEnvValues(updated);
+                            }}
+                            className="p-2 text-slate-400 hover:text-red-400 hover:bg-slate-700 rounded transition-colors"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 p-4 border-t border-slate-700 flex-shrink-0">
+              <button
+                onClick={() => { setEditingServer(null); setEditEnvValues({}); }}
+                className="px-4 py-2 text-sm text-slate-300 hover:text-slate-100 hover:bg-slate-700 rounded-md transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveEdit}
+                className="px-4 py-2 text-sm bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
+}
+
+/** Returns a helpful placeholder for known env var names */
+function getEnvPlaceholder(key: string): string {
+  const lower = key.toLowerCase();
+  if (lower.includes('slack_bot_token')) return 'xoxb-...';
+  if (lower.includes('slack_team_id')) return 'T0123456789';
+  if (lower.includes('linear_api_key')) return 'lin_api_...';
+  if (lower.includes('api_key') || lower.includes('apikey')) return 'your-api-key';
+  if (lower.includes('app_key')) return 'your-app-key';
+  if (lower.includes('token')) return 'your-token';
+  if (lower.includes('secret')) return 'your-secret';
+  if (lower.includes('site')) return 'e.g., datadoghq.com';
+  return 'value';
 }
 
 // About Tab
