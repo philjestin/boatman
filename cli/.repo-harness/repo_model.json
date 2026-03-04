@@ -1,0 +1,66 @@
+{
+  "root": "/Users/pmiddleton/workspace/personal/boatman-ecosystem/cli",
+  "scanned_at": "2026-02-24T22:03:11.277857Z",
+  "monorepo": {},
+  "languages": [
+    {
+      "language": "go",
+      "version": "1.24.1",
+      "config_files": [
+        "go.mod"
+      ]
+    }
+  ],
+  "build_systems": [
+    {
+      "tool": "go",
+      "config_file": "go.mod",
+      "commands": {
+        "build": "go build ./...",
+        "format": "gofmt -w .",
+        "test": "go test ./..."
+      },
+      "confidence": 0.95
+    }
+  ],
+  "test_frameworks": null,
+  "ci_systems": [
+    {
+      "provider": "github_actions",
+      "config_file": ".github/workflows/auto-version.yml",
+      "jobs": [
+        "auto-version"
+      ]
+    },
+    {
+      "provider": "github_actions",
+      "config_file": ".github/workflows/release.yml",
+      "jobs": [
+        "goreleaser"
+      ]
+    },
+    {
+      "provider": "github_actions",
+      "config_file": ".github/workflows/test.yml",
+      "jobs": [
+        "test",
+        "build",
+        "lint"
+      ]
+    }
+  ],
+  "conventions": [
+    {
+      "type": "formatter",
+      "tool": "gofmt"
+    }
+  ],
+  "entrypoints": [
+    {
+      "name": "boatman",
+      "type": "cli",
+      "path": "cmd/boatman"
+    }
+  ],
+  "ambiguities": null
+}

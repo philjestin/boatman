@@ -24,7 +24,7 @@ export function CreateAgentSession(arg1:string):Promise<main.AgentSessionInfo>;
 
 export function CreateBoatmanModeSession(arg1:string,arg2:string,arg3:string):Promise<main.AgentSessionInfo>;
 
-export function CreateFirefighterSession(arg1:string,arg2:string):Promise<main.AgentSessionInfo>;
+export function CreateFirefighterSession(arg1:string,arg2:string,arg3:string):Promise<main.AgentSessionInfo>;
 
 export function DeleteAgentSession(arg1:string):Promise<void>;
 
@@ -71,6 +71,8 @@ export function GetGitStatus(arg1:string):Promise<main.GitStatus>;
 export function GetKeepCompletedAgents():Promise<boolean>;
 
 export function GetMCPPresets():Promise<Array<mcp.Server>>;
+
+export function GetMCPServerNames():Promise<Array<string>>;
 
 export function GetMCPServers():Promise<Array<mcp.Server>>;
 
