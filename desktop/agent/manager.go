@@ -27,6 +27,7 @@ type ConfigGetter interface {
 	GetAutoCleanupSessions() bool
 	GetMaxAgentsPerSession() int
 	GetKeepCompletedAgents() bool
+	GetMCPServerNames() []string
 }
 
 // Manager handles multiple agent sessions
@@ -130,7 +131,7 @@ func (m *Manager) CreateSession(projectPath string) (*Session, error) {
 }
 
 // CreateFirefighterSession creates a new firefighter agent session
-func (m *Manager) CreateFirefighterSession(projectPath string, scope string) (*Session, error) {
+func (m *Manager) CreateFirefighterSession(projectPath string, scope string, slackChannels string) (*Session, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -139,7 +140,13 @@ func (m *Manager) CreateFirefighterSession(projectPath string, scope string) (*S
 
 	session.Mode = "firefighter"
 	session.ModeConfig = map[string]interface{}{
-		"scope": scope,
+		"scope":         scope,
+		"slackChannels": slackChannels,
+	}
+
+	// Store available MCP server names so the prompt only references tools that exist
+	if m.configGetter != nil {
+		session.ModeConfig["mcpServers"] = m.configGetter.GetMCPServerNames()
 	}
 	session.Tags = append(session.Tags, "firefighter")
 

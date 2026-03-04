@@ -1,103 +1,227 @@
 # Firefighter Mode
 
-Firefighter Mode is a specialized agent for **investigating production incidents** using Linear tickets, Bugsnag errors, and Datadog monitoring. It's designed for on-call engineers handling production incidents.
+Firefighter Mode is a specialized agent for **investigating and fixing production incidents**. It combines Linear ticket triage, Slack channel monitoring, Bugsnag error tracking, and Datadog observability into a single automated loop — designed for on-call engineers who want an AI copilot watching production alongside them.
 
 ## How It Works
 
 ```
-Linear Ticket → Extract Context → Query Bugsnag/Datadog
-    → Analyze Git History → Generate Report → Auto-Fix → Update Ticket
+                    ┌─────────────────┐
+                    │  Polling Loop    │
+                    │  (every 5 min)   │
+                    └────────┬────────┘
+                             │
+              ┌──────────────┼──────────────┐
+              ▼              ▼              ▼
+     Linear Triage    Slack Channels   Bugsnag/Datadog
+     Queue (Part 1)   (Part 3)         (Part 2)
+              │              │              │
+              └──────────────┼──────────────┘
+                             ▼
+                    Extract Context
+                    (Datadog MCP tools)
+                             │
+                             ▼
+                    Spawn Sub-Agent
+                    (isolated worktree)
+                             │
+                   ┌─────────┴─────────┐
+                   ▼                   ▼
+             Attempt Fix          Generate Report
+             Run Tests            Update Linear
+             Create PR            Reply in Slack
 ```
 
-### Dual Workflow
+The agent runs a **5-minute polling loop** that checks three sources for new issues, then investigates and attempts fixes automatically.
 
-1. **Ticket-Based Investigation** (Priority)
-   - Monitors Linear triage queue for "firefighter" labeled tickets
-   - Click "Investigate" on any ticket
-   - Gathers context from Bugsnag and Datadog
-   - Generates comprehensive investigation report
-   - Attempts fix for High/Urgent tickets
+### Time Window
 
-2. **Proactive Monitoring** (Secondary)
-   - Polls Bugsnag/Datadog every 5 minutes for NEW errors
-   - Auto-investigates HIGH/Urgent severity issues
-   - Creates Linear tickets for new incidents
-   - Updates you with findings
+The agent doesn't scan all historical data. It uses a bounded time window:
+
+- **First check** — looks back at most **24 hours** before session start to catch any recent/active issues
+- **Subsequent checks** — only looks at data **since the last check** (roughly 5 minutes), so each poll is fast and focused on what's new
+
+This means you can start a session, get a quick catch-up on anything actively broken, and then the agent shifts to watching for new problems in real time.
+
+### Dynamic MCP Tool Discovery
+
+The system prompt automatically adapts to which MCP servers you have configured. If you don't have the Slack MCP server installed, the agent won't reference Slack tools or try to use them. Only configured tools appear in the prompt — no more "Slack MCP is unavailable" errors.
+
+The monitoring prompt also respects this: Slack channel monitoring instructions are only included when both Slack channels are specified AND the Slack MCP server is actually configured.
+
+### Three-Part Monitoring
+
+1. **Linear Triage Queue** (Priority)
+   - Uses the Linear MCP server to query tickets labeled "firefighter" or "triage"
+   - Only considers tickets created or updated within the current time window
+   - Sorts by priority: Urgent > High > Medium > Low
+   - Extracts Bugsnag error IDs or Datadog monitor IDs from ticket descriptions
+   - Immediately investigates Urgent/High priority tickets
+   - Updates tickets with investigation progress and links PRs when fixes are ready
+
+2. **Bugsnag + Datadog Proactive Monitoring**
+   - Queries Bugsnag for errors that appeared within the current time window
+   - Checks Datadog for monitors that transitioned to alert state since the last check
+   - Looks for log volume spikes and metric anomalies (error rates, latency)
+   - Cross-references against Linear to skip issues that already have tickets
+   - Creates new Linear tickets for newly discovered incidents
+   - Auto-investigates HIGH severity issues; alerts only for Medium/Low
+
+3. **Slack Channel Monitoring** (when configured)
+   - Uses the Slack MCP server to read messages posted since the last check from configured channels (e.g., `#datadog-alerts`, `#prod-incidents`)
+   - Looks for Datadog bot messages containing monitor alerts, error spikes, or anomalies
+   - Parses alert details: monitor name, service, severity, Datadog links
+   - For each new alert: gathers context via Datadog MCP, spawns a sub-agent to investigate, and replies in the Slack thread with findings
+   - Tracks seen alerts by timestamp/thread ID to avoid duplicate investigations
+   - Only enabled when both Slack channels are specified and the Slack MCP server is installed
+
+### Sub-Agent Spawning
+
+When the firefighter agent finds an issue worth investigating, it spawns a **sub-agent** using Claude's built-in Agent tool with `isolation: "worktree"`. The sub-agent:
+
+1. Works in an isolated git worktree (no interference with your working tree)
+2. Analyzes root cause using Bugsnag/Datadog context
+3. Implements a fix if the cause is clear
+4. Runs the project's test suite
+5. Creates a draft PR if tests pass
+6. Reports back with findings
+
+Multiple sub-agents can run in parallel for different issues.
+
+### Reactive Investigation
+
+In addition to the polling loop, you can trigger investigation on demand:
+
+- **Incident cards** — Click "Investigate" on any incident card in the sidebar
+- **Slack alerts** — The `InvestigateSlackAlert` API lets you point the agent at a specific Slack thread and alert message
+
+Reactive investigations follow the same workflow: gather context, analyze code, attempt fix, update ticket/thread.
 
 ---
 
-## Investigation Workflow
+## Incident Canvas UI
 
-When you click "Investigate" on a ticket:
+Firefighter mode uses a dedicated **incident dashboard** instead of plain chat. The interface has two panels: an **incident sidebar** on the left and the **chat panel** on the right.
 
-1. **Fetch ticket details** from Linear
-2. **Query Bugsnag** for error stacktraces and events
-3. **Query Datadog** for logs and metrics around error time
-4. **Analyze git history** for recent changes
-5. **Identify root cause** with evidence
-6. **Generate structured report**
-7. **Update Linear ticket** with findings
-8. **Attempt fix** in isolated git worktree (if High/Urgent)
-9. **Run tests** and create draft PR if fix succeeds
+### Incident Sidebar
+
+The sidebar shows incident cards parsed from assistant messages. As the agent generates monitoring reports and investigation findings, the parser detects incidents and displays them as cards.
+
+Each card shows:
+- **Severity badge** with colored left border (red = urgent, orange = high, yellow = medium, blue = low)
+- **Source icon** (flame for Linear, alert for Bugsnag, monitor for Datadog, message for Slack)
+- **Status pill** (New, Investigating, Fixing, Testing, Resolved, Failed)
+- **Relative timestamp** (e.g., "5m ago")
+- **Linear ID** if applicable
+- **Message count** — how many chat messages relate to this incident
+- **Investigate button** for new incidents
+
+Cards are grouped into **Active** (top) and **Resolved** (collapsible at bottom). A header shows counts like "3 Active · 2 Resolved".
+
+When no incidents have been detected, the sidebar shows an "All Clear — No incidents detected" empty state.
+
+### Incident-Scoped Chat
+
+Clicking an incident card **filters the chat** to show only messages related to that incident. A context bar appears above the chat showing which incident you're viewing, with a "Show all" button to return to the full chat stream.
+
+This lets you review the full investigation context for a single incident without scrolling through unrelated monitoring output.
+
+### Sidebar Controls
+
+- **Collapse/expand** — Click the chevron to hide or show the sidebar
+- **Toggle incident** — Click a selected card again to deselect and show all messages
+- **Investigate** — Click the button on a "New" incident to send an investigation prompt
+
+### Incident Detection
+
+The parser recognizes incidents from several output patterns:
+
+| Pattern | Example |
+|---------|---------|
+| Emoji ticket alerts | `🎫 [Urgent] Linear ticket EMP-456: Payment NPE` |
+| Emoji severity alerts | `🚨 NEW High: Error rate spike in checkout-service` |
+| Incident Summary blocks | `### Incident Summary` with `Error:` and `Severity:` fields |
+| Resolved status updates | `✅ Fixed: Payment service NPE` |
+| Structured reports | Messages containing `Severity: MEDIUM-HIGH` + sections like "Root Cause", "Code Analysis", or "Customer Impact" |
+
+Severity values are normalized broadly: `MEDIUM-HIGH` maps to `high`, `Critical` and `P1` map to `urgent`, `Sev-3` maps to `medium`, etc.
+
+When the same incident appears in multiple messages (same Linear ID or matching title), the parser merges them — accumulating related message IDs and escalating severity if a later report raises it.
+
+---
+
+## Focus Area
+
+The **Focus Area** field in the firefighter dialog lets you describe what you're on call for in natural language. Instead of just specifying a service name, you can describe your team's domain and the agent will discover relevant resources automatically.
+
+### Examples
+
+- `"I'm on call for the employer side of the handshake monolith. Only care about employer-graphql, promotion-service, and the employer squad's Datadog dashboards."`
+- `"Student-facing services only — handshake-web, student-graphql, career-fairs. Ignore employer stuff."`
+- `"Payment and billing services. Monitor any Datadog dashboards related to payments, Stripe webhooks, or invoicing."`
+
+### How It Works
+
+When a focus area is provided, the agent is instructed to:
+
+1. **Discover relevant resources** — Search for Datadog dashboards, monitors, and services that match your description
+2. **Filter by scope** — Skip alerts, errors, monitors, and tickets outside your focus area
+3. **Infer related services** — If you describe a team or product area, the agent uses codebase knowledge and monitoring tools to discover which services belong to that area
+4. **Filter Linear tickets** — Only investigate tickets with matching labels, components, or services
+5. **Filter Bugsnag errors** — Only investigate errors from projects within scope
+6. **Repeat on every check** — Each monitoring poll includes a scope reminder so the agent stays focused
+
+This means the agent won't waste time investigating a student-service Datadog alert when you're only on call for employer services.
+
+---
+
+## Chat Behavior
+
+### Smart Auto-Scroll
+
+The chat does **not** force-scroll to the bottom when new messages arrive if you've scrolled up to read older content. This is particularly important during firefighter sessions where the agent generates frequent monitoring reports.
+
+- If you're at or near the bottom of the chat, new messages scroll into view automatically
+- If you've scrolled up, new messages arrive silently — a **"New messages"** pill button appears at the bottom of the chat
+- Click the pill to jump back to the latest messages
+- Sending a message also scrolls to the bottom
 
 ---
 
 ## Setup
 
-### Step 1: Configure Okta OAuth
+Firefighter mode relies on four MCP servers. Datadog is installed as a Claude Code plugin, and Linear and Slack are available as **Boatman MCP presets** (Settings > MCP Servers > Add from Presets).
 
-Firefighter Mode uses Okta SSO to access Datadog and Bugsnag APIs.
+Only Datadog is strictly required — the system prompt adapts to show only the tools you have configured.
 
-**Prerequisites:**
-- Okta account with admin access
-- Datadog and Bugsnag integrated with Okta SSO
+### Step 1: Datadog Plugin
 
-**Configuration:**
-
-1. **Create Okta Application:**
-   - Go to Okta Admin Dashboard → Applications
-   - Click "Create App Integration"
-   - Choose "OIDC - OpenID Connect" → "Web Application"
-   - **Redirect URI**: `http://localhost:8484/callback`
-   - Note the **Client ID** and **Client Secret**
-
-2. **Configure in Boatman:**
-   ```
-   Settings → Firefighter Tab
-   - Okta Domain: your-org.okta.com
-   - Client ID: <from step 1>
-   - Client Secret: <from step 1> (optional for public clients)
-   - Click "Save Changes"
-   ```
-
-3. **Sign In:**
-   ```
-   Click "Sign In with Okta"
-   → Browser opens
-   → Sign in with your Okta credentials
-   → Grant permissions
-   → Return to Boatman (automatically authenticated)
-   ```
-
-### Step 2: Install Custom MCP Servers
+The Datadog plugin provides MCP tools for querying logs, metrics, monitors, and traces. No API keys needed — it authenticates via OAuth.
 
 ```bash
-cd desktop/mcp-servers
-make all
-make install
+claude /plugin install datadog@handshake-marketplace
 ```
 
-This installs:
-- `datadog-okta` — Datadog MCP server with OAuth support
-- `bugsnag-okta` — Bugsnag MCP server with OAuth support
+Then authenticate and discover your environment:
 
-### Step 3: Configure MCP Servers
+```
+/mcp              # Select "datadog-mcp" → complete OAuth in browser
+/dd-init           # Saves your dashboards and services to ~/.claude/CLAUDE.md
+```
 
-**Linear MCP Server:**
+### Step 2: Linear MCP Server
 
-1. Get API key from https://linear.app/settings/api
-2. Add to `~/.claude/claude_mcp_config.json`:
+The Linear MCP server lets the agent query tickets, update status, add comments, and manage labels. The same `LINEAR_API_KEY` format used by tools like [martabot](https://github.com/pmiddleton/martabot) works here.
 
+1. Get a Personal API key from [Linear Settings > API](https://linear.app/settings/api)
+2. Add the key in **Boatman Settings > Firefighter > Linear API Key** (used for Boatman Mode ticket execution too)
+3. Enable the Linear MCP preset:
+
+**Option A — Boatman MCP Presets (recommended):**
+   - Go to **Settings > MCP Servers > Add from Presets**
+   - Select **"linear"** and enter your `LINEAR_API_KEY`
+   - Click **Enable**
+
+**Option B — Manual config** (`~/.claude/claude_mcp_config.json`):
 ```json
 {
   "mcpServers": {
@@ -105,39 +229,30 @@ This installs:
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-linear"],
       "env": {
-        "LINEAR_API_KEY": "your-linear-api-key-here"
+        "LINEAR_API_KEY": "lin_api_your-key-here"
       }
     }
   }
 }
 ```
 
-**Datadog & Bugsnag (OAuth):**
+### Step 3: Slack MCP Server (Optional)
 
-```json
-{
-  "mcpServers": {
-    "datadog-okta": {
-      "command": "/Users/YOUR_USERNAME/.claude/mcp-servers/datadog-okta",
-      "args": [],
-      "env": {
-        "OKTA_ACCESS_TOKEN": "[automatically-injected-by-boatman]",
-        "DD_SITE": "datadoghq.com"
-      }
-    },
-    "bugsnag-okta": {
-      "command": "/Users/YOUR_USERNAME/.claude/mcp-servers/bugsnag-okta",
-      "args": [],
-      "env": {
-        "OKTA_ACCESS_TOKEN": "[automatically-injected-by-boatman]"
-      }
-    }
-  }
-}
-```
+The Slack MCP server lets the agent read channel messages, reply in threads, and search for alerts. The system prompt will only reference Slack tools when this server is configured — if you skip this step, everything else works without errors.
 
-**Slack (Optional):**
+1. Get the **Bot User OAuth Token** (`xoxb-...`) from the existing Slack app:
+   - Go to [api.slack.com/apps](https://api.slack.com/apps), select the app
+   - **OAuth & Permissions** > copy the **Bot User OAuth Token**
+   - The bot needs these scopes (should already be configured): `channels:history`, `channels:read`, `chat:write`
 
+2. Enable the Slack MCP preset:
+
+**Option A — Boatman MCP Presets (recommended):**
+   - Go to **Settings > MCP Servers > Add from Presets**
+   - Select **"slack"** and enter your `SLACK_BOT_TOKEN` and `SLACK_TEAM_ID`
+   - Click **Enable**
+
+**Option B — Manual config** (`~/.claude/claude_mcp_config.json`):
 ```json
 {
   "mcpServers": {
@@ -145,21 +260,55 @@ This installs:
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-slack"],
       "env": {
-        "SLACK_BOT_TOKEN": "xoxb-your-token-here",
-        "SLACK_TEAM_ID": "your-workspace-id"
+        "SLACK_BOT_TOKEN": "xoxb-your-bot-token-here",
+        "SLACK_TEAM_ID": "T0123456789"
       }
     }
   }
 }
 ```
 
-### Step 4: Enable MCP Servers
+3. Set default channels in **Settings > Firefighter > Default Slack Alert Channels**
+   - Enter comma-separated channel names, e.g., `#datadog-alerts, #prod-incidents`
+   - These pre-populate the Firefighter dialog so you don't have to type them each session
+   - You can also override channels per-session in the Firefighter dialog
 
-```
-Settings → MCP Servers Tab
-- Toggle "Enabled" for: linear, datadog-okta, bugsnag-okta, slack
-- Click "Save Changes"
-```
+4. Make sure the bot is invited to the channels you want to monitor: `/invite @YourBotName`
+
+### Step 4: (Optional) Bugsnag via Okta
+
+If your organization uses Bugsnag behind Okta SSO:
+
+1. **Create an Okta OIDC Application:**
+   - Okta Admin Dashboard > Applications > Create App Integration
+   - Choose "OIDC - OpenID Connect" > "Web Application"
+   - **Redirect URI**: `http://localhost:8484/callback`
+   - Note the **Client ID** and **Client Secret**
+
+2. **Configure in Boatman:**
+   - **Settings > Firefighter** tab
+   - Enter Okta Domain, Client ID, and Client Secret
+   - Click "Save Changes"
+
+3. **Install the Bugsnag MCP server:**
+   ```bash
+   cd desktop/mcp-servers && make bugsnag-okta && make install
+   ```
+
+4. **Add to MCP config** (`~/.claude/claude_mcp_config.json`):
+   ```json
+   {
+     "mcpServers": {
+       "bugsnag-okta": {
+         "command": "/Users/YOUR_USERNAME/.claude/mcp-servers/bugsnag-okta",
+         "args": [],
+         "env": {
+           "OKTA_ACCESS_TOKEN": "[automatically-injected-by-boatman]"
+         }
+       }
+     }
+   }
+   ```
 
 ---
 
@@ -167,31 +316,54 @@ Settings → MCP Servers Tab
 
 ### Starting a Session
 
-1. Click the **Firefighter** button (flame icon in header)
-2. Optionally set a **scope** to filter noise (e.g., "payment-service")
-3. Toggle **monitoring** for proactive alerts
-4. Click **"Start Investigation"**
+1. Click the **Firefighter** button (flame icon in the header)
+2. (Optional) Describe your **Focus Area** — what you're on call for, which services/teams matter. The agent discovers relevant dashboards and monitors from your description.
+3. (Optional) Enter **Slack Alert Channels** — comma-separated channels to monitor for Datadog alerts (e.g., `#datadog-alerts, #prod-incidents`). Pre-populated from your default channels in Settings.
+4. Toggle **Active Monitoring** on/off — when on, the agent polls every 5 minutes
+5. Click **Start Investigation**
+
+### What Happens Next
+
+When monitoring is enabled, the agent immediately runs its first check and then repeats every 5 minutes:
+
+1. **Linear triage** — Queries for firefighter/triage-labeled tickets and investigates high-priority ones
+2. **Bugsnag/Datadog** — Checks for new errors and triggered monitors
+3. **Slack channels** — Reads configured channels for Datadog alert bot messages (only if Slack MCP is configured)
+4. **Reports** — Summarizes findings in the chat:
+   - `🎫 [Urgent] Linear ticket EMP-456: Payment refund NPE`
+   - `🚨 NEW High: Error rate spike in checkout-service`
+   - `✅ Linear queue: 2 tickets, Monitoring: No new issues`
+
+For Urgent/High issues, the agent automatically spawns a sub-agent to investigate and attempt a fix. For Medium/Low, it alerts you and waits for approval.
 
 ### Interface Layout
 
-**Left Sidebar — Linear Triage Queue:**
-- Shows tickets labeled "firefighter" or "triage"
-- Priority color-coding:
-  - Red = Urgent
-  - Orange = High
-  - Yellow = Medium
-  - Blue = Low
-- Click "Investigate" to start investigation
-
-**Right Panel — Chat Interface:**
-- Investigation reports appear here
-- Ask follow-up questions
-- Sub-agents may spawn for complex tasks
-
 **Top Bar — Monitoring Status:**
-- Green = Active Monitoring (checking every 5 minutes)
+- Green = Active monitoring (checking every 5 minutes)
 - Paused = Manual investigation only
-- Shows last check time and issue count
+- Shows last check time and number of seen issues
+- Toggle monitoring on/off at any time
+
+**Incident Sidebar (left):**
+- Shows incident cards parsed from monitoring output
+- Grouped by Active (top) and Resolved (collapsible)
+- Click a card to filter chat to that incident's messages
+- "Investigate" button to trigger investigation on new incidents
+- Collapse with the chevron to give more room to chat
+
+**Chat Panel (right):**
+- Monitoring reports and investigation findings appear here
+- When an incident is selected, shows only that incident's messages with a "Show all" button
+- Smart auto-scroll — won't yank you to the bottom if you've scrolled up to read
+- "New messages" pill appears when new content arrives while scrolled up
+
+**Tasks Tab:**
+- Shows ongoing investigations as tasks
+- Track status: investigating > fixing > testing > done/failed
+
+**Changes Tab:**
+- View diffs from sub-agent fix attempts
+- Accept or reject proposed changes
 
 ---
 
@@ -212,19 +384,19 @@ Each investigation generates a structured report:
 - **Endpoints**: POST /api/v1/payments/refund
 
 ### Timeline
-- 14:20 UTC - Deployment: v2.3.4 to production
-- 14:23 UTC - First error occurrence
-- 14:25 UTC - Error rate spike to 15%
-- 14:30 UTC - Datadog alert triggered
+- 14:20 UTC — Deployment: v2.3.4 to production
+- 14:23 UTC — First error occurrence
+- 14:25 UTC — Error rate spike to 15%
+- 14:30 UTC — Datadog alert triggered
 
 ### Root Cause Analysis
 Refund logic assumes transaction.customer is always present,
 but can be null for guest checkouts introduced in v2.3.0.
 
 ### Recommended Actions
-1. Immediate: Add null check before accessing transaction.customer
-2. Short-term: Rollback to v2.3.3 if fix cannot deploy quickly
-3. Long-term: Add integration tests for guest checkout flows
+1. **Immediate**: Add null check before accessing transaction.customer
+2. **Short-term**: Rollback to v2.3.3 if fix cannot deploy quickly
+3. **Long-term**: Add integration tests for guest checkout flows
 
 ### Fix Attempted
 - Created worktree: ../worktrees/fix-emp-456
@@ -236,28 +408,58 @@ but can be null for guest checkouts introduced in v2.3.0.
 
 ---
 
+## Configuration Reference
+
+All firefighter settings are in **Settings > Firefighter**:
+
+| Setting | Description | Required |
+|---------|-------------|----------|
+| **Linear API Key** | Personal API key (`lin_api_...`) for Linear ticket access | Yes |
+| **Default Slack Alert Channels** | Comma-separated channels to monitor (e.g., `#datadog-alerts`) | No |
+| **Okta Domain** | Your Okta domain (e.g., `your-org.okta.com`) | Only for Bugsnag |
+| **Okta Client ID** | OIDC client ID for Bugsnag OAuth | Only for Bugsnag |
+| **Okta Client Secret** | OIDC client secret | Only for Bugsnag |
+
+**MCP servers:**
+
+| Server | How to Enable | Purpose | Required |
+|--------|--------------|---------|----------|
+| **Datadog plugin** | `claude /plugin install datadog@handshake-marketplace` | Logs, metrics, monitors, traces | Yes |
+| **Linear** | Boatman MCP Preset or `claude_mcp_config.json` | Ticket querying, status updates, comments | Yes |
+| **Slack** | Boatman MCP Preset or `claude_mcp_config.json` | Channel monitoring, thread replies | No |
+| **Bugsnag-Okta** | Manual build + `claude_mcp_config.json` | Error tracking via Okta SSO | No |
+
+---
+
 ## Best Practices
 
-### Label Your Tickets
-- Use "firefighter" or "triage" labels in Linear
-- Add service tags: "payment", "auth", "billing"
-- Include Bugsnag/Datadog links in ticket description
+### Use the Focus Area
 
-### Set Monitoring Scope
-- Filter noise by specifying a service or team
-- Examples: "payment-service", "employer-activation", "production"
+- Describe your on-call scope in natural language: `"employer side of the monolith"`, `"payment and billing services"`
+- The agent discovers relevant Datadog dashboards, monitors, and services from your description
+- Alerts outside your scope are skipped entirely — no noise from other teams' services
+- Each monitoring check includes a scope reminder so the agent doesn't drift
+
+### Label Your Tickets
+- Use `firefighter` or `triage` labels in Linear so the agent picks them up
+- Add service tags: `payment`, `auth`, `billing`
+- Include Bugsnag error URLs or Datadog monitor links in ticket descriptions — the agent extracts these automatically
+
+### Choose Slack Channels Carefully
+- Point at channels that receive Datadog bot alerts (not general discussion channels)
+- The agent filters for Datadog alert patterns — non-alert messages are ignored
+- Good candidates: `#datadog-alerts`, `#prod-incidents`, `#on-call-alerts`
+- Make sure the Slack bot is invited to the channel (`/invite @YourBotName`)
 
 ### Priority Triage
-- Agent prioritizes Urgent/High tickets from Linear
-- AUTO-investigates HIGH severity from monitoring
-- Medium/Low: alert only, wait for approval
+- The agent prioritizes **Linear tickets over proactive monitoring over Slack**
+- Urgent/High from Linear: investigated immediately
+- HIGH severity from Bugsnag/Datadog: investigated immediately
+- Slack alerts with Datadog context: investigated via sub-agent
+- Medium/Low: alert only, waits for your approval
 
-### Git Worktrees
-- Agent creates isolated worktrees: `../worktrees/fix-<issue-id>`
-- Allows multiple simultaneous investigations
-- Clean up periodically: `git worktree remove ../worktrees/fix-old-issue`
-
-### Update Linear Tickets
-- Agent automatically updates tickets with findings
-- Moves to "In Progress" when investigating
-- Links PRs when fix is ready
+### Sub-Agent Worktrees
+- Sub-agents create isolated worktrees under `../worktrees/fix-<issue-id>`
+- Multiple investigations can run in parallel without conflicting
+- Clean up old worktrees periodically: `git worktree remove ../worktrees/fix-old-issue`
+- Worktrees are separate from your working directory — your uncommitted changes are safe

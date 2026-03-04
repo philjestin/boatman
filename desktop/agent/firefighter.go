@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 )
@@ -12,7 +13,9 @@ type FirefighterMonitor struct {
 	session          *Session
 	isActive         bool
 	checkInterval    time.Duration
+	sessionStartTime time.Time       // When the session was created — used as the time floor
 	lastCheckTime    time.Time
+	isFirstCheck     bool            // True until the first check completes
 	seenIssues       map[string]bool // Track issues we've already investigated
 	onAlert          func(Alert)
 	onInvestigation  func(Investigation)
@@ -54,12 +57,14 @@ type Investigation struct {
 func NewFirefighterMonitor(session *Session) *FirefighterMonitor {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &FirefighterMonitor{
-		session:       session,
-		isActive:      false,
-		checkInterval: 5 * time.Minute, // Check every 5 minutes by default
-		seenIssues:    make(map[string]bool),
-		ctx:           ctx,
-		cancel:        cancel,
+		session:          session,
+		isActive:         false,
+		checkInterval:    5 * time.Minute, // Check every 5 minutes by default
+		sessionStartTime: time.Now(),
+		isFirstCheck:     true,
+		seenIssues:       make(map[string]bool),
+		ctx:              ctx,
+		cancel:           cancel,
 	}
 }
 
@@ -139,10 +144,18 @@ func (fm *FirefighterMonitor) performCheck() {
 		return
 	}
 	fm.lastCheckTime = time.Now()
+	firstCheck := fm.isFirstCheck
 	fm.mu.Unlock()
 
 	// Build monitoring prompt
 	prompt := fm.buildMonitoringPrompt()
+
+	// After first check, subsequent checks only look at new data
+	if firstCheck {
+		fm.mu.Lock()
+		fm.isFirstCheck = false
+		fm.mu.Unlock()
+	}
 
 	// Send to Claude for analysis
 	// This will trigger the normal message flow, but with a specialized prompt
@@ -151,21 +164,61 @@ func (fm *FirefighterMonitor) performCheck() {
 	}
 }
 
+// lookbackStart returns the earliest time to search for issues.
+// First check: max 24 hours before session start.
+// Subsequent checks: since the last check time.
+func (fm *FirefighterMonitor) lookbackStart() time.Time {
+	fm.mu.RLock()
+	defer fm.mu.RUnlock()
+
+	if fm.isFirstCheck {
+		earliest := fm.sessionStartTime.Add(-24 * time.Hour)
+		return earliest
+	}
+	return fm.lastCheckTime.Add(-fm.checkInterval)
+}
+
 // buildMonitoringPrompt creates a prompt for proactive monitoring
 func (fm *FirefighterMonitor) buildMonitoringPrompt() string {
+	lookback := fm.lookbackStart()
+	lookbackStr := lookback.Format(time.RFC3339)
+	sessionStartStr := fm.sessionStartTime.Format(time.RFC3339)
+
+	fm.mu.RLock()
+	firstCheck := fm.isFirstCheck
+	fm.mu.RUnlock()
+
+	var timeContext string
+	if firstCheck {
+		timeContext = fmt.Sprintf(`**TIME WINDOW**: This is the **first check** for this session.
+- Session started at: %s
+- Look back at most **24 hours** (since %s) to catch any recent issues
+- After this check, subsequent checks will only look at **new** data since the previous check
+- Do NOT investigate old/resolved issues — focus on currently active or recently triggered alerts`, sessionStartStr, lookbackStr)
+	} else {
+		timeContext = fmt.Sprintf(`**TIME WINDOW**: This is a **follow-up check**.
+- Session started at: %s
+- Only look at data **since the last check**: %s
+- Ignore anything older — it was already checked
+- Focus exclusively on NEW alerts, errors, and tickets created since the last check`, sessionStartStr, lookbackStr)
+	}
+
 	return `🔥 FIREFIGHTER MONITORING CHECK 🔥
 
 You are in active firefighter monitoring mode. You handle BOTH proactive monitoring AND ticket-based investigations.
 
-**CRITICAL**: Use your available MCP tools to query Linear, Bugsnag, and Datadog. DO NOT try to use bash commands - these are MCP tools that provide direct API access.
+**CRITICAL**: Use your available MCP tools (` + fm.availableMCPToolsList() + `). DO NOT try to use bash commands - these are MCP tools that provide direct API access.
 
-**DUAL WORKFLOW**:
+` + timeContext + `
+
+**WORKFLOW**:
 
 ## PART 1: CHECK LINEAR TRIAGE QUEUE (Priority)
 
 1. **Query Linear using MCP tools**:
    - Use Linear MCP tool to list issues in the triage queue
    - Filter by labels: "firefighter", "triage", or team-specific tags
+   - Only consider tickets created or updated since ` + lookbackStr + `
    - Sort by priority (Urgent > High > Medium > Low)
    - Look for issues with Bugsnag/Datadog links in description
 
@@ -177,7 +230,7 @@ You are in active firefighter monitoring mode. You handle BOTH proactive monitor
 
 ## PART 2: PROACTIVE MONITORING (Secondary)
 
-3. **Query Bugsnag using MCP tools** for NEW errors in last 15 minutes:
+3. **Query Bugsnag using MCP tools** for errors since ` + lookbackStr + `:
    - Use Bugsnag MCP tool to list recent errors
    - Look for NEW error types (not previously seen)
    - Focus on errors with increasing frequency
@@ -185,13 +238,13 @@ You are in active firefighter monitoring mode. You handle BOTH proactive monitor
    - Check if Linear ticket already exists for this error
 
 4. **Query Datadog using MCP tools** for triggered monitors:
-   - Use Datadog MCP tool to check for triggered monitors
-   - Look for log volume spikes
-   - Check for metric anomalies (error rates, latency, etc.)
+   - Use Datadog MCP tool to check for currently triggered monitors
+   - Look for monitors that transitioned to alert state since ` + lookbackStr + `
+   - Check for log volume spikes and metric anomalies (error rates, latency, etc.)
    - Check if Linear ticket already exists for this alert
 
 5. **Compare against previous issues**:
-   - Only report NEWLY discovered issues
+   - Only report NEWLY discovered issues since ` + lookbackStr + `
    - Skip if you've already investigated this issue
    - Skip if Linear ticket already exists
 
@@ -214,16 +267,122 @@ You are in active firefighter monitoring mode. You handle BOTH proactive monitor
    - Run tests
    - If tests pass, create draft PR and update Linear ticket
 
+` + fm.buildSlackMonitoringSection() + `
+
+` + fm.buildScopeReminder() + `
 **IMPORTANT**:
 - **Prioritize Linear tickets over proactive monitoring**
 - Use MCP tools, NOT bash commands
 - Update Linear tickets with investigation progress
 - Track which issues you've seen to avoid duplicates
 - Be concise in monitoring reports
+- **Only look at data since ` + lookbackStr + `** — do not scan all historical data
 
 Last check time: ` + fm.lastCheckTime.Format(time.RFC3339) + `
 
-Begin monitoring check now. Start with Linear triage queue, then proactive monitoring.`
+Begin monitoring check now. Start with Linear triage queue, then proactive monitoring` + fm.slackMonitoringReminder() + `.`
+}
+
+// buildScopeReminder returns a scope reminder for the monitoring prompt if scope is configured
+func (fm *FirefighterMonitor) buildScopeReminder() string {
+	scope, _ := fm.session.ModeConfig["scope"].(string)
+	if scope == "" {
+		return ""
+	}
+	return fmt.Sprintf(`
+**SCOPE REMINDER**: The operator's focus area is:
+> %s
+Only investigate alerts, errors, monitors, and tickets relevant to this scope. Skip everything else.
+
+`, scope)
+}
+
+// availableMCPToolsList returns a comma-separated list of available MCP tool names
+func (fm *FirefighterMonitor) availableMCPToolsList() string {
+	return availableMCPToolsListFromConfig(fm.session.ModeConfig)
+}
+
+// availableMCPToolsListFromConfig extracts MCP server names from ModeConfig
+func availableMCPToolsListFromConfig(modeConfig map[string]interface{}) string {
+	var names []string
+	if raw, ok := modeConfig["mcpServers"]; ok {
+		if strs, ok := raw.([]string); ok {
+			names = strs
+		} else if ifaces, ok := raw.([]interface{}); ok {
+			for _, v := range ifaces {
+				if name, ok := v.(string); ok {
+					names = append(names, name)
+				}
+			}
+		}
+	}
+	if len(names) == 0 {
+		return "Linear, Bugsnag, Datadog"
+	}
+	return strings.Join(names, ", ")
+}
+
+// hasSlackMCP checks if a Slack MCP server is configured
+func (fm *FirefighterMonitor) hasSlackMCP() bool {
+	return hasMCPServer(fm.getMCPNames(), "slack")
+}
+
+// getMCPNames extracts MCP server names from ModeConfig
+func (fm *FirefighterMonitor) getMCPNames() []string {
+	if raw, ok := fm.session.ModeConfig["mcpServers"]; ok {
+		if strs, ok := raw.([]string); ok {
+			return strs
+		}
+		if ifaces, ok := raw.([]interface{}); ok {
+			var names []string
+			for _, v := range ifaces {
+				if name, ok := v.(string); ok {
+					names = append(names, name)
+				}
+			}
+			return names
+		}
+	}
+	return nil
+}
+
+// buildSlackMonitoringSection returns the PART 3 section for Slack channel monitoring if channels are configured
+func (fm *FirefighterMonitor) buildSlackMonitoringSection() string {
+	slackChannels, _ := fm.session.ModeConfig["slackChannels"].(string)
+	if slackChannels == "" || !fm.hasSlackMCP() {
+		return ""
+	}
+
+	lookback := fm.lookbackStart()
+
+	return fmt.Sprintf(`
+## PART 3: SLACK CHANNEL MONITORING
+
+5b. **Monitor Slack channels for Datadog alerts**:
+   - Use Slack MCP tools to read recent messages from these channels: %s
+   - Only look at messages posted since %s
+   - Look for Datadog alert messages (triggered monitors, error spikes, anomalies)
+   - Look for bot messages from Datadog containing monitor alerts or warning/error notifications
+   - Skip messages you have already investigated (track by timestamp or thread ID)
+
+6b. **For each NEW alert found in Slack**:
+   - Parse the alert: extract monitor name, service, severity, and any Datadog links
+   - Use Datadog MCP tools to gather full context (query the monitor, check related logs/metrics)
+   - Spawn a sub-agent using the Agent tool to investigate and attempt a fix in an isolated worktree:
+     - Use the Agent tool with isolation: "worktree" to investigate the alert
+     - The sub-agent should: analyze root cause, attempt fix, run tests, create draft PR if tests pass
+   - Reply in the Slack thread acknowledging the alert and sharing findings
+   - Track the alert to avoid duplicate investigations
+`, slackChannels, lookback.Format(time.RFC3339))
+}
+
+// slackMonitoringReminder returns a reminder suffix if Slack channels are configured and Slack MCP is available
+func (fm *FirefighterMonitor) slackMonitoringReminder() string {
+	slackChannels, _ := fm.session.ModeConfig["slackChannels"].(string)
+	if slackChannels == "" || !fm.hasSlackMCP() {
+		return ""
+	}
+	return ", then check Slack channels"
 }
 
 // IsActive returns whether monitoring is active

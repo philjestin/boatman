@@ -237,6 +237,9 @@ export interface UserPreferences {
 
   // Linear settings
   linearAPIKey?: string;
+
+  // Slack monitoring settings
+  slackAlertChannels?: string;
 }
 
 export interface ProjectPreferences {
@@ -319,6 +322,22 @@ export interface LinearTicket {
   priority?: number;
   state?: string;
   labels?: string[];
+}
+
+export interface Incident {
+  id: string;
+  source: 'linear' | 'bugsnag' | 'datadog' | 'slack';
+  severity: 'urgent' | 'high' | 'medium' | 'low';
+  title: string;
+  description: string;
+  status: 'new' | 'investigating' | 'fixing' | 'testing' | 'resolved' | 'failed';
+  firstSeen: string;
+  lastUpdated: string;
+  messageIds: string[];
+  linearId?: string;
+  slackThread?: string;
+  url?: string;
+  prNumber?: string;
 }
 
 // =============================================================================

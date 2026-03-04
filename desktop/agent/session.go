@@ -299,7 +299,20 @@ func (s *Session) runClaudeCommand(prompt string, authConfig AuthConfig) {
 	s.mu.RLock()
 	if s.Mode == "firefighter" && len(s.Messages) <= 1 {
 		scope, _ := s.ModeConfig["scope"].(string)
-		systemPrompt := GetFirefighterPrompt(scope)
+		// Extract MCP server names stored at session creation
+		var mcpNames []string
+		if raw, ok := s.ModeConfig["mcpServers"]; ok {
+			if names, ok := raw.([]string); ok {
+				mcpNames = names
+			} else if ifaces, ok := raw.([]interface{}); ok {
+				for _, v := range ifaces {
+					if name, ok := v.(string); ok {
+						mcpNames = append(mcpNames, name)
+					}
+				}
+			}
+		}
+		systemPrompt := GetFirefighterPrompt(scope, mcpNames...)
 		actualPrompt = systemPrompt + "\n\n" + prompt
 	}
 	s.mu.RUnlock()
@@ -329,18 +342,28 @@ func (s *Session) runClaudeCommand(prompt string, authConfig AuthConfig) {
 	// No need to pass them as command-line arguments
 
 	// Add approval mode flags
-	switch authConfig.ApprovalMode {
-	case "auto-edit":
-		// Allow Edit and Write tools without approval
-		args = append(args, "--dangerously-skip-permissions", "Edit,Write")
-	case "full-auto":
-		// Allow all tools without approval
+	// Firefighter mode always gets full permissions since it's a non-interactive agent
+	// that needs unrestricted access to MCP tools (Datadog, Bugsnag, Linear)
+	s.mu.RLock()
+	isFirefighter := s.Mode == "firefighter"
+	s.mu.RUnlock()
+
+	if isFirefighter {
 		args = append(args, "--dangerously-skip-permissions")
-	case "suggest":
-		// This is the default - require approval for everything
-		// We need to run without stream-json for this to work properly
-		// For now, we'll just use dangerously-skip-permissions to avoid hanging
-		args = append(args, "--dangerously-skip-permissions")
+	} else {
+		switch authConfig.ApprovalMode {
+		case "auto-edit":
+			// Allow Edit and Write tools without approval
+			args = append(args, "--allowedTools", "Edit,Write")
+		case "full-auto":
+			// Allow all tools without approval
+			args = append(args, "--dangerously-skip-permissions")
+		case "suggest":
+			// This is the default - require approval for everything
+			// We need to run without stream-json for this to work properly
+			// For now, we'll just use dangerously-skip-permissions to avoid hanging
+			args = append(args, "--dangerously-skip-permissions")
+		}
 	}
 
 	cmd := exec.CommandContext(s.ctx, "claude", args...)

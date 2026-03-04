@@ -34,8 +34,8 @@ export function CreateBoatmanModeSession(arg1, arg2, arg3) {
   return window['go']['main']['App']['CreateBoatmanModeSession'](arg1, arg2, arg3);
 }
 
-export function CreateFirefighterSession(arg1, arg2) {
-  return window['go']['main']['App']['CreateFirefighterSession'](arg1, arg2);
+export function CreateFirefighterSession(arg1, arg2, arg3) {
+  return window['go']['main']['App']['CreateFirefighterSession'](arg1, arg2, arg3);
 }
 
 export function DeleteAgentSession(arg1) {
@@ -128,6 +128,10 @@ export function GetKeepCompletedAgents() {
 
 export function GetMCPPresets() {
   return window['go']['main']['App']['GetMCPPresets']();
+}
+
+export function GetMCPServerNames() {
+  return window['go']['main']['App']['GetMCPServerNames']();
 }
 
 export function GetMCPServers() {

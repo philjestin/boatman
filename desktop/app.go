@@ -155,8 +155,8 @@ func (a *App) CreateAgentSession(projectPath string) (*AgentSessionInfo, error) 
 }
 
 // CreateFirefighterSession creates a new firefighter agent session
-func (a *App) CreateFirefighterSession(projectPath string, scope string) (*AgentSessionInfo, error) {
-	session, err := a.agentManager.CreateFirefighterSession(projectPath, scope)
+func (a *App) CreateFirefighterSession(projectPath string, scope string, slackChannels string) (*AgentSessionInfo, error) {
+	session, err := a.agentManager.CreateFirefighterSession(projectPath, scope, slackChannels)
 	if err != nil {
 		return nil, err
 	}
@@ -510,6 +510,16 @@ func (a *App) GetMaxAgentsPerSession() int {
 // GetKeepCompletedAgents returns the keep completed agents setting
 func (a *App) GetKeepCompletedAgents() bool {
 	return a.config.GetPreferences().KeepCompletedAgents
+}
+
+// GetMCPServerNames returns the names of configured MCP servers
+func (a *App) GetMCPServerNames() []string {
+	servers := a.config.GetMCPServers()
+	names := make([]string, len(servers))
+	for i, s := range servers {
+		names[i] = s.Name
+	}
+	return names
 }
 
 // =============================================================================

@@ -76,6 +76,9 @@ type UserPreferences struct {
 
 	// Linear settings
 	LinearAPIKey string `json:"linearAPIKey,omitempty"`
+
+	// Slack monitoring settings
+	SlackAlertChannels string `json:"slackAlertChannels,omitempty"` // Comma-separated channel names, e.g. "#datadog-alerts,#prod-incidents"
 }
 
 // ProjectPreferences stores project-specific overrides
