@@ -64,6 +64,7 @@ func New(worktreePath string, cfg *config.Config) *Planner {
 	if cfg.Claude.Models.Planner != "" {
 		client.Model = cfg.Claude.Models.Planner
 	}
+	client.Effort = cfg.Claude.Effort
 
 	// Note: Prompt caching is automatically handled by Claude CLI
 	client.EnablePromptCaching = cfg.Claude.EnablePromptCaching

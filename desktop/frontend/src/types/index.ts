@@ -389,6 +389,59 @@ export interface HarnessRunState {
 }
 
 // =============================================================================
+// Brain Types
+// =============================================================================
+
+export interface BrainEntry {
+  id: string;
+  name: string;
+  description: string;
+  confidence: number;
+  version: number;
+  lastUpdated: string;
+  keywords: string[];
+  entities: string[];
+  filePatterns: string[];
+}
+
+export interface BrainDetail extends BrainEntry {
+  sections: BrainSection[];
+  references: BrainReference[];
+}
+
+export interface BrainSection {
+  title: string;
+  content: string;
+}
+
+export interface BrainReference {
+  path: string;
+  description: string;
+  checksum: string;
+}
+
+export interface BrainValidationResult {
+  valid: boolean;
+  errors: string[];
+  stale: StaleRefResult[];
+}
+
+export interface StaleRefResult {
+  path: string;
+  reason: string;
+}
+
+export interface SignalEntry {
+  type: string;
+  domain: string;
+  details: string;
+  filePaths: string[];
+  count: number;
+  firstSeen: string;
+  lastSeen: string;
+}
+
+// =============================================================================
 // Component Props Types
 // =============================================================================
 

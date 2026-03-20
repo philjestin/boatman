@@ -35,11 +35,29 @@ type Config struct {
 	// Token budgets
 	TokenBudget TokenBudgetConfig
 
+	// Brain settings
+	Brain BrainConfig
+
 	// Debug enables verbose logging
 	Debug bool
 
 	// EnableTools enables Claude CLI tool capabilities for agents
 	EnableTools bool
+}
+
+// BrainConfig holds brain domain knowledge settings.
+type BrainConfig struct {
+	// Enabled controls whether brain injection is active.
+	Enabled bool
+
+	// Directories is an optional list of additional brain directories.
+	Directories []string
+
+	// MaxBrains is the maximum number of brains to inject per task.
+	MaxBrains int
+
+	// TokenBudget is the token budget for brain content in prompts.
+	TokenBudget int
 }
 
 // ReviewConfig holds review pass criteria settings.
@@ -99,6 +117,10 @@ type ClaudeConfig struct {
 	// Note: Requires Claude CLI version that supports --cache-system-prompt flag.
 	// Set to true only if your CLI version supports it.
 	EnablePromptCaching bool
+
+	// Effort sets the reasoning effort level for all agents ("low", "medium", "high").
+	// Empty = CLI default. Use "high" with Opus 4.6 for maximum reasoning.
+	Effort string
 }
 
 // ModelConfig holds model selection per agent type.
@@ -171,6 +193,7 @@ func Load() (*Config, error) {
 			LargePromptThreshold: getIntOrDefault("claude.large_prompt_threshold", 100000),
 			Timeout:              getDurationOrDefault("claude.timeout", 0),
 			EnablePromptCaching:  getBoolOrDefault("claude.enable_prompt_caching", false),
+			Effort:              getStringOrDefault("claude.effort", ""),
 			Models: ModelConfig{
 				Planner:    getStringOrDefault("claude.models.planner", ""),    // Empty = use CLI default
 				Executor:   getStringOrDefault("claude.models.executor", ""),   // Empty = use CLI default
@@ -185,6 +208,12 @@ func Load() (*Config, error) {
 			Context: getIntOrDefault("token_budget.context", 8000),
 			Plan:    getIntOrDefault("token_budget.plan", 2000),
 			Review:  getIntOrDefault("token_budget.review", 4000),
+		},
+
+		Brain: BrainConfig{
+			Enabled:     getBoolOrDefault("brain.enabled", true),
+			MaxBrains:   getIntOrDefault("brain.max_brains", 3),
+			TokenBudget: getIntOrDefault("brain.token_budget", 2000),
 		},
 	}
 

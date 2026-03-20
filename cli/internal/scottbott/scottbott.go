@@ -155,6 +155,9 @@ func (s *ScottBott) Review(ctx context.Context, ticketContext, diff string) (*Re
 	if s.model != "" {
 		args = append(args, "--model", s.model)
 	}
+	if s.cfg != nil && s.cfg.Claude.Effort != "" {
+		args = append(args, "--effort", s.cfg.Claude.Effort)
+	}
 
 	// Note: Prompt caching is automatically handled by Claude CLI when using system prompts
 	// No explicit flag needed in current version (2.1.39+)
@@ -219,11 +222,15 @@ Pass if: no critical issues, ≤2 major issues, code meets requirements.`
 
 	start := time.Now()
 
-	cmd := exec.CommandContext(ctx, "claude",
+	args := []string{
 		"-p",
 		"--output-format", "text",
 		"--system-prompt", systemPrompt,
-	)
+	}
+	if s.cfg != nil && s.cfg.Claude.Effort != "" {
+		args = append(args, "--effort", s.cfg.Claude.Effort)
+	}
+	cmd := exec.CommandContext(ctx, "claude", args...)
 	cmd.Stdin = strings.NewReader(prompt)
 
 	if s.workDir != "" {

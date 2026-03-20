@@ -115,6 +115,9 @@ type Session struct {
 	maxAgents     int
 	keepCompleted bool
 
+	// System prompt for the session (Claude CLI -s flag)
+	systemPrompt string
+
 	// Firefighter monitoring
 	firefighterMonitor *FirefighterMonitor
 }
@@ -215,6 +218,49 @@ func (s *Session) SetReasoningEffort(effort string) {
 	s.UpdatedAt = time.Now()
 }
 
+// SetSystemPrompt sets the system prompt for the session (Claude CLI -s flag).
+func (s *Session) SetSystemPrompt(prompt string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.systemPrompt = prompt
+	s.UpdatedAt = time.Now()
+}
+
+// GetSystemPrompt returns the current system prompt.
+func (s *Session) GetSystemPrompt() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.systemPrompt
+}
+
+// ClearConversation resets the conversation (like /clear in Claude CLI).
+// Clears messages and conversation ID so the next message starts fresh.
+func (s *Session) ClearConversation() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.Messages = []Message{}
+	s.conversationID = ""
+	s.UpdatedAt = time.Now()
+
+	// Emit a system message about the clear
+	if s.onMessage != nil {
+		s.onMessage(Message{
+			ID:        fmt.Sprintf("msg-%d", time.Now().UnixNano()),
+			Role:      "system",
+			Content:   "Conversation cleared. Starting fresh.",
+			Timestamp: time.Now(),
+		})
+	}
+}
+
+// GetConversationID returns the Claude conversation ID for this session.
+func (s *Session) GetConversationID() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.conversationID
+}
+
 // Stop terminates the agent session
 func (s *Session) Stop() error {
 	s.mu.Lock()
@@ -230,6 +276,12 @@ func (s *Session) Stop() error {
 
 // SendMessage sends a user message to the agent
 func (s *Session) SendMessage(content string, authConfig AuthConfig) error {
+	// Handle slash commands before anything else
+	trimmed := strings.TrimSpace(content)
+	if strings.HasPrefix(trimmed, "/") {
+		return s.handleSlashCommand(trimmed, authConfig)
+	}
+
 	s.mu.Lock()
 	if s.Status == SessionStatusStopped || s.Status == SessionStatusError {
 		s.mu.Unlock()
@@ -292,6 +344,108 @@ func (s *Session) SendMessage(content string, authConfig AuthConfig) error {
 	return nil
 }
 
+// handleSlashCommand processes CLI-style slash commands.
+func (s *Session) handleSlashCommand(cmd string, authConfig AuthConfig) error {
+	parts := strings.SplitN(cmd, " ", 2)
+	command := strings.ToLower(parts[0])
+
+	switch command {
+	case "/clear":
+		s.ClearConversation()
+		return nil
+
+	case "/model":
+		if len(parts) < 2 {
+			s.addSystemMessage("Usage: /model <model-name> (e.g. sonnet, opus, haiku)")
+			return nil
+		}
+		model := strings.TrimSpace(parts[1])
+		s.SetModel(model)
+		s.addSystemMessage(fmt.Sprintf("Model changed to: %s", model))
+		return nil
+
+	case "/system":
+		if len(parts) < 2 {
+			current := s.GetSystemPrompt()
+			if current == "" {
+				s.addSystemMessage("No system prompt set. Usage: /system <prompt>")
+			} else {
+				s.addSystemMessage(fmt.Sprintf("Current system prompt: %s", current))
+			}
+			return nil
+		}
+		prompt := strings.TrimSpace(parts[1])
+		s.SetSystemPrompt(prompt)
+		s.addSystemMessage(fmt.Sprintf("System prompt set: %s", prompt))
+		return nil
+
+	case "/status":
+		s.mu.RLock()
+		convID := s.conversationID
+		model := s.Model
+		effort := s.ReasoningEffort
+		projectPath := s.ProjectPath
+		msgCount := len(s.Messages)
+		sysPrompt := s.systemPrompt
+		s.mu.RUnlock()
+
+		status := fmt.Sprintf("Project: %s\nModel: %s\nEffort: %s\nMessages: %d", projectPath, model, effort, msgCount)
+		if convID != "" {
+			status += fmt.Sprintf("\nConversation: %s", convID)
+		}
+		if sysPrompt != "" {
+			status += fmt.Sprintf("\nSystem prompt: %s", sysPrompt)
+		}
+		s.addSystemMessage(status)
+		return nil
+
+	case "/help":
+		s.addSystemMessage(`Available commands:
+/clear    — Reset conversation (start fresh)
+/model    — Change model (sonnet, opus, haiku)
+/system   — Set or view system prompt
+/status   — Show session info
+/help     — Show this help`)
+		return nil
+
+	default:
+		// Unknown slash command — send to Claude as-is (it may be a Claude CLI command)
+		s.mu.Lock()
+		if s.Status == SessionStatusStopped || s.Status == SessionStatusError {
+			s.mu.Unlock()
+			return fmt.Errorf("session not available")
+		}
+		if s.ctx == nil {
+			s.mu.Unlock()
+			return fmt.Errorf("session context not initialized")
+		}
+
+		msg := Message{
+			ID:        fmt.Sprintf("msg-%d", time.Now().UnixNano()),
+			Role:      "user",
+			Content:   cmd,
+			Timestamp: time.Now(),
+		}
+		s.Messages = append(s.Messages, msg)
+		s.UpdatedAt = time.Now()
+
+		messageHandler := s.onMessage
+		statusHandler := s.onStatus
+		s.Status = SessionStatusRunning
+		s.mu.Unlock()
+
+		if messageHandler != nil {
+			messageHandler(msg)
+		}
+		if statusHandler != nil {
+			statusHandler(SessionStatusRunning)
+		}
+
+		go s.runClaudeCommand(cmd, authConfig)
+		return nil
+	}
+}
+
 // runClaudeCommand executes the Claude CLI with the given prompt
 func (s *Session) runClaudeCommand(prompt string, authConfig AuthConfig) {
 	// Inject system prompt for firefighter mode
@@ -322,6 +476,11 @@ func (s *Session) runClaudeCommand(prompt string, authConfig AuthConfig) {
 		"-p", actualPrompt,
 		"--output-format", "stream-json",
 		"--verbose",
+	}
+
+	// Add system prompt if set (Claude CLI -s flag)
+	if s.systemPrompt != "" {
+		args = append(args, "--system-prompt", s.systemPrompt)
 	}
 
 	// Add conversation resume if we have one

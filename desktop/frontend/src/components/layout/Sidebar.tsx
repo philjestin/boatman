@@ -17,6 +17,7 @@ import {
 import type { Project, AgentSession, SessionStatus } from '../../types';
 import { FirefighterBadge } from '../firefighter/FirefighterBadge';
 import { BoatmanModeBadge } from '../boatmanmode/BoatmanModeBadge';
+import { ClaudeBadge } from '../chat/ClaudeBadge';
 
 interface SidebarProps {
   projects: Project[];
@@ -194,6 +195,9 @@ export function Sidebar({
                           <Clock className="w-3 h-3" />
                           {new Date(session.createdAt).toLocaleTimeString()}
                         </p>
+                        {(!session.mode || session.mode === 'standard' || session.mode === '') && (
+                          <ClaudeBadge className="flex-shrink-0" />
+                        )}
                         {session.mode === 'firefighter' && (
                           <FirefighterBadge showLabel={false} className="flex-shrink-0" />
                         )}

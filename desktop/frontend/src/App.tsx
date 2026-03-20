@@ -15,17 +15,18 @@ import { FirefighterMonitor } from './components/firefighter/FirefighterMonitor'
 import { FirefighterView } from './components/firefighter/FirefighterView';
 import { BoatmanModeDialog } from './components/boatmanmode/BoatmanModeDialog';
 import { HarnessView } from './components/harness/HarnessView';
+import { BrainView } from './components/brain/BrainView';
 import { useAgent } from './hooks/useAgent';
 import { useProject } from './hooks/useProject';
 import { usePreferences } from './hooks/usePreferences';
 import { useSearch } from './hooks/useSearch';
 import { useDiff } from './hooks/useDiff';
 import { useStore } from './store';
-import { ListTodo, MessageSquare, FileCode, Hammer } from 'lucide-react';
+import { ListTodo, MessageSquare, FileCode, Hammer, Brain } from 'lucide-react';
 import { ListAgentSessions, SetSessionFavorite, AddSessionTag, RemoveSessionTag } from '../wailsjs/go/main/App';
 import type { Task } from './types';
 
-type TabView = 'chat' | 'tasks' | 'diff' | 'harness';
+type TabView = 'chat' | 'tasks' | 'diff' | 'harness' | 'brain';
 
 function App() {
   const [activeTab, setActiveTab] = useState<TabView>('chat');
@@ -406,7 +407,7 @@ function App() {
 
         {/* Main Content */}
         <MainPanel
-          isEmpty={!hasActiveSession && activeTab !== 'harness'}
+          isEmpty={!hasActiveSession && activeTab !== 'harness' && activeTab !== 'brain'}
           onNewSession={handleNewSession}
           onOpenProject={handleOpenProject}
         >
@@ -470,6 +471,17 @@ function App() {
               <Hammer className="w-4 h-4" />
               Harness
             </button>
+            <button
+              onClick={() => setActiveTab('brain')}
+              className={`flex items-center gap-2 px-4 py-3 text-sm transition-colors border-b-2 ${
+                activeTab === 'brain'
+                  ? 'border-purple-500 text-slate-100'
+                  : 'border-transparent text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Brain className="w-4 h-4" />
+              Brain
+            </button>
           </div>
 
           {/* Tab Content */}
@@ -503,6 +515,8 @@ function App() {
                 reasoningEffort={activeSession.reasoningEffort}
                 onModelChange={handleModelChange}
                 onReasoningEffortChange={handleReasoningEffortChange}
+                projectPath={activeSession.projectPath}
+                mode={activeSession.mode}
               />
             )}
             {hasActiveSession && activeTab === 'tasks' && (
@@ -524,6 +538,7 @@ function App() {
               />
             )}
             {activeTab === 'harness' && <HarnessView />}
+            {activeTab === 'brain' && <BrainView />}
           </div>
         </MainPanel>
       </div>

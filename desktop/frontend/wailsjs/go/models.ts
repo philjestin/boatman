@@ -769,3 +769,210 @@ export namespace project {
 
 }
 
+export namespace services {
+	
+	export class AutoDistillResult {
+	    domain: string;
+	    brainId: string;
+	    path: string;
+	    signals: number;
+	    usedLlm: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new AutoDistillResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.domain = source["domain"];
+	        this.brainId = source["brainId"];
+	        this.path = source["path"];
+	        this.signals = source["signals"];
+	        this.usedLlm = source["usedLlm"];
+	    }
+	}
+	export class BrainReference {
+	    path: string;
+	    description: string;
+	    checksum: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new BrainReference(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.path = source["path"];
+	        this.description = source["description"];
+	        this.checksum = source["checksum"];
+	    }
+	}
+	export class BrainSection {
+	    title: string;
+	    content: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new BrainSection(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.title = source["title"];
+	        this.content = source["content"];
+	    }
+	}
+	export class BrainDetail {
+	    id: string;
+	    name: string;
+	    description: string;
+	    confidence: number;
+	    version: number;
+	    lastUpdated: string;
+	    keywords: string[];
+	    entities: string[];
+	    filePatterns: string[];
+	    sections: BrainSection[];
+	    references: BrainReference[];
+	
+	    static createFrom(source: any = {}) {
+	        return new BrainDetail(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.description = source["description"];
+	        this.confidence = source["confidence"];
+	        this.version = source["version"];
+	        this.lastUpdated = source["lastUpdated"];
+	        this.keywords = source["keywords"];
+	        this.entities = source["entities"];
+	        this.filePatterns = source["filePatterns"];
+	        this.sections = this.convertValues(source["sections"], BrainSection);
+	        this.references = this.convertValues(source["references"], BrainReference);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class BrainEntry {
+	    id: string;
+	    name: string;
+	    description: string;
+	    confidence: number;
+	    version: number;
+	    lastUpdated: string;
+	    keywords: string[];
+	    entities: string[];
+	    filePatterns: string[];
+	
+	    static createFrom(source: any = {}) {
+	        return new BrainEntry(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.description = source["description"];
+	        this.confidence = source["confidence"];
+	        this.version = source["version"];
+	        this.lastUpdated = source["lastUpdated"];
+	        this.keywords = source["keywords"];
+	        this.entities = source["entities"];
+	        this.filePatterns = source["filePatterns"];
+	    }
+	}
+	
+	
+	export class StaleRefResult {
+	    path: string;
+	    reason: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new StaleRefResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.path = source["path"];
+	        this.reason = source["reason"];
+	    }
+	}
+	export class BrainValidationResult {
+	    valid: boolean;
+	    errors: string[];
+	    stale: StaleRefResult[];
+	
+	    static createFrom(source: any = {}) {
+	        return new BrainValidationResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.valid = source["valid"];
+	        this.errors = source["errors"];
+	        this.stale = this.convertValues(source["stale"], StaleRefResult);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class SignalEntry {
+	    type: string;
+	    domain: string;
+	    details: string;
+	    filePaths: string[];
+	    count: number;
+	    firstSeen: string;
+	    lastSeen: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new SignalEntry(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.type = source["type"];
+	        this.domain = source["domain"];
+	        this.details = source["details"];
+	        this.filePaths = source["filePaths"];
+	        this.count = source["count"];
+	        this.firstSeen = source["firstSeen"];
+	        this.lastSeen = source["lastSeen"];
+	    }
+	}
+
+}
+

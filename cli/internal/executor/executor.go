@@ -25,6 +25,19 @@ import (
 type Executor struct {
 	client       *claude.Client
 	worktreePath string
+	brainContext string // pre-rendered brain handoff content
+}
+
+// BrainHandoffer is the interface for brain handoff content.
+type BrainHandoffer interface {
+	ForTokenBudget(maxTokens int) string
+}
+
+// SetBrainHandoff sets domain knowledge context to prepend to the system prompt.
+func (e *Executor) SetBrainHandoff(h BrainHandoffer, tokenBudget int) {
+	if h != nil && tokenBudget > 0 {
+		e.brainContext = h.ForTokenBudget(tokenBudget)
+	}
 }
 
 // ExecutionResult represents the outcome of task execution.
@@ -51,6 +64,7 @@ func New(worktreePath string, cfg *config.Config) *Executor {
 	if cfg.Claude.Models.Executor != "" {
 		client.Model = cfg.Claude.Models.Executor
 	}
+	client.Effort = cfg.Claude.Effort
 	client.EnablePromptCaching = cfg.Claude.EnablePromptCaching
 
 	// Skip permissions so Claude doesn't prompt for tool approval interactively.
@@ -86,6 +100,7 @@ func NewRefactorExecutor(worktreePath string, iteration int, cfg *config.Config)
 	if cfg.Claude.Models.Refactor != "" {
 		client.Model = cfg.Claude.Models.Refactor
 	}
+	client.Effort = cfg.Claude.Effort
 	client.EnablePromptCaching = cfg.Claude.EnablePromptCaching
 
 	// Skip permissions so Claude doesn't prompt for tool approval interactively
@@ -144,6 +159,10 @@ Do not ask for permission - just implement the solution immediately.
 
 You have been given a plan from a planning agent. Follow the approach and read the key files first.
 If implementation already exists, add tests or make improvements as needed.`
+
+	if e.brainContext != "" {
+		systemPrompt = e.brainContext + "\n\n---\n\n" + systemPrompt
+	}
 
 	if projectRules != "" {
 		systemPrompt = projectRules + "\n\n---\n\n" + systemPrompt

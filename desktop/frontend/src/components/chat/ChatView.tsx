@@ -2,6 +2,7 @@ import { useRef, useEffect, useCallback, useState } from 'react';
 import { MessageBubble } from './MessageBubble';
 import { InputArea } from './InputArea';
 import { AgentLogsPanel } from './AgentLogsPanel';
+import { ChatHeader } from './ChatHeader';
 import { Loader2, StopCircle, ArrowDown } from 'lucide-react';
 import type { Message, SessionStatus } from '../../types';
 
@@ -18,6 +19,8 @@ interface ChatViewProps {
   reasoningEffort?: string;
   onModelChange?: (model: string) => void;
   onReasoningEffortChange?: (effort: string) => void;
+  projectPath?: string;
+  mode?: string;
 }
 
 export function ChatView({
@@ -33,6 +36,8 @@ export function ChatView({
   reasoningEffort,
   onModelChange,
   onReasoningEffortChange,
+  projectPath,
+  mode,
 }: ChatViewProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -85,6 +90,17 @@ export function ChatView({
 
   return (
     <div className="flex flex-col h-full">
+      {/* Claude Chat Header */}
+      {projectPath && (
+        <ChatHeader
+          projectPath={projectPath}
+          model={model}
+          reasoningEffort={reasoningEffort}
+          mode={mode}
+          messageCount={messages.length}
+        />
+      )}
+
       {/* Messages */}
       <div className="flex-1 overflow-y-auto relative" ref={scrollContainerRef} onScroll={checkIfNearBottom}>
         {messages.length === 0 ? (
@@ -93,9 +109,16 @@ export function ChatView({
               <h3 className="text-lg font-medium text-slate-200 mb-2">
                 Start a conversation
               </h3>
-              <p className="text-slate-400 text-sm max-w-md">
+              <p className="text-slate-400 text-sm max-w-md mb-3">
                 Ask Claude to help you with your code. You can ask questions, request changes,
                 or get explanations about your project.
+              </p>
+              <p className="text-slate-500 text-xs max-w-md">
+                Type <code className="px-1 py-0.5 bg-slate-800 rounded text-slate-400">/help</code> for commands
+                {' '}&bull;{' '}
+                <code className="px-1 py-0.5 bg-slate-800 rounded text-slate-400">/clear</code> to reset
+                {' '}&bull;{' '}
+                <code className="px-1 py-0.5 bg-slate-800 rounded text-slate-400">/model</code> to switch models
               </p>
             </div>
           </div>
@@ -171,7 +194,7 @@ export function ChatView({
             ? 'Waiting for approval...'
             : status === 'running'
             ? 'Claude is thinking...'
-            : 'Type a message...'
+            : 'Message Claude... (type /help for commands)'
         }
         model={model}
         reasoningEffort={reasoningEffort}

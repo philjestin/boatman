@@ -45,8 +45,12 @@ type Client struct {
 	// Debug enables debug output
 	Debug bool
 
-	// Model specifies which Claude model to use (e.g., "claude-sonnet-4-5", "claude-haiku-4")
+	// Model specifies which Claude model to use (e.g., "claude-opus-4-6", "claude-sonnet-4-6")
 	Model string
+
+	// Effort sets the reasoning effort level ("low", "medium", "high")
+	// Empty = CLI default. Only used with models that support extended thinking.
+	Effort string
 
 	// EnablePromptCaching enables prompt caching to reduce costs
 	EnablePromptCaching bool
@@ -252,6 +256,9 @@ func (c *Client) doStreamingRequest(ctx context.Context, systemPrompt, userPromp
 	if c.Model != "" {
 		args = append(args, "--model", c.Model)
 	}
+	if c.Effort != "" {
+		args = append(args, "--effort", c.Effort)
+	}
 
 	// Note: Prompt caching is automatically handled by Claude CLI when using system prompts
 	// No explicit flag needed in current version (2.1.39+)
@@ -436,6 +443,9 @@ func (c *Client) messageNonStreaming(ctx context.Context, systemPrompt, userProm
 	if c.Model != "" {
 		args = append(args, "--model", c.Model)
 	}
+	if c.Effort != "" {
+		args = append(args, "--effort", c.Effort)
+	}
 
 	// Note: Prompt caching is automatically handled by Claude CLI when using system prompts
 	// No explicit flag needed in current version (2.1.39+)
@@ -486,6 +496,9 @@ func (c *Client) MessageWithFiles(ctx context.Context, systemPrompt, userPrompt 
 	// Add model selection if specified
 	if c.Model != "" {
 		args = append(args, "--model", c.Model)
+	}
+	if c.Effort != "" {
+		args = append(args, "--effort", c.Effort)
 	}
 
 	// Note: Prompt caching is automatically handled by Claude CLI when using system prompts

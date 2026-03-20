@@ -16,6 +16,7 @@ import (
 	"boatman/harnessui"
 	"boatman/mcp"
 	"boatman/project"
+	"boatman/services"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -27,6 +28,7 @@ type App struct {
 	agentManager   *agent.Manager
 	projectManager *project.ProjectManager
 	mcpManager     *mcp.Manager
+	brainService   *services.BrainService
 	harnessRuns    map[string]context.CancelFunc
 	harnessMu      sync.Mutex
 }
@@ -53,6 +55,7 @@ func NewApp() *App {
 		agentManager:   agent.NewManager(),
 		projectManager: pm,
 		mcpManager:     mcpMgr,
+		brainService:   services.NewBrainService(),
 		harnessRuns:    make(map[string]context.CancelFunc),
 	}
 }
@@ -77,6 +80,9 @@ func (a *App) startup(ctx context.Context) {
 	// Set config getter for memory management
 	a.agentManager.SetConfigGetter(a)
 
+	// Initialize brain service
+	a.brainService.SetContext(ctx)
+
 	// Load persisted sessions from disk
 	if err := a.agentManager.LoadPersistedSessions(); err != nil {
 		fmt.Printf("Warning: failed to load persisted sessions: %v\n", err)
@@ -86,6 +92,21 @@ func (a *App) startup(ctx context.Context) {
 	go func() {
 		if count, err := a.agentManager.CleanupSessions(); err == nil && count > 0 {
 			runtime.LogInfof(ctx, "Cleaned up %d old sessions", count)
+		}
+	}()
+
+	// Run periodic brain auto-distillation on startup
+	go func() {
+		if !services.ShouldAutoDistill() {
+			return
+		}
+		results, err := a.brainService.AutoDistillBrains()
+		if err != nil {
+			runtime.LogWarningf(ctx, "Auto-distillation failed: %v", err)
+			return
+		}
+		if len(results) > 0 {
+			runtime.LogInfof(ctx, "Auto-generated %d brain(s) from signals", len(results))
 		}
 	}()
 }
@@ -1178,4 +1199,103 @@ func (a *App) SelectHarnessFolder() (string, error) {
 	return runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{
 		Title: "Select Harness Output Folder",
 	})
+}
+
+// =============================================================================
+// Brain Methods
+// =============================================================================
+
+// ListBrains returns all available brains for the active project.
+func (a *App) ListBrains() ([]services.BrainEntry, error) {
+	return a.brainService.ListBrains()
+}
+
+// GetBrain loads a specific brain by ID with full content.
+func (a *App) GetBrain(id string) (*services.BrainDetail, error) {
+	return a.brainService.GetBrain(id)
+}
+
+// MatchBrains finds brains matching the given context.
+func (a *App) MatchBrains(keywords []string, filePaths []string, entities []string) ([]services.BrainEntry, error) {
+	return a.brainService.MatchBrains(keywords, filePaths, entities)
+}
+
+// ValidateBrain validates a brain by ID.
+func (a *App) ValidateBrain(id string) (*services.BrainValidationResult, error) {
+	return a.brainService.ValidateBrain(id)
+}
+
+// ListSignals returns all recorded knowledge gap signals.
+func (a *App) ListSignals() ([]services.SignalEntry, error) {
+	return a.brainService.ListSignals()
+}
+
+// GetSignalsByDomain returns signals for a specific domain.
+func (a *App) GetSignalsByDomain(domain string) ([]services.SignalEntry, error) {
+	return a.brainService.GetSignalsByDomain(domain)
+}
+
+// GetBrainDirs returns the directories being scanned for brains.
+func (a *App) GetBrainDirs() []string {
+	return a.brainService.GetBrainDirs()
+}
+
+// SetBrainProjectPath sets the project path for brain resolution.
+func (a *App) SetBrainProjectPath(path string) {
+	a.brainService.SetProjectPath(path)
+}
+
+// =============================================================================
+// Claude Chat Methods
+// =============================================================================
+
+// SetSessionSystemPrompt sets the system prompt for a session.
+func (a *App) SetSessionSystemPrompt(sessionID, prompt string) error {
+	session, err := a.agentManager.GetSession(sessionID)
+	if err != nil {
+		return err
+	}
+	session.SetSystemPrompt(prompt)
+	return nil
+}
+
+// GetSessionSystemPrompt returns the system prompt for a session.
+func (a *App) GetSessionSystemPrompt(sessionID string) (string, error) {
+	session, err := a.agentManager.GetSession(sessionID)
+	if err != nil {
+		return "", err
+	}
+	return session.GetSystemPrompt(), nil
+}
+
+// ClearSessionConversation clears the conversation for a session.
+func (a *App) ClearSessionConversation(sessionID string) error {
+	session, err := a.agentManager.GetSession(sessionID)
+	if err != nil {
+		return err
+	}
+	session.ClearConversation()
+	return nil
+}
+
+// GetSessionInfo returns session metadata for display.
+func (a *App) GetSessionInfo(sessionID string) (map[string]interface{}, error) {
+	session, err := a.agentManager.GetSession(sessionID)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]interface{}{
+		"projectPath":    session.ProjectPath,
+		"model":          session.Model,
+		"reasoningEffort": session.ReasoningEffort,
+		"conversationId": session.GetConversationID(),
+		"systemPrompt":   session.GetSystemPrompt(),
+		"messageCount":   len(session.GetMessages()),
+		"mode":           session.Mode,
+	}, nil
+}
+
+// AutoDistillBrains triggers auto-distillation of signals into brain files.
+func (a *App) AutoDistillBrains() ([]services.AutoDistillResult, error) {
+	return a.brainService.AutoDistillBrains()
 }

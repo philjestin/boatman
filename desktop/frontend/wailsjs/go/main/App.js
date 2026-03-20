@@ -14,12 +14,20 @@ export function ApproveAgentAction(arg1, arg2) {
   return window['go']['main']['App']['ApproveAgentAction'](arg1, arg2);
 }
 
+export function AutoDistillBrains() {
+  return window['go']['main']['App']['AutoDistillBrains']();
+}
+
 export function CheckClaudeCLI() {
   return window['go']['main']['App']['CheckClaudeCLI']();
 }
 
 export function CleanupOldSessions() {
   return window['go']['main']['App']['CleanupOldSessions']();
+}
+
+export function ClearSessionConversation(arg1) {
+  return window['go']['main']['App']['ClearSessionConversation'](arg1);
 }
 
 export function CompleteOnboarding() {
@@ -102,6 +110,14 @@ export function GetBoatmanModeSessionConfig(arg1) {
   return window['go']['main']['App']['GetBoatmanModeSessionConfig'](arg1);
 }
 
+export function GetBrain(arg1) {
+  return window['go']['main']['App']['GetBrain'](arg1);
+}
+
+export function GetBrainDirs() {
+  return window['go']['main']['App']['GetBrainDirs']();
+}
+
 export function GetClaudeCLIVersion() {
   return window['go']['main']['App']['GetClaudeCLIVersion']();
 }
@@ -170,12 +186,24 @@ export function GetRecentProjects(arg1) {
   return window['go']['main']['App']['GetRecentProjects'](arg1);
 }
 
+export function GetSessionInfo(arg1) {
+  return window['go']['main']['App']['GetSessionInfo'](arg1);
+}
+
 export function GetSessionStats() {
   return window['go']['main']['App']['GetSessionStats']();
 }
 
+export function GetSessionSystemPrompt(arg1) {
+  return window['go']['main']['App']['GetSessionSystemPrompt'](arg1);
+}
+
 export function GetSideBySideDiff(arg1) {
   return window['go']['main']['App']['GetSideBySideDiff'](arg1);
+}
+
+export function GetSignalsByDomain(arg1) {
+  return window['go']['main']['App']['GetSignalsByDomain'](arg1);
 }
 
 export function GetWorkspaceInfo(arg1) {
@@ -222,12 +250,24 @@ export function ListAgentSessions() {
   return window['go']['main']['App']['ListAgentSessions']();
 }
 
+export function ListBrains() {
+  return window['go']['main']['App']['ListBrains']();
+}
+
 export function ListHarnesses() {
   return window['go']['main']['App']['ListHarnesses']();
 }
 
 export function ListProjects() {
   return window['go']['main']['App']['ListProjects']();
+}
+
+export function ListSignals() {
+  return window['go']['main']['App']['ListSignals']();
+}
+
+export function MatchBrains(arg1, arg2, arg3) {
+  return window['go']['main']['App']['MatchBrains'](arg1, arg2, arg3);
 }
 
 export function OktaLogin(arg1, arg2, arg3) {
@@ -294,6 +334,10 @@ export function SendNotification(arg1, arg2) {
   return window['go']['main']['App']['SendNotification'](arg1, arg2);
 }
 
+export function SetBrainProjectPath(arg1) {
+  return window['go']['main']['App']['SetBrainProjectPath'](arg1);
+}
+
 export function SetPreferences(arg1) {
   return window['go']['main']['App']['SetPreferences'](arg1);
 }
@@ -308,6 +352,10 @@ export function SetSessionModel(arg1, arg2) {
 
 export function SetSessionReasoningEffort(arg1, arg2) {
   return window['go']['main']['App']['SetSessionReasoningEffort'](arg1, arg2);
+}
+
+export function SetSessionSystemPrompt(arg1, arg2) {
+  return window['go']['main']['App']['SetSessionSystemPrompt'](arg1, arg2);
 }
 
 export function StartAgentSession(arg1) {
@@ -336,4 +384,8 @@ export function StreamBoatmanModeExecution(arg1, arg2, arg3, arg4, arg5) {
 
 export function UpdateMCPServer(arg1) {
   return window['go']['main']['App']['UpdateMCPServer'](arg1);
+}
+
+export function ValidateBrain(arg1) {
+  return window['go']['main']['App']['ValidateBrain'](arg1);
 }

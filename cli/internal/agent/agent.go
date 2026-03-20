@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/philjestin/boatmanmode/internal/brain"
 	"github.com/philjestin/boatmanmode/internal/config"
 	"github.com/philjestin/boatmanmode/internal/contextpin"
 	"github.com/philjestin/boatmanmode/internal/coordinator"
@@ -53,6 +54,8 @@ type workContext struct {
 	branchName   string
 	pinner       *contextpin.ContextPinner
 	plan         *planner.Plan
+	brainHandoff *brain.BrainHandoff
+	collector    *brain.Collector
 	exec         *executor.Executor
 	execResult   *executor.ExecutionResult
 	testResult   *testrunner.TestResult
@@ -94,7 +97,16 @@ func (a *Agent) Work(ctx context.Context, t task.Task) (*WorkResult, error) {
 		return nil, err
 	}
 
-	// Step 3: Planning
+	// Initialize brain collector for signal detection
+	if a.config.Brain.Enabled {
+		collector, err := brain.NewCollector(wc.worktree.Path)
+		if err == nil {
+			wc.collector = collector
+			defer collector.Flush()
+		}
+	}
+
+	// Step 3: Planning (also loads matching brains)
 	if err := a.stepPlanning(ctx, wc); err != nil {
 		return nil, err
 	}
@@ -117,6 +129,24 @@ func (a *Agent) Work(ctx context.Context, t task.Task) (*WorkResult, error) {
 	// Step 7: Review & refactor loop
 	if err := a.stepRefactorLoop(ctx, wc); err != nil {
 		return nil, err
+	}
+
+	// Post-workflow: auto-distill brains from accumulated signals
+	if a.config.Brain.Enabled && brain.ShouldRunPeriodicDistill(24*time.Hour) {
+		distiller := brain.NewAutoDistiller(wc.worktree.Path, a.config)
+		results, err := distiller.DistillAll(ctx)
+		if err != nil {
+			fmt.Printf("   ⚠️  Auto-distillation error: %v\n", err)
+		} else if len(results) > 0 {
+			brain.RecordDistilled()
+			for _, r := range results {
+				method := "template"
+				if r.UsedLLM {
+					method = "LLM"
+				}
+				fmt.Printf("   🧠 Auto-generated brain: %s (%s, %d signals)\n", r.BrainID, method, r.Signals)
+			}
+		}
 	}
 
 	// Release context pins
@@ -246,6 +276,25 @@ func (a *Agent) stepPlanning(ctx context.Context, wc *workContext) error {
 	}()
 
 	wg.Wait()
+
+	// Load matching brains based on task content and plan
+	if a.config.Brain.Enabled {
+		keywords := brain.ExtractKeywords(wc.task.GetTitle() + " " + wc.task.GetDescription())
+		var filePaths []string
+		if wc.plan != nil {
+			filePaths = wc.plan.RelevantFiles
+		}
+
+		injector := brain.NewInjector(wc.worktree.Path, a.config.Brain.MaxBrains)
+		brainHandoff, err := injector.ForContext(keywords, filePaths, nil)
+		if err != nil {
+			fmt.Printf("   ⚠️  Brain loading failed: %v\n", err)
+		} else if brainHandoff != nil {
+			wc.brainHandoff = brainHandoff
+			fmt.Printf("   🧠 Loaded brain context: %s\n", brainHandoff.Concise())
+		}
+	}
+
 	fmt.Println()
 
 	return nil
@@ -306,6 +355,12 @@ func (a *Agent) stepExecute(ctx context.Context, wc *workContext) error {
 	printStep(5, 9, "Executing development task")
 
 	wc.exec = executor.New(wc.worktree.Path, a.config)
+
+	// Inject brain context if available
+	if wc.brainHandoff != nil {
+		wc.exec.SetBrainHandoff(wc.brainHandoff, a.config.Brain.TokenBudget)
+	}
+
 	result, usage, err := wc.exec.ExecuteWithPlan(ctx, wc.task, wc.plan)
 	if err != nil {
 		events.AgentCompleted(agentID, "Execution", "failed")
@@ -464,6 +519,14 @@ func (a *Agent) stepRefactorLoop(ctx context.Context, wc *workContext) error {
 			}
 		}
 
+		// Collect review failure signals
+		if wc.collector != nil && wc.reviewResult != nil && !wc.reviewResult.Passed {
+			wc.collector.OnReviewFailure(
+				wc.reviewResult.GetIssueDescriptions(),
+				wc.execResult.FilesChanged,
+			)
+		}
+
 		if wc.iterations >= a.config.MaxIterations {
 			fmt.Println("   ⚠️  Maximum iterations reached without passing review")
 			break
@@ -472,6 +535,15 @@ func (a *Agent) stepRefactorLoop(ctx context.Context, wc *workContext) error {
 		// Refactor based on feedback
 		if err := a.doRefactor(ctx, wc, previousDiff); err != nil {
 			return err
+		}
+
+		// Collect refactor signals
+		if wc.collector != nil {
+			wc.collector.OnRefactorIteration(
+				wc.iterations,
+				wc.reviewResult.GetIssueDescriptions(),
+				wc.execResult.FilesChanged,
+			)
 		}
 	}
 
