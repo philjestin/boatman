@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/philjestin/boatmanmode/internal/brain"
 	"github.com/philjestin/boatmanmode/internal/config"
 	"github.com/philjestin/boatmanmode/internal/contextpin"
 	"github.com/philjestin/boatmanmode/internal/coordinator"
@@ -53,6 +54,7 @@ type workContext struct {
 	branchName   string
 	pinner       *contextpin.ContextPinner
 	plan         *planner.Plan
+	brains       []*brain.Brain
 	exec         *executor.Executor
 	execResult   *executor.ExecutionResult
 	testResult   *testrunner.TestResult
@@ -94,9 +96,17 @@ func (a *Agent) Work(ctx context.Context, t task.Task) (*WorkResult, error) {
 		return nil, err
 	}
 
+	// Load domain brains (initial match on title/description/labels)
+	a.loadBrains(wc, nil)
+
 	// Step 3: Planning
 	if err := a.stepPlanning(ctx, wc); err != nil {
 		return nil, err
+	}
+
+	// Re-match brains with planned file paths for broader coverage
+	if wc.plan != nil && len(wc.plan.RelevantFiles) > 0 {
+		a.loadBrains(wc, wc.plan.RelevantFiles)
 	}
 
 	// Step 4: Pre-flight validation
@@ -138,6 +148,54 @@ func (a *Agent) Work(ctx context.Context, t task.Task) (*WorkResult, error) {
 
 	// Step 9: Create PR
 	return a.stepCreatePR(ctx, wc)
+}
+
+// loadBrains discovers and loads domain brains matching the current task.
+// filePaths is optional — pass nil for initial matching, or plan.RelevantFiles for re-matching.
+func (a *Agent) loadBrains(wc *workContext, filePaths []string) {
+	repoPath, err := os.Getwd()
+	if err != nil {
+		return
+	}
+
+	loader := brain.NewLoader(repoPath)
+	matched, err := loader.Match(
+		wc.task.GetTitle(),
+		wc.task.GetDescription(),
+		wc.task.GetLabels(),
+		filePaths,
+	)
+	if err != nil || len(matched) == 0 {
+		return
+	}
+
+	// Deduplicate against already-loaded brains
+	existing := make(map[string]bool)
+	for _, b := range wc.brains {
+		existing[b.Name] = true
+	}
+
+	var newBrains []*brain.Brain
+	for _, b := range matched {
+		if !existing[b.Name] {
+			newBrains = append(newBrains, b)
+			existing[b.Name] = true
+		}
+	}
+
+	if len(newBrains) == 0 {
+		return
+	}
+
+	wc.brains = append(wc.brains, newBrains...)
+	names := make([]string, len(newBrains))
+	for i, b := range newBrains {
+		names[i] = b.Meta.Domain
+		if names[i] == "" {
+			names[i] = b.Name
+		}
+	}
+	fmt.Printf("   🧠 Domain brains loaded: %s\n", strings.Join(names, ", "))
 }
 
 // stepPrepareTask displays task information (Step 1).
@@ -225,6 +283,9 @@ func (a *Agent) stepPlanning(ctx context.Context, wc *workContext) error {
 	go func() {
 		defer wg.Done()
 		planAgent := planner.New(wc.worktree.Path, a.config)
+		if len(wc.brains) > 0 {
+			planAgent.SetBrainContext(brain.MergeForPhase(wc.brains, "planning"))
+		}
 		plan, usage, err := planAgent.Analyze(ctx, wc.task)
 		if err != nil {
 			fmt.Printf("   ⚠️  Planning failed: %v (continuing without plan)\n", err)
@@ -306,6 +367,9 @@ func (a *Agent) stepExecute(ctx context.Context, wc *workContext) error {
 	printStep(5, 9, "Executing development task")
 
 	wc.exec = executor.New(wc.worktree.Path, a.config)
+	if len(wc.brains) > 0 {
+		wc.exec.SetBrainContext(brain.MergeForPhase(wc.brains, "execution"))
+	}
 	result, usage, err := wc.exec.ExecuteWithPlan(ctx, wc.task, wc.plan)
 	if err != nil {
 		events.AgentCompleted(agentID, "Execution", "failed")
@@ -380,8 +444,12 @@ func (a *Agent) stepTestAndReview(ctx context.Context, wc *workContext) error {
 		defer wg.Done()
 		events.AgentStarted(reviewAgentID, "Code Review #1", "Reviewing code quality and best practices")
 		reviewHandoff := handoff.NewReviewHandoff(wc.task, initialDiff, wc.execResult.FilesChanged)
+		reviewContext := reviewHandoff.Concise()
+		if len(wc.brains) > 0 {
+			reviewContext = brain.MergeForPhase(wc.brains, "review") + "\n\n---\n\n" + reviewContext
+		}
 		reviewer := scottbott.NewWithSkill(wc.worktree.Path, 1, a.config.ReviewSkill, a.config)
-		reviewResult, usage, _ := reviewer.Review(ctx, reviewHandoff.Concise(), initialDiff)
+		reviewResult, usage, _ := reviewer.Review(ctx, reviewContext, initialDiff)
 		wc.reviewResult = reviewResult
 		if usage != nil {
 			wc.costTracker.Add("Review #1", *usage)
@@ -487,8 +555,12 @@ func (a *Agent) doReview(ctx context.Context, wc *workContext, previousDiff *str
 	fmt.Printf("   📏 Diff size: %d lines\n", strings.Count(diff, "\n"))
 
 	reviewHandoff := handoff.NewReviewHandoff(wc.task, diff, wc.execResult.FilesChanged)
+	reviewContext := reviewHandoff.ForTokenBudget(handoff.DefaultBudget.Context)
+	if len(wc.brains) > 0 {
+		reviewContext = brain.MergeForPhase(wc.brains, "review") + "\n\n---\n\n" + reviewContext
+	}
 	reviewer := scottbott.NewWithSkill(wc.worktree.Path, wc.iterations, a.config.ReviewSkill, a.config)
-	reviewResult, usage, err := reviewer.Review(ctx, reviewHandoff.ForTokenBudget(handoff.DefaultBudget.Context), diff)
+	reviewResult, usage, err := reviewer.Review(ctx, reviewContext, diff)
 	if err != nil {
 		return fmt.Errorf("review failed: %w", err)
 	}

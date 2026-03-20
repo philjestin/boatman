@@ -25,6 +25,7 @@ import (
 type Executor struct {
 	client       *claude.Client
 	worktreePath string
+	brainContext string
 }
 
 // ExecutionResult represents the outcome of task execution.
@@ -103,6 +104,11 @@ func NewRefactorExecutor(worktreePath string, iteration int, cfg *config.Config)
 	}
 }
 
+// SetBrainContext sets domain brain context for the execution phase.
+func (e *Executor) SetBrainContext(brainContext string) {
+	e.brainContext = brainContext
+}
+
 // Execute performs the development task.
 func (e *Executor) Execute(ctx context.Context, t task.Task) (*ExecutionResult, *cost.Usage, error) {
 	return e.ExecuteWithPlan(ctx, t, nil)
@@ -145,6 +151,9 @@ Do not ask for permission - just implement the solution immediately.
 You have been given a plan from a planning agent. Follow the approach and read the key files first.
 If implementation already exists, add tests or make improvements as needed.`
 
+	if e.brainContext != "" {
+		systemPrompt = e.brainContext + "\n\n---\n\n" + systemPrompt
+	}
 	if projectRules != "" {
 		systemPrompt = projectRules + "\n\n---\n\n" + systemPrompt
 	}

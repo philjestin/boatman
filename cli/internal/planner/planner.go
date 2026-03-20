@@ -46,6 +46,7 @@ type Plan struct {
 type Planner struct {
 	client       *claude.Client
 	worktreePath string
+	brainContext string
 }
 
 // New creates a new Planner agent.
@@ -80,6 +81,11 @@ func New(worktreePath string, cfg *config.Config) *Planner {
 		client:       client,
 		worktreePath: worktreePath,
 	}
+}
+
+// SetBrainContext sets domain brain context for the planning phase.
+func (p *Planner) SetBrainContext(brainContext string) {
+	p.brainContext = brainContext
 }
 
 // Analyze runs the planning agent to understand the task.
@@ -127,6 +133,11 @@ After exploration, output a JSON plan in this exact format:
 ` + "```" + `
 
 Output ONLY the JSON block after your exploration. No other text after the JSON.`
+
+	// Inject domain brain context if available
+	if p.brainContext != "" {
+		systemPrompt = p.brainContext + "\n\n---\n\n" + systemPrompt
+	}
 
 	prompt := fmt.Sprintf(`# Task: %s
 
