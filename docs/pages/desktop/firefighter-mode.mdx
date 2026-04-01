@@ -137,7 +137,7 @@ The parser recognizes incidents from several output patterns:
 
 | Pattern | Example |
 |---------|---------|
-| Emoji ticket alerts | `🎫 [Urgent] Linear ticket EMP-456: Payment NPE` |
+| Emoji ticket alerts | `🎫 [Urgent] Linear ticket ENG-456: Payment NPE` |
 | Emoji severity alerts | `🚨 NEW High: Error rate spike in checkout-service` |
 | Incident Summary blocks | `### Incident Summary` with `Error:` and `Severity:` fields |
 | Resolved status updates | `✅ Fixed: Payment service NPE` |
@@ -155,8 +155,8 @@ The **Focus Area** field in the firefighter dialog lets you describe what you're
 
 ### Examples
 
-- `"I'm on call for the employer side of the handshake monolith. Only care about employer-graphql, promotion-service, and the employer squad's Datadog dashboards."`
-- `"Student-facing services only — handshake-web, student-graphql, career-fairs. Ignore employer stuff."`
+- `"I'm on call for the API layer. Only care about api-gateway, order-service, and the backend team's Datadog dashboards."`
+- `"Frontend services only — web-app, search-service, notifications. Ignore backend stuff."`
 - `"Payment and billing services. Monitor any Datadog dashboards related to payments, Stripe webhooks, or invoicing."`
 
 ### How It Works
@@ -170,7 +170,7 @@ When a focus area is provided, the agent is instructed to:
 5. **Filter Bugsnag errors** — Only investigate errors from projects within scope
 6. **Repeat on every check** — Each monitoring poll includes a scope reminder so the agent stays focused
 
-This means the agent won't waste time investigating a student-service Datadog alert when you're only on call for employer services.
+This means the agent won't waste time investigating a frontend Datadog alert when you're only on call for backend services.
 
 ---
 
@@ -198,7 +198,7 @@ Only Datadog is strictly required — the system prompt adapts to show only the 
 The Datadog plugin provides MCP tools for querying logs, metrics, monitors, and traces. No API keys needed — it authenticates via OAuth.
 
 ```bash
-claude /plugin install datadog@handshake-marketplace
+claude /plugin install datadog
 ```
 
 Then authenticate and discover your environment:
@@ -330,7 +330,7 @@ When monitoring is enabled, the agent immediately runs its first check and then 
 2. **Bugsnag/Datadog** — Checks for new errors and triggered monitors
 3. **Slack channels** — Reads configured channels for Datadog alert bot messages (only if Slack MCP is configured)
 4. **Reports** — Summarizes findings in the chat:
-   - `🎫 [Urgent] Linear ticket EMP-456: Payment refund NPE`
+   - `🎫 [Urgent] Linear ticket ENG-456: Payment refund NPE`
    - `🚨 NEW High: Error rate spike in checkout-service`
    - `✅ Linear queue: 2 tickets, Monitoring: No new issues`
 
@@ -399,7 +399,7 @@ but can be null for guest checkouts introduced in v2.3.0.
 3. **Long-term**: Add integration tests for guest checkout flows
 
 ### Fix Attempted
-- Created worktree: ../worktrees/fix-emp-456
+- Created worktree: ../worktrees/fix-eng-456
 - Applied fix: Added null guard in PaymentService.ts:142
 - Tests passed: All 234 tests passing
 - Draft PR created: #1234
@@ -424,7 +424,7 @@ All firefighter settings are in **Settings > Firefighter**:
 
 | Server | How to Enable | Purpose | Required |
 |--------|--------------|---------|----------|
-| **Datadog plugin** | `claude /plugin install datadog@handshake-marketplace` | Logs, metrics, monitors, traces | Yes |
+| **Datadog plugin** | `claude /plugin install datadog` | Logs, metrics, monitors, traces | Yes |
 | **Linear** | Boatman MCP Preset or `claude_mcp_config.json` | Ticket querying, status updates, comments | Yes |
 | **Slack** | Boatman MCP Preset or `claude_mcp_config.json` | Channel monitoring, thread replies | No |
 | **Bugsnag-Okta** | Manual build + `claude_mcp_config.json` | Error tracking via Okta SSO | No |
@@ -435,7 +435,7 @@ All firefighter settings are in **Settings > Firefighter**:
 
 ### Use the Focus Area
 
-- Describe your on-call scope in natural language: `"employer side of the monolith"`, `"payment and billing services"`
+- Describe your on-call scope in natural language: `"API layer and backend services"`, `"payment and billing services"`
 - The agent discovers relevant Datadog dashboards, monitors, and services from your description
 - Alerts outside your scope are skipped entirely — no noise from other teams' services
 - Each monitoring check includes a scope reminder so the agent doesn't drift

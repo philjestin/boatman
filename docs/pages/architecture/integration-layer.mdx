@@ -23,8 +23,7 @@ func NewIntegration() (*Integration, error) {
 The integration searches for the `boatman` binary in order:
 
 1. `exec.LookPath("boatman")` — in system PATH
-2. `~/workspace/personal/boatman-ecosystem/cli/boatman` — monorepo location
-3. `~/workspace/handshake/boatmanmode/boatman` — legacy location
+2. Hardcoded fallback path — development location
 
 ---
 

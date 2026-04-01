@@ -29,7 +29,7 @@ If you had `boatmanmode` in your PATH, update it:
 
 ```bash
 # Old
-export PATH="$PATH:~/workspace/handshake/boatmanmode"
+export PATH="$PATH:~/workspace/boatmanmode"
 
 # New
 export PATH="$PATH:~/workspace/personal/boatman-ecosystem/cli"
@@ -55,7 +55,7 @@ No changes needed for library consumers.
 
 ```bash
 # Terminal 1: CLI
-cd ~/workspace/handshake/boatmanmode
+cd ~/workspace/boatmanmode
 go build -o boatman ./cmd/boatmanmode
 
 # Terminal 2: Desktop
@@ -117,7 +117,7 @@ go work sync
 
 Remove the old binary:
 ```bash
-rm ~/workspace/handshake/boatmanmode/boatman
+rm ~/workspace/boatmanmode/boatman
 ```
 
 ### Desktop can't find CLI binary
@@ -135,7 +135,7 @@ Or update PATH to include the monorepo `cli/` directory.
 
 | Before | After |
 |--------|-------|
-| `~/workspace/handshake/boatmanmode/` | `~/workspace/personal/boatman-ecosystem/cli/` |
+| `~/workspace/boatmanmode/` | `~/workspace/personal/boatman-ecosystem/cli/` |
 | `~/workspace/personal/boatmanapp/` | `~/workspace/personal/boatman-ecosystem/desktop/` |
 | Two separate repos | One monorepo |
 | Independent builds | Unified Makefile |

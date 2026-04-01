@@ -6,7 +6,7 @@ Engineers spend significant time on repetitive, well-bounded tickets that AI cou
 
 The triage pipeline solves this by **scoring every ticket for AI-readiness before any code is written**. It separates the question "can AI do this?" from "should AI do this?" using a deterministic classification system that no LLM can override.
 
-## The Full Pipeline (ADR-004)
+## The Full Pipeline
 
 The system is designed as an 8-stage pipeline. Stages 1-4 are the triage/planning phase. Stages 5-8 are the execution/review phase.
 
@@ -178,14 +178,14 @@ A read-only Claude agent with Read, Grep, and Glob tools (no write access) explo
 
 ```json
 {
-  "ticketId": "EMP-1234",
-  "approach": "Add new GraphQL mutation with input validation...",
-  "candidateFiles": ["packs/employer/app/graphql/mutations/create_job.rb"],
-  "newFiles": ["packs/employer/spec/graphql/mutations/create_job_spec.rb"],
+  "ticketId": "ENG-1234",
+  "approach": "Add new API endpoint with input validation...",
+  "candidateFiles": ["src/api/handlers/create_item.go"],
+  "newFiles": ["src/api/handlers/create_item_test.go"],
   "deletedFiles": [],
-  "validation": ["bundle exec rspec packs/employer/spec/graphql/mutations/"],
-  "rollback": "Revert the mutation and remove the spec",
-  "stopConditions": ["If the jobs table doesn't exist, abort"],
+  "validation": ["go test ./src/api/handlers/..."],
+  "rollback": "Revert the handler and remove the test",
+  "stopConditions": ["If the items table doesn't exist, abort"],
   "uncertainties": ["Unclear if the index is needed for this query pattern"]
 }
 ```
@@ -243,16 +243,16 @@ An async agent that runs after execution completes, inspecting:
 
 ```bash
 # Score and classify a team's backlog
-boatman triage --teams EMP --states backlog --limit 20
+boatman triage --teams ENG --states backlog --limit 20
 
 # With plan generation
-boatman triage --teams EMP --states backlog --generate-plans --repo-path .
+boatman triage --teams ENG --states backlog --generate-plans --repo-path .
 
 # Specific tickets
-boatman triage --ticket-ids EMP-1234,EMP-5678
+boatman triage --ticket-ids ENG-1234,ENG-5678
 
 # Stream events for desktop integration
-boatman triage --teams EMP --states backlog --emit-events
+boatman triage --teams ENG --states backlog --emit-events
 ```
 
 ### Flags
@@ -279,7 +279,7 @@ When you execute a ticket from the triage results, the pre-generated plan is pas
 
 ```
 Triage Result → Click "Execute" → BoatmanMode session created
-  └─ Plan written to temp file → boatman work EMP-1234 --plan-file /tmp/plan.json
+  └─ Plan written to temp file → boatman work ENG-1234 --plan-file /tmp/plan.json
      └─ Step 3 (Planning) skipped, uses pre-generated plan
      └─ Draft PR created as checkpoint after execution
      └─ Review/refactor loop runs
