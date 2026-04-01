@@ -1,0 +1,295 @@
+# Backlog Triage Pipeline
+
+BoatmanMode includes a multi-stage triage pipeline that analyzes Linear backlogs, scores tickets by AI-readiness, and optionally generates validated execution plans.
+
+## Pipeline Overview
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Stage 0: FETCH                                             │
+│  Pull tickets from Linear by team, state, or ticket IDs     │
+│  Output: Raw Linear tickets                                 │
+├─────────────────────────────────────────────────────────────┤
+│  Stage 1: INGEST                                            │
+│  Normalize tickets, extract signals (domains, files, deps)  │
+│  Output: NormalizedTicket with extracted signals             │
+├─────────────────────────────────────────────────────────────┤
+│  Stage 2a: SCORE (Claude, concurrent)                       │
+│  Rate each ticket on 7-dimension rubric (0-5 scale)         │
+│  Output: RubricScores + uncertainAxes + reasons             │
+├─────────────────────────────────────────────────────────────┤
+│  Stage 2b: CLASSIFY (deterministic, no LLM)                 │
+│  Decision tree with hard stops and threshold gates           │
+│  Output: Category (AI_DEFINITE → HUMAN_ONLY)                │
+├─────────────────────────────────────────────────────────────┤
+│  Stage 3: CLUSTER                                           │
+│  Group related tickets by signal overlap                     │
+│  Output: Clusters + ContextDocs (patterns, risks, budgets)  │
+├─────────────────────────────────────────────────────────────┤
+│  Stage 4: PLAN (optional, --generate-plans)                 │
+│  Claude explores repo with tools, generates execution plans  │
+│  Validated against 4 gates before acceptance                 │
+│  Output: TicketPlan + PlanValidation per ticket             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Usage
+
+```bash
+# Score and classify a team's backlog
+boatman triage --teams EMP --states backlog --limit 20
+
+# With plan generation
+boatman triage --teams EMP --states backlog --generate-plans --repo-path .
+
+# Specific tickets
+boatman triage --ticket-ids EMP-1234,EMP-5678
+
+# Multiple teams
+boatman triage --teams EMP,EDU --states backlog,unstarted --limit 50
+
+# Stream events for desktop integration
+boatman triage --teams EMP --states backlog --emit-events
+```
+
+### Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--teams` | | Team keys to fetch (comma-separated) |
+| `--states` | | Workflow states to filter |
+| `--limit` | 50 | Maximum tickets to process |
+| `--ticket-ids` | | Specific ticket IDs (skips team/state filters) |
+| `--concurrency` | 3 | Parallel Claude scoring calls |
+| `--generate-plans` | false | Run Stage 4 plan generation |
+| `--repo-path` | `.` | Repository path for plan generation |
+| `--emit-events` | false | Emit JSON events to stdout |
+| `--output-dir` | `.boatman-triage` | Decision log directory |
+| `--post-comments` | false | Write classification to Linear |
+| `--dry-run` | false | No side effects |
+
+---
+
+## Scoring Rubric
+
+Each ticket is scored by Claude on 7 dimensions (0-5 scale).
+
+### Positive Dimensions (higher = better for AI)
+
+| Dimension | What it measures |
+|-----------|-----------------|
+| **clarity** | Are requirements explicit and testable? |
+| **codeLocality** | Is the change confined to one module? |
+| **patternMatch** | Has this type of problem been solved before? |
+| **validationStrength** | Can success be proven with automated tests? |
+
+### Negative Dimensions (higher = worse for AI)
+
+| Dimension | What it measures |
+|-----------|-----------------|
+| **dependencyRisk** | Unknown infra, external APIs, cross-team sequencing |
+| **productAmbiguity** | UX judgment calls, stakeholder interpretation |
+| **blastRadius** | How bad if the implementation is wrong? |
+
+### Example Scores
+
+A well-scoped backend bug fix:
+```
+clarity: 4, codeLocality: 5, patternMatch: 4, validationStrength: 5
+dependencyRisk: 0, productAmbiguity: 0, blastRadius: 1
+→ AI_DEFINITE
+```
+
+A vague cross-team feature request:
+```
+clarity: 1, codeLocality: 1, patternMatch: 1, validationStrength: 2
+dependencyRisk: 4, productAmbiguity: 4, blastRadius: 3
+→ HUMAN_REVIEW_REQUIRED
+```
+
+---
+
+## Classification
+
+Classification is **fully deterministic** (no LLM). It uses a decision tree with three layers:
+
+### Categories
+
+| Category | Meaning | Action |
+|----------|---------|--------|
+| `AI_DEFINITE` | Safe for autonomous execution | Execute immediately |
+| `AI_LIKELY` | Probably safe | Review the plan first |
+| `HUMAN_REVIEW_REQUIRED` | Needs human judgment | Human reviews before AI proceeds |
+| `HUMAN_ONLY` | Must be done by a human | No AI execution |
+
+### Decision Tree
+
+```
+1. Hard-stop keywords? → HUMAN_ONLY
+   (payments, billing, authentication, authorization,
+    database migration, public API, incident/sev1/sev2,
+    legal/compliance, multi-repo)
+
+2. Soft-stop keywords? → HUMAN_REVIEW_REQUIRED
+   (feature flag, staged rollout, deploy coordination, release train)
+
+3. Acceptance criteria missing? → HUMAN_REVIEW_REQUIRED
+
+4. Gate thresholds (all must pass for AI_DEFINITE):
+   - clarity >= 2
+   - blastRadius < 3
+   - productAmbiguity < 3
+   - dependencyRisk < 3
+
+5. If 3+ gates pass → AI_LIKELY
+   Otherwise → HUMAN_REVIEW_REQUIRED
+```
+
+Each classification produces an audit trail: gate results, hard stop matches, reasons.
+
+---
+
+## Clustering
+
+Related tickets are grouped using **greedy single-linkage clustering** based on signal overlap:
+
+| Signal Type | Points |
+|-------------|--------|
+| Shared domain | 0.5 each |
+| Shared file mention | 0.5 each |
+| Shared dependency | 1.0 each |
+| **Merge threshold** | **2.0 minimum** |
+
+Each cluster produces a **Context Document** containing:
+- **repoAreas** — directories the cluster touches
+- **knownPatterns** — existing patterns in those areas
+- **validationPlan** — how to test changes
+- **risks** — what could go wrong
+- **costCeiling** — token and time budget per ticket
+
+Context documents feed into Stage 4 (plan generation) and are passed to the executor when tickets are executed.
+
+---
+
+## Plan Generation
+
+When `--generate-plans` is passed, Claude explores the repo with Read/Grep/Glob tools for each `AI_DEFINITE` and `AI_LIKELY` ticket.
+
+### Plan Schema
+
+```json
+{
+  "ticketId": "EMP-1234",
+  "approach": "Add new GraphQL mutation with validation...",
+  "candidateFiles": ["packs/employer/app/graphql/mutations/create_job.rb"],
+  "newFiles": ["packs/employer/spec/graphql/mutations/create_job_spec.rb"],
+  "deletedFiles": [],
+  "validation": ["bundle exec rspec packs/employer/spec/graphql/mutations/"],
+  "rollback": "Revert the mutation and remove the spec",
+  "stopConditions": ["If the jobs table doesn't exist, abort"],
+  "uncertainties": ["Unclear if the index is needed for this query pattern"]
+}
+```
+
+### Plan Validation (4 Gates)
+
+Each plan is validated before it can be used for execution:
+
+| Gate | Check | Pass Condition |
+|------|-------|----------------|
+| **files_exist** | Do candidateFiles exist on disk? | More than 50% exist |
+| **within_repo_areas** | Are files within the cluster's repoAreas? | Fewer than 50% out of scope |
+| **stop_conditions** | Are stop conditions present? | Non-empty and meaningful |
+| **validation_commands** | Do test commands use known runners? | Known runners (rspec, jest, yarn test, etc.) |
+
+Plans that pass all 4 gates can be executed directly from the triage UI.
+
+---
+
+## Executing from Triage
+
+When you execute a ticket from the triage results, the pre-generated plan is passed to the work pipeline via `--plan-file`. This skips the planning step entirely and goes straight to execution with the validated candidate files.
+
+```
+Triage Result → Click "Execute" → BoatmanMode session created
+  └─ Plan written to temp file → boatman work EMP-1234 --plan-file /tmp/plan.json
+     └─ Step 3 (Planning) skipped, uses pre-generated plan
+```
+
+---
+
+## Decision Log
+
+Triage writes an audit log to `--output-dir` (default `.boatman-triage/`):
+
+- **`log.jsonl`** — One entry per ticket: classification, scores, gate results, cost
+- **`context_<clusterId>.json`** — Full context document per cluster
+
+Each log entry includes: ticketID, stage, verdict, agent, rationale, timestamp, tokens used, cost USD.
+
+---
+
+## Event System
+
+When `--emit-events` is passed, the pipeline emits JSON events to stdout:
+
+### Triage Events
+
+| Event | When | Key Data |
+|-------|------|----------|
+| `triage_started` | Pipeline begins | ticketCount, teams |
+| `triage_fetch_complete` | Tickets fetched | ticketCount |
+| `triage_scoring_started` | Scoring begins | ticketCount, concurrency |
+| `triage_ticket_scoring` | Individual ticket starts | ticketID, index, total |
+| `triage_ticket_scored` | Individual ticket done | scores, index, total |
+| `triage_scoring_complete` | All scoring done | scored, failed counts |
+| `triage_classifying` | Classification starts | ticketCount |
+| `triage_clustering` | Clustering starts | ticketCount |
+| `triage_complete` | Pipeline done | full result JSON, stats |
+
+### Plan Events
+
+| Event | When | Key Data |
+|-------|------|----------|
+| `plan_started` | Plan generation begins | ticketCount |
+| `plan_ticket_planning` | Individual plan starts | ticketID, index |
+| `plan_ticket_planned` | Individual plan done | fileCount, stopConditions |
+| `plan_ticket_validated` | Plan validated | passed, missing/out-of-scope files |
+| `plan_complete` | All plans done | results array, stats |
+
+---
+
+## Model Configuration
+
+Configure the scoring and planning models in `.boatman.yaml`:
+
+```yaml
+claude:
+  models:
+    scorer: claude-sonnet-4-5         # Model for rubric scoring
+    triage_planner: claude-opus-4-6   # Model for plan generation
+```
+
+---
+
+## Architecture
+
+```
+cli/internal/triage/
+  ├── pipeline.go      # Pipeline orchestrator
+  ├── ingest.go        # Stage 1: Normalize + signal extraction
+  ├── scorer.go        # Stage 2a: Claude rubric scoring
+  ├── classifier.go    # Stage 2b: Deterministic decision tree
+  ├── cluster.go       # Stage 3: Signal-overlap clustering
+  ├── decisionlog.go   # Audit log persistence
+  ├── events.go        # Event emission helpers
+  └── types.go         # All triage types
+
+cli/internal/plan/
+  ├── generator.go     # Stage 4: Claude plan generation
+  ├── validator.go     # 4-gate plan validation
+  ├── events.go        # Plan event helpers
+  └── types.go         # Plan types
+```

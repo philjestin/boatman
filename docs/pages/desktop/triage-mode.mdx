@@ -1,0 +1,137 @@
+# Triage Mode
+
+Triage Mode provides a visual interface for the backlog triage pipeline, letting you score, classify, and plan tickets from Linear directly in the desktop app.
+
+## Getting Started
+
+1. Click the **triage icon** in the sidebar
+2. Configure your triage run:
+   - **Teams** — Linear team keys (e.g., EMP, EDU)
+   - **States** — Workflow states to filter (e.g., backlog, unstarted)
+   - **Ticket Limit** — Maximum tickets to process
+   - **Generate Plans** (optional) — Run plan generation for AI-ready tickets
+3. Click **Start Triage**
+
+---
+
+## Live Progress
+
+While the pipeline runs, the triage view shows:
+
+- **Pipeline stage indicator** — Shows which stage is active (fetching, scoring, classifying, clustering, planning)
+- **Scoring progress bar** — Real-time progress as tickets are scored (X/Y scored)
+- **Event feed** — Live log of pipeline events with color-coded entries
+
+---
+
+## Results Tabs
+
+After the pipeline completes, results are shown in three tabs:
+
+### Results Tab
+
+Sortable table showing all tickets with:
+
+| Column | Description |
+|--------|-------------|
+| Ticket ID | Linear ticket ID (clickable) |
+| Title | Ticket title |
+| Category | Color-coded badge (green/yellow/orange/red) |
+| Clarity | Rubric score (0-5) |
+| Blast Radius | Rubric score (0-5) |
+
+**Click a ticket** to open the detail sidebar showing:
+- Full rubric scores across all 7 dimensions
+- Gate results (pass/fail for each threshold)
+- Hard stop matches (if any)
+- Uncertain axes and reasons
+- Extracted signals (domains, files, dependencies)
+- **Execute** button (for AI_DEFINITE/AI_LIKELY tickets)
+
+**Filter by category** to focus on specific ticket types.
+
+### Clusters Tab
+
+Grouped cards showing related ticket clusters:
+
+- **Cluster rationale** — Why these tickets were grouped
+- **Ticket list** — Clickable ticket IDs within the cluster
+- **Repo areas** — Directories the cluster touches
+- **Context document** — Validation plan, risks, cost ceiling
+- **Execute All** button to run all tickets in the cluster
+
+### Plans Tab
+
+Available when plan generation was enabled. Shows per-ticket plan results:
+
+- **Approach** — Implementation strategy
+- **Candidate files** with validation status:
+  - Green: file exists and is within scope
+  - Red: file missing from disk
+  - Yellow: file exists but outside cluster's repo areas
+- **New files / Deleted files** — Planned file changes
+- **Validation commands** — Test commands to verify changes
+- **Stop conditions** — When to abort execution
+- **Uncertainties** — Unclear aspects
+- **Gate results** — Pass/fail for each of 4 validation gates
+- **Execute** button (only if all gates pass)
+
+---
+
+## Executing from Triage
+
+When you click **Execute** on a ticket or plan:
+
+1. A new **BoatmanMode session** is created
+2. The triage plan is passed via `--plan-file`
+3. The work pipeline **skips the planning step** and uses the pre-generated plan
+4. Execution proceeds through the normal 9-step pipeline: validate → execute → draft PR → test → review → refactor → finalize PR
+
+This saves tokens and time by reusing the plan that already explored the codebase.
+
+---
+
+## Categories
+
+| Category | Badge Color | Meaning |
+|----------|-------------|---------|
+| `AI_DEFINITE` | Green | Safe for fully autonomous execution |
+| `AI_LIKELY` | Yellow | Probably safe, review the plan first |
+| `HUMAN_REVIEW_REQUIRED` | Orange | Needs human judgment |
+| `HUMAN_ONLY` | Red | Must be done by a human |
+
+---
+
+## Stats Bar
+
+The summary bar at the top shows:
+- Total tickets processed
+- Count per category
+- Number of clusters formed
+- Total tokens used and estimated cost
+
+---
+
+## Architecture
+
+```
+User clicks "Start Triage" in Desktop UI
+  │
+  ▼
+App.StreamTriageExecution()
+  │  Creates subprocess: boatman triage --emit-events ...
+  ▼
+CLI Pipeline (fetch → score → classify → cluster → plan)
+  │  Emits JSON events to stdout
+  ▼
+Triage Integration (desktop/triage/integration.go)
+  │  Parses events, emits Wails events
+  ▼
+TriageView.tsx
+  │  Subscribes to triage:event
+  │  Shows live progress → renders results tabs
+  ▼
+User clicks Execute → new BoatmanMode session with plan
+```
+
+See [CLI Triage Documentation](/cli/triage) for the full pipeline specification, scoring rubric, and classification decision tree.

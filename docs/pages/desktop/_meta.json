@@ -2,9 +2,10 @@
   "index": "Overview",
   "installation": "Installation",
   "getting-started": "Getting Started",
+  "triage-mode": "Triage Mode",
+  "boatmanmode-integration": "BoatmanMode Integration",
   "firefighter-mode": "Firefighter Mode",
   "mcp-servers": "MCP Servers",
-  "boatmanmode-integration": "BoatmanMode Integration",
   "configuration": "Configuration",
   "storage": "Storage & Data",
   "troubleshooting": "Troubleshooting"
