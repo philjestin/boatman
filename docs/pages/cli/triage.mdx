@@ -1,41 +1,245 @@
-# Backlog Triage Pipeline
+# Agentic Backlog Triage Pipeline
 
-BoatmanMode includes a multi-stage triage pipeline that analyzes Linear backlogs, scores tickets by AI-readiness, and optionally generates validated execution plans.
+## Why This Exists
 
-## Pipeline Overview
+Engineers spend significant time on repetitive, well-bounded tickets that AI could handle autonomously. But naive "give the AI a ticket and let it code" approaches fail because they lack risk assessment — an AI agent shouldn't be touching payment logic, database migrations, or public API contracts without guardrails.
+
+The triage pipeline solves this by **scoring every ticket for AI-readiness before any code is written**. It separates the question "can AI do this?" from "should AI do this?" using a deterministic classification system that no LLM can override.
+
+## The Full Pipeline (ADR-004)
+
+The system is designed as an 8-stage pipeline. Stages 1-4 are the triage/planning phase. Stages 5-8 are the execution/review phase.
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│  Stage 0: FETCH                                             │
-│  Pull tickets from Linear by team, state, or ticket IDs     │
-│  Output: Raw Linear tickets                                 │
-├─────────────────────────────────────────────────────────────┤
-│  Stage 1: INGEST                                            │
-│  Normalize tickets, extract signals (domains, files, deps)  │
-│  Output: NormalizedTicket with extracted signals             │
-├─────────────────────────────────────────────────────────────┤
-│  Stage 2a: SCORE (Claude, concurrent)                       │
-│  Rate each ticket on 7-dimension rubric (0-5 scale)         │
-│  Output: RubricScores + uncertainAxes + reasons             │
-├─────────────────────────────────────────────────────────────┤
-│  Stage 2b: CLASSIFY (deterministic, no LLM)                 │
-│  Decision tree with hard stops and threshold gates           │
-│  Output: Category (AI_DEFINITE → HUMAN_ONLY)                │
-├─────────────────────────────────────────────────────────────┤
-│  Stage 3: CLUSTER                                           │
-│  Group related tickets by signal overlap                     │
-│  Output: Clusters + ContextDocs (patterns, risks, budgets)  │
-├─────────────────────────────────────────────────────────────┤
-│  Stage 4: PLAN (optional, --generate-plans)                 │
-│  Claude explores repo with tools, generates execution plans  │
-│  Validated against 4 gates before acceptance                 │
-│  Output: TicketPlan + PlanValidation per ticket             │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│  TRIAGE PHASE (read-only, no code changes)                      │
+│                                                                 │
+│  1. Ingest    — Normalize Linear tickets, extract signals       │
+│  2. Score     — 7-dimension rubric (LLM) + classify (no LLM)   │
+│  3. Cluster   — Group related tickets, generate context docs    │
+│  4. Plan      — Read-only planner generates execution plans     │
+├─────────────────────────────────────────────────────────────────┤
+│  EXECUTION PHASE (code changes in isolated worktrees)           │
+│                                                                 │
+│  5. Execute   — Worker agent implements in sandboxed worktree   │
+│  6. Review    — Separate reviewer agent, tiered by category     │
+│  7. Human     — Human sign-off required for all PRs             │
+│  8. Rescue    — Async agent inspects failures + false negatives │
+└─────────────────────────────────────────────────────────────────┘
 ```
+
+### Key Design Decisions
+
+- **The orchestrator is NOT an LLM.** It's conventional Go code managing worker lifecycle, enforcing budgets, and gating transitions between stages. LLMs are workers within the pipeline, not the pipeline itself.
+- **Per-ticket plans flow independently.** Tickets are clustered for context sharing, but each ticket moves through the pipeline on its own. A slow ticket doesn't block others.
+- **Decision log per ticket per stage.** Every classification, score, and gate result is persisted for auditability and rubric tuning.
+- **Workers run in ephemeral git worktrees** with file allowlists and pre-commit hooks. The AI cannot touch files outside its approved scope.
 
 ---
 
-## Usage
+## Rollout Phases
+
+The pipeline is being deployed incrementally:
+
+| Phase | Stages | What's enabled | Status |
+|-------|--------|----------------|--------|
+| **Phase 1** | 1-3 | Triage only: score, classify, cluster | **Shipped** |
+| **Phase 2** | 1-4 | Add plan generation + validation, no execution | **Shipped** |
+| **Phase 3** | 1-7 | Autonomous execution for AI_DEFINITE only (blastRadius 1 or less) | In progress |
+| **Phase 4** | 1-8 | Expand to AI_LIKELY with rescue agent | Planned |
+
+Phase 3 adds constraint enforcement layers around execution:
+1. **Worktree sandbox** — isolated git worktree, no access to main branch
+2. **File allowlist** — `.allowed-files` manifest checked by pre-commit hook
+3. **Branch protection** — target branch requires PR approval
+4. **Process-level budget** — cost ceiling per category (AI_DEFINITE: 500K tokens/30min, AI_LIKELY: 1M tokens/60min)
+
+Phase 4 adds the rescue agent: an async agent that inspects false negatives (tickets classified as HUMAN_ONLY that could have been automated) and failed executions (agent got stuck, tests don't pass after max iterations).
+
+---
+
+## Stage Details
+
+### Stage 1: Ingest
+
+Normalizes raw Linear tickets into a standard format with extracted signals.
+
+**Signal extraction:**
+- **mentionsFiles** — file paths extracted via regex from description
+- **domains** — inferred from labels, file extensions, description keywords (frontend, backend, graphql, testing, database, api)
+- **dependencies** — external dependencies mentioned
+- **labels** — direct from Linear
+- **acceptanceCriteria** — detected via keyword matching (explicit vs implicit)
+- **hasDesignSpec** — keyword detection for design/spec references
+- **commentCount, lastUpdated, teamKey, projectName, estimate**
+- **staleness TTL** — configurable hours before a normalized ticket is considered stale
+
+### Stage 2a: Score
+
+Claude scores each ticket on a **7-dimension rubric** (0-5 scale). Scoring runs concurrently with configurable parallelism.
+
+**Positive dimensions** (higher = better for AI):
+
+| Dimension | What it measures |
+|-----------|-----------------|
+| **clarity** | Are requirements explicit and testable? |
+| **codeLocality** | Is the change confined to one module? |
+| **patternMatch** | Has this type of problem been solved before in the codebase? |
+| **validationStrength** | Can success be proven with automated tests? |
+
+**Negative dimensions** (higher = worse for AI):
+
+| Dimension | What it measures |
+|-----------|-----------------|
+| **dependencyRisk** | Unknown infra, external APIs, cross-team sequencing |
+| **productAmbiguity** | UX judgment calls, stakeholder interpretation |
+| **blastRadius** | How bad if the implementation is wrong? |
+
+Claude also outputs `uncertainAxes` (which dimensions it's least confident about) and `reasons` (why it scored each dimension the way it did).
+
+**Example — well-scoped backend bug fix:**
+```
+clarity: 4, codeLocality: 5, patternMatch: 4, validationStrength: 5
+dependencyRisk: 0, productAmbiguity: 0, blastRadius: 1
+→ AI_DEFINITE
+```
+
+**Example — vague cross-team feature:**
+```
+clarity: 1, codeLocality: 1, patternMatch: 1, validationStrength: 2
+dependencyRisk: 4, productAmbiguity: 4, blastRadius: 3
+→ HUMAN_REVIEW_REQUIRED
+```
+
+### Stage 2b: Classify
+
+Classification is **fully deterministic** — no LLM involved. This is intentional: the scoring LLM provides signal, but the classification decision is made by a conventional decision tree that humans can audit and tune without prompt engineering.
+
+**Categories:**
+
+| Category | Meaning |
+|----------|---------|
+| `AI_DEFINITE` | Safe for fully autonomous execution |
+| `AI_LIKELY` | Probably safe, but review the plan first |
+| `HUMAN_REVIEW_REQUIRED` | Needs human judgment before AI proceeds |
+| `HUMAN_ONLY` | Must be done by a human |
+
+**Decision tree:**
+
+```
+1. Hard-stop keywords? → HUMAN_ONLY
+   payments, billing, authentication, authorization,
+   database migration, public API, incident/sev1/sev2,
+   legal/compliance, multi-repo
+
+2. Soft-stop keywords? → HUMAN_REVIEW_REQUIRED
+   feature flag, staged rollout, deploy coordination, release train
+
+3. Acceptance criteria missing? → HUMAN_REVIEW_REQUIRED
+
+4. Gate thresholds (ALL must pass for AI_DEFINITE):
+   clarity >= 2
+   blastRadius < 3
+   productAmbiguity < 3
+   dependencyRisk < 3
+
+5. If 3+ gates pass → AI_LIKELY
+   Otherwise → HUMAN_REVIEW_REQUIRED
+```
+
+Every classification produces a full audit trail: which gates passed/failed, which hard stops matched, and why.
+
+### Stage 3: Cluster
+
+Related tickets are grouped using **greedy single-linkage clustering** based on signal overlap:
+
+| Signal type | Weight |
+|-------------|--------|
+| Shared domain | 0.5 per overlap |
+| Shared file mention | 0.5 per overlap |
+| Shared dependency | 1.0 per overlap |
+| **Merge threshold** | **2.0 minimum** |
+
+Each cluster produces a **Context Document** — structured metadata that flows downstream to the planner and executor:
+
+- **repoAreas** — directories the cluster touches
+- **knownPatterns** — existing patterns in those areas (how similar work was done before)
+- **validationPlan** — how to test changes in this area
+- **risks** — what could go wrong
+- **costCeiling** — token budget and time limit per ticket in this cluster
+
+Context documents are the primary mechanism for **constraining the planner and executor** to the right parts of the codebase.
+
+### Stage 4: Plan
+
+A read-only Claude agent with Read, Grep, and Glob tools (no write access) explores the repository and generates an execution plan for each AI_DEFINITE and AI_LIKELY ticket. The planner receives the ticket, its classification, and the cluster's context document as input.
+
+**Plan schema:**
+
+```json
+{
+  "ticketId": "EMP-1234",
+  "approach": "Add new GraphQL mutation with input validation...",
+  "candidateFiles": ["packs/employer/app/graphql/mutations/create_job.rb"],
+  "newFiles": ["packs/employer/spec/graphql/mutations/create_job_spec.rb"],
+  "deletedFiles": [],
+  "validation": ["bundle exec rspec packs/employer/spec/graphql/mutations/"],
+  "rollback": "Revert the mutation and remove the spec",
+  "stopConditions": ["If the jobs table doesn't exist, abort"],
+  "uncertainties": ["Unclear if the index is needed for this query pattern"]
+}
+```
+
+**Plan validation (4 gates):**
+
+| Gate | What it checks | Pass condition |
+|------|---------------|----------------|
+| **files_exist** | Do candidateFiles exist on disk? | More than 50% exist |
+| **within_repo_areas** | Are files within the cluster's repoAreas? | Less than 50% out of scope |
+| **stop_conditions** | Are stop conditions present and meaningful? | Non-empty |
+| **validation_commands** | Do test commands use known runners? | Known runners (rspec, jest, yarn, npm, make, etc.) |
+
+Plans that fail validation cannot be executed. The validation results (which files are missing, which are out of scope) are shown in the UI so a human can decide whether to fix the plan or skip the ticket.
+
+### Stage 5: Execute (Phase 3+)
+
+A worker agent runs in an isolated git worktree with the validated plan as its constraint document. The execution uses the same 9-step work pipeline as `boatman work`, but with the plan pre-loaded (skipping the planning step).
+
+**4-layer constraint enforcement:**
+
+1. **Worktree sandbox** — all changes happen in an isolated worktree, main branch untouched
+2. **File allowlist** — `.allowed-files` manifest generated from the plan's candidateFiles, enforced by pre-commit hook
+3. **Branch protection** — the target branch requires PR approval before merge
+4. **Process-level budget** — hard token and time limits per category:
+   - AI_DEFINITE: 500K tokens, 30 minutes
+   - AI_LIKELY: 1M tokens, 60 minutes
+   - Heartbeat-based stall detection with SIGTERM/SIGKILL escalation
+
+A draft PR is created immediately after execution completes (before review), so work is preserved even if subsequent stages fail.
+
+### Stage 6: Review (Phase 3+)
+
+A separate reviewer agent (ScottBott) reviews the diff. Review depth is tiered by category:
+
+- **AI_DEFINITE** — light pass: check for obvious issues, verify tests pass
+- **AI_LIKELY** — deep read: thorough review, check for edge cases, verify approach matches plan
+
+If review fails, the refactor loop iterates up to max-iterations (default 3).
+
+### Stage 7: Human Sign-off (Phase 3+)
+
+All PRs created by the pipeline require human approval before merge. This is a hard constraint in Phase 3 — no auto-merge regardless of classification.
+
+### Stage 8: Rescue (Phase 4)
+
+An async agent that runs after execution completes, inspecting:
+
+- **False negatives** — tickets classified as HUMAN_ONLY that had simple, well-bounded solutions (used to tune the rubric)
+- **Failed executions** — agents that got stuck, exceeded budgets, or produced code that doesn't pass review (used to improve planning and constraint enforcement)
+
+---
+
+## CLI Usage
 
 ```bash
 # Score and classify a team's backlog
@@ -46,9 +250,6 @@ boatman triage --teams EMP --states backlog --generate-plans --repo-path .
 
 # Specific tickets
 boatman triage --ticket-ids EMP-1234,EMP-5678
-
-# Multiple teams
-boatman triage --teams EMP,EDU --states backlog,unstarted --limit 50
 
 # Stream events for desktop integration
 boatman triage --teams EMP --states backlog --emit-events
@@ -67,155 +268,22 @@ boatman triage --teams EMP --states backlog --emit-events
 | `--repo-path` | `.` | Repository path for plan generation |
 | `--emit-events` | false | Emit JSON events to stdout |
 | `--output-dir` | `.boatman-triage` | Decision log directory |
-| `--post-comments` | false | Write classification to Linear |
+| `--post-comments` | false | Write classification comments to Linear |
 | `--dry-run` | false | No side effects |
-
----
-
-## Scoring Rubric
-
-Each ticket is scored by Claude on 7 dimensions (0-5 scale).
-
-### Positive Dimensions (higher = better for AI)
-
-| Dimension | What it measures |
-|-----------|-----------------|
-| **clarity** | Are requirements explicit and testable? |
-| **codeLocality** | Is the change confined to one module? |
-| **patternMatch** | Has this type of problem been solved before? |
-| **validationStrength** | Can success be proven with automated tests? |
-
-### Negative Dimensions (higher = worse for AI)
-
-| Dimension | What it measures |
-|-----------|-----------------|
-| **dependencyRisk** | Unknown infra, external APIs, cross-team sequencing |
-| **productAmbiguity** | UX judgment calls, stakeholder interpretation |
-| **blastRadius** | How bad if the implementation is wrong? |
-
-### Example Scores
-
-A well-scoped backend bug fix:
-```
-clarity: 4, codeLocality: 5, patternMatch: 4, validationStrength: 5
-dependencyRisk: 0, productAmbiguity: 0, blastRadius: 1
-→ AI_DEFINITE
-```
-
-A vague cross-team feature request:
-```
-clarity: 1, codeLocality: 1, patternMatch: 1, validationStrength: 2
-dependencyRisk: 4, productAmbiguity: 4, blastRadius: 3
-→ HUMAN_REVIEW_REQUIRED
-```
-
----
-
-## Classification
-
-Classification is **fully deterministic** (no LLM). It uses a decision tree with three layers:
-
-### Categories
-
-| Category | Meaning | Action |
-|----------|---------|--------|
-| `AI_DEFINITE` | Safe for autonomous execution | Execute immediately |
-| `AI_LIKELY` | Probably safe | Review the plan first |
-| `HUMAN_REVIEW_REQUIRED` | Needs human judgment | Human reviews before AI proceeds |
-| `HUMAN_ONLY` | Must be done by a human | No AI execution |
-
-### Decision Tree
-
-```
-1. Hard-stop keywords? → HUMAN_ONLY
-   (payments, billing, authentication, authorization,
-    database migration, public API, incident/sev1/sev2,
-    legal/compliance, multi-repo)
-
-2. Soft-stop keywords? → HUMAN_REVIEW_REQUIRED
-   (feature flag, staged rollout, deploy coordination, release train)
-
-3. Acceptance criteria missing? → HUMAN_REVIEW_REQUIRED
-
-4. Gate thresholds (all must pass for AI_DEFINITE):
-   - clarity >= 2
-   - blastRadius < 3
-   - productAmbiguity < 3
-   - dependencyRisk < 3
-
-5. If 3+ gates pass → AI_LIKELY
-   Otherwise → HUMAN_REVIEW_REQUIRED
-```
-
-Each classification produces an audit trail: gate results, hard stop matches, reasons.
-
----
-
-## Clustering
-
-Related tickets are grouped using **greedy single-linkage clustering** based on signal overlap:
-
-| Signal Type | Points |
-|-------------|--------|
-| Shared domain | 0.5 each |
-| Shared file mention | 0.5 each |
-| Shared dependency | 1.0 each |
-| **Merge threshold** | **2.0 minimum** |
-
-Each cluster produces a **Context Document** containing:
-- **repoAreas** — directories the cluster touches
-- **knownPatterns** — existing patterns in those areas
-- **validationPlan** — how to test changes
-- **risks** — what could go wrong
-- **costCeiling** — token and time budget per ticket
-
-Context documents feed into Stage 4 (plan generation) and are passed to the executor when tickets are executed.
-
----
-
-## Plan Generation
-
-When `--generate-plans` is passed, Claude explores the repo with Read/Grep/Glob tools for each `AI_DEFINITE` and `AI_LIKELY` ticket.
-
-### Plan Schema
-
-```json
-{
-  "ticketId": "EMP-1234",
-  "approach": "Add new GraphQL mutation with validation...",
-  "candidateFiles": ["packs/employer/app/graphql/mutations/create_job.rb"],
-  "newFiles": ["packs/employer/spec/graphql/mutations/create_job_spec.rb"],
-  "deletedFiles": [],
-  "validation": ["bundle exec rspec packs/employer/spec/graphql/mutations/"],
-  "rollback": "Revert the mutation and remove the spec",
-  "stopConditions": ["If the jobs table doesn't exist, abort"],
-  "uncertainties": ["Unclear if the index is needed for this query pattern"]
-}
-```
-
-### Plan Validation (4 Gates)
-
-Each plan is validated before it can be used for execution:
-
-| Gate | Check | Pass Condition |
-|------|-------|----------------|
-| **files_exist** | Do candidateFiles exist on disk? | More than 50% exist |
-| **within_repo_areas** | Are files within the cluster's repoAreas? | Fewer than 50% out of scope |
-| **stop_conditions** | Are stop conditions present? | Non-empty and meaningful |
-| **validation_commands** | Do test commands use known runners? | Known runners (rspec, jest, yarn test, etc.) |
-
-Plans that pass all 4 gates can be executed directly from the triage UI.
 
 ---
 
 ## Executing from Triage
 
-When you execute a ticket from the triage results, the pre-generated plan is passed to the work pipeline via `--plan-file`. This skips the planning step entirely and goes straight to execution with the validated candidate files.
+When you execute a ticket from the triage results, the pre-generated plan is passed to the work pipeline via `--plan-file`. This skips the planning step and goes straight to execution with validated candidate files.
 
 ```
 Triage Result → Click "Execute" → BoatmanMode session created
   └─ Plan written to temp file → boatman work EMP-1234 --plan-file /tmp/plan.json
      └─ Step 3 (Planning) skipped, uses pre-generated plan
+     └─ Draft PR created as checkpoint after execution
+     └─ Review/refactor loop runs
+     └─ PR finalized and marked ready
 ```
 
 ---
@@ -224,35 +292,28 @@ Triage Result → Click "Execute" → BoatmanMode session created
 
 Triage writes an audit log to `--output-dir` (default `.boatman-triage/`):
 
-- **`log.jsonl`** — One entry per ticket: classification, scores, gate results, cost
-- **`context_<clusterId>.json`** — Full context document per cluster
+- **`log.jsonl`** — One JSONL entry per ticket per stage: classification, scores, gate results, token usage, cost
+- **`context_{clusterId}.json`** — Full context document per cluster
 
-Each log entry includes: ticketID, stage, verdict, agent, rationale, timestamp, tokens used, cost USD.
+The decision log is the primary mechanism for **rubric tuning** — by reviewing which tickets were classified correctly vs incorrectly, the gate thresholds and hard-stop keywords can be adjusted without changing any LLM prompts.
 
 ---
 
 ## Event System
 
-When `--emit-events` is passed, the pipeline emits JSON events to stdout:
+When `--emit-events` is passed, the pipeline emits JSON events to stdout for desktop integration:
 
-### Triage Events
-
-| Event | When | Key Data |
+| Event | When | Key data |
 |-------|------|----------|
 | `triage_started` | Pipeline begins | ticketCount, teams |
 | `triage_fetch_complete` | Tickets fetched | ticketCount |
 | `triage_scoring_started` | Scoring begins | ticketCount, concurrency |
 | `triage_ticket_scoring` | Individual ticket starts | ticketID, index, total |
-| `triage_ticket_scored` | Individual ticket done | scores, index, total |
-| `triage_scoring_complete` | All scoring done | scored, failed counts |
+| `triage_ticket_scored` | Individual ticket done | all 7 scores, index, total |
+| `triage_scoring_complete` | All scoring done | scored/failed counts |
 | `triage_classifying` | Classification starts | ticketCount |
 | `triage_clustering` | Clustering starts | ticketCount |
-| `triage_complete` | Pipeline done | full result JSON, stats |
-
-### Plan Events
-
-| Event | When | Key Data |
-|-------|------|----------|
+| `triage_complete` | Pipeline done | full TriageResult JSON |
 | `plan_started` | Plan generation begins | ticketCount |
 | `plan_ticket_planning` | Individual plan starts | ticketID, index |
 | `plan_ticket_planned` | Individual plan done | fileCount, stopConditions |
@@ -263,13 +324,11 @@ When `--emit-events` is passed, the pipeline emits JSON events to stdout:
 
 ## Model Configuration
 
-Configure the scoring and planning models in `.boatman.yaml`:
-
 ```yaml
 claude:
   models:
-    scorer: claude-sonnet-4-5         # Model for rubric scoring
-    triage_planner: claude-opus-4-6   # Model for plan generation
+    scorer: claude-sonnet-4-5         # Rubric scoring (cost-sensitive, runs per ticket)
+    triage_planner: claude-opus-4-6   # Plan generation (quality-sensitive, explores repo)
 ```
 
 ---
@@ -278,18 +337,21 @@ claude:
 
 ```
 cli/internal/triage/
-  ├── pipeline.go      # Pipeline orchestrator
-  ├── ingest.go        # Stage 1: Normalize + signal extraction
-  ├── scorer.go        # Stage 2a: Claude rubric scoring
-  ├── classifier.go    # Stage 2b: Deterministic decision tree
-  ├── cluster.go       # Stage 3: Signal-overlap clustering
-  ├── decisionlog.go   # Audit log persistence
+  ├── pipeline.go      # Orchestrator (conventional Go, not LLM)
+  ├── ingest.go        # Stage 1: Normalize tickets, extract signals
+  ├── scorer.go        # Stage 2a: Claude rubric scoring (concurrent)
+  ├── classifier.go    # Stage 2b: Deterministic decision tree (no LLM)
+  ├── cluster.go       # Stage 3: Signal-overlap clustering + context docs
+  ├── decisionlog.go   # Audit log persistence (JSONL + context docs)
   ├── events.go        # Event emission helpers
-  └── types.go         # All triage types
+  └── types.go         # NormalizedTicket, Classification, Cluster, ContextDoc, etc.
 
 cli/internal/plan/
-  ├── generator.go     # Stage 4: Claude plan generation
-  ├── validator.go     # 4-gate plan validation
+  ├── generator.go     # Stage 4: Claude with Read/Grep/Glob tools
+  ├── validator.go     # 4-gate plan validation (file existence, scope, etc.)
   ├── events.go        # Plan event helpers
-  └── types.go         # Plan types
+  └── types.go         # TicketPlan, PlanValidation, PlanResult, PlanStats
+
+cli/internal/agent/
+  └── agent.go         # Stage 5-7: Work pipeline (execute → review → refactor → PR)
 ```
