@@ -115,6 +115,52 @@ See [EVENTS.md](EVENTS.md) for complete event specification and integration exam
 
 ---
 
+### 📊 Backlog Triage Pipeline (NEW)
+
+Analyze and classify entire backlogs for AI-readiness:
+
+```bash
+# Score and classify tickets
+boatman triage --teams EMP --states backlog --limit 20
+
+# With plan generation
+boatman triage --teams EMP --states backlog --generate-plans --repo-path .
+
+# Specific tickets
+boatman triage --ticket-ids EMP-1234,EMP-5678
+
+# Stream events for desktop integration
+boatman triage --teams EMP --states backlog --emit-events
+```
+
+**Pipeline stages:**
+1. **Fetch** — Pull tickets from Linear (by team, state, or ID)
+2. **Ingest** — Normalize tickets, extract signals (domains, files, dependencies)
+3. **Score** — Claude rates each ticket on 7 dimensions (clarity, codeLocality, patternMatch, validationStrength, dependencyRisk, productAmbiguity, blastRadius)
+4. **Classify** — Deterministic decision tree: hard stops (payments, auth) → soft stops (feature flags) → threshold gates → category assignment
+5. **Cluster** — Group related tickets by signal overlap, generate context documents
+6. **Plan** (optional) — Claude explores the repo with Read/Grep/Glob tools and generates validated execution plans
+
+**Categories:** `AI_DEFINITE` | `AI_LIKELY` | `HUMAN_REVIEW_REQUIRED` | `HUMAN_ONLY`
+
+**Plan validation gates:** files exist, within repo areas, stop conditions non-empty, valid test runners
+
+See [desktop/TRIAGE.md](../desktop/TRIAGE.md) for the full triage specification.
+
+### 🔄 Draft PR Safety Checkpoint (NEW)
+
+After execution completes (Step 5), a draft PR is created immediately as a safety checkpoint before test/review/refactor begins. If those later stages hang or fail, the work is preserved:
+
+```bash
+# Normal flow: draft PR created automatically at Step 5b
+boatman work EMP-1234
+
+# If execution fails at review/refactor, resume from that point
+boatman work EMP-1234 --resume
+```
+
+The draft PR is updated with review results and marked ready when the pipeline completes successfully.
+
 ### 🚀 Pre-flight Validation Agent
 Validates the execution plan before any code changes:
 - Verifies all referenced files exist
@@ -241,6 +287,8 @@ claude:
     refactor: claude-opus-4-6        # Model for fixing review issues
     preflight: claude-haiku-4        # Model for fast validation
     test_runner: claude-haiku-4      # Model for test output parsing
+    scorer: claude-sonnet-4-5        # Model for triage rubric scoring
+    triage_planner: claude-opus-4-6  # Model for triage plan generation
 ```
 
 #### Available Models

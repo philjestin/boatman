@@ -25,11 +25,13 @@ boatman-ecosystem/
 ## What is Boatman?
 
 Boatman is an AI-powered autonomous development system that:
-- Takes tasks or prompts and implements them end-to-end
-- Creates isolated git worktrees for safe experimentation
-- Plans, executes, reviews, and refactors code automatically
-- Integrates with Linear for ticket-based workflows
-- Provides both CLI and desktop GUI interfaces
+- **Triages backlogs** — scores and classifies Linear tickets by AI-readiness, clusters related work, and generates validated execution plans
+- **Executes tasks end-to-end** — takes tickets, prompts, or files and implements them autonomously with planning, execution, code review, and refactoring
+- **Creates isolated git worktrees** for safe parallel work
+- **Reviews its own code** via ScottBott peer review with iterative refactoring
+- **Creates draft PRs as safety checkpoints** so work is preserved even if later stages fail
+- **Supports resume** — pick up a failed execution from the review/refactor stage without re-doing the work
+- Integrates with Linear, GitHub, and provides both CLI and desktop GUI interfaces
 
 ## Components
 
@@ -38,21 +40,30 @@ Boatman is an AI-powered autonomous development system that:
 The command-line interface and core autonomous agent.
 
 **Key features:**
-- Autonomous multi-phase workflow (plan → execute → review → refactor)
+- **9-step work pipeline**: prepare → worktree → plan → validate → execute → draft PR → test/review → refactor → finalize PR
+- **Backlog triage pipeline**: fetch → score (7-dimension rubric) → classify (deterministic gates) → cluster → plan (optional)
 - Git worktree isolation for safe parallel work
 - Claude AI integration for code generation and review
-- Structured JSON event emission for integration
+- Draft PR safety checkpoints — work is preserved even if review/refactor fails
+- Resume failed executions from the review/refactor stage
+- Generated file filtering (protobuf, GraphQL codegen, Wails bindings)
+- Structured JSON event emission for desktop integration
 - Linear ticket integration
-- **Event metadata** including diffs, feedback, plans, and issues
-- **Public utilities** in `pkg/` for desktop integration (diff analysis, validation)
-- **Automatic environment filtering** for secure nested Claude sessions
-- **Multiple input modes**: Linear tickets, inline prompts, or file-based tasks
+- Multiple input modes: Linear tickets, inline prompts, or file-based tasks
 
 **Quick start:**
 ```bash
 cd cli
 go build -o boatman ./cmd/boatman
+
+# Execute a task
 ./boatman work --prompt "Add user authentication"
+
+# Triage a backlog
+./boatman triage --teams EMP --states backlog --limit 20
+
+# Resume a failed execution
+./boatman work EMP-1234 --resume
 ```
 
 See [cli/README.md](./cli/README.md) for detailed documentation.
@@ -72,7 +83,8 @@ A cross-platform desktop application built with Wails that provides a GUI for th
 - **Smart search** with filters (tags, dates, favorites, projects)
 - **Batch diff approval** for reviewing multiple file changes at once
 - **Inline diff comments** for code review discussions
-- **BoatmanMode integration** for autonomous Linear ticket execution
+- **BoatmanMode integration** for autonomous ticket execution with draft PR checkpoints and resume
+- **Triage mode** for scoring, classifying, and planning entire backlogs
 - **Firefighter mode** for production incident investigation
 - **Agent logs panel** for real-time visibility into AI actions
 - **Onboarding wizard** for first-time setup
@@ -158,11 +170,17 @@ The CLI and desktop communicate via structured JSON events:
 
 Events are emitted by the CLI to stdout and captured by the desktop app for real-time UI updates.
 
-**Event types:**
+**BoatmanMode event types:**
 - `agent_started` / `agent_completed` — Track each workflow phase
 - `progress` — General status updates
 - `claude_stream` — Raw Claude stream-json lines for full visibility into Claude's work
 - `task_created` / `task_updated` — Task lifecycle events
+
+**Triage event types:**
+- `triage_started` / `triage_complete` — Pipeline lifecycle
+- `triage_ticket_scoring` / `triage_ticket_scored` — Per-ticket scoring progress
+- `triage_classifying` / `triage_clustering` — Stage transitions
+- `plan_started` / `plan_ticket_planned` / `plan_ticket_validated` / `plan_complete` — Plan generation
 
 The desktop app routes these events through the session message system with proper agent attribution, so each workflow phase gets its own tab in the Agent Logs panel.
 
@@ -200,10 +218,23 @@ The project has been restructured into a unified monorepo with shared types and 
 - ✅ **Environment security**: Automatic filtering of sensitive env vars in nested sessions
 
 ### BoatmanMode Integration
-- ✅ **Seamless ticket execution**: Click button, enter ticket ID, watch autonomous workflow
-- ✅ **Real-time event streaming**: See planning, execution, review, and refactor phases
-- ✅ **Task visibility**: All agent steps tracked as tasks with full metadata
-- ✅ **Purple session badges**: Visual distinction for boatmanmode sessions
+- **Seamless ticket execution**: Click button, enter ticket ID, watch autonomous workflow
+- **9-step pipeline**: plan → validate → execute → draft PR → test → review → refactor → finalize PR
+- **Draft PR safety checkpoint**: Work is preserved as a draft PR before review/refactor starts
+- **Resume failed runs**: Pick up from review/refactor without re-executing
+- **Generated file filtering**: Protobuf, GraphQL codegen, and Wails bindings excluded from review prompts
+- **Real-time event streaming**: See each phase with per-agent attribution
+- **Purple session badges**: Visual distinction for boatmanmode sessions
+
+### Triage Mode
+- **Backlog analysis**: Score and classify entire backlogs from Linear
+- **7-dimension AI rubric**: clarity, codeLocality, patternMatch, validationStrength, dependencyRisk, productAmbiguity, blastRadius
+- **Deterministic classification**: Hard stops (payments, auth, migrations) and threshold gates, no LLM guesswork
+- **4 categories**: AI_DEFINITE, AI_LIKELY, HUMAN_REVIEW_REQUIRED, HUMAN_ONLY
+- **Ticket clustering**: Groups related tickets by shared domains, files, and dependencies
+- **Plan generation**: Claude explores the repo and generates validated execution plans with candidate files and test commands
+- **4-gate plan validation**: files exist, within scope, stop conditions present, valid test runners
+- **Execute from triage**: One click to create a BoatmanMode session with the pre-generated plan
 
 ## Hybrid Architecture
 
@@ -281,6 +312,7 @@ See [RELEASE_SUMMARY.md](./RELEASE_SUMMARY.md) for quick reference or [RELEASES.
 - **[Desktop README](./desktop/README.md)** - Desktop app overview
 - **[Features Guide](./desktop/FEATURES.md)** - Comprehensive feature documentation
 - **[Getting Started](./desktop/GETTING_STARTED.md)** - Desktop setup and usage
+- **[Triage Mode](./desktop/TRIAGE.md)** - Backlog triage pipeline, scoring rubric, classification, plan generation
 - **[BoatmanMode Integration](./desktop/BOATMANMODE_INTEGRATION.md)** - Autonomous execution
 - **[BoatmanMode Events](./desktop/BOATMANMODE_EVENTS.md)** - Event specification
 - **[Desktop Changelog](./desktop/CHANGELOG.md)** - Desktop version history
@@ -305,48 +337,105 @@ See [RELEASE_SUMMARY.md](./RELEASE_SUMMARY.md) for quick reference or [RELEASES.
 
 ## Architecture Diagrams
 
+### BoatmanMode Work Pipeline
+
+```
+boatman work EMP-1234
+  │
+  ├─ Step 1: Prepare Task        (display info)
+  ├─ Step 2: Setup Worktree      (git worktree add)
+  ├─ Step 3: Planning            (Claude analyzes codebase, or use --plan-file)
+  ├─ Step 4: Preflight           (validate plan, pin context files)
+  ├─ Step 5: Execute             (Claude implements with tools)
+  ├─ Step 5b: Draft PR           (safety checkpoint: commit + push + draft PR)
+  ├─ Step 6: Test & Review       (parallel: test runner + ScottBott review)
+  ├─ Step 7: Refactor Loop       (iterate: review → refactor → verify)
+  ├─ Step 8: Commit & Push       (final reviewed changes)
+  └─ Step 9: Finalize PR         (update body, mark ready)
+
+If review fails: draft PR preserved with work intact
+If execution hangs: --resume picks up from Step 6
+```
+
+### Triage Pipeline
+
+```
+boatman triage --teams EMP --states backlog
+  │
+  ├─ Stage 0: Fetch              (Linear API → raw tickets)
+  ├─ Stage 1: Ingest             (normalize, extract signals)
+  ├─ Stage 2a: Score             (Claude: 7-dimension rubric, concurrent)
+  ├─ Stage 2b: Classify          (deterministic decision tree)
+  ├─ Stage 3: Cluster            (signal-overlap grouping + context docs)
+  └─ Stage 4: Plan (optional)    (Claude explores repo → validated plans)
+        │
+        └─ Execute from triage → creates BoatmanMode session with plan
+```
+
 ### Event Flow
 
 ```
-┌─────────────────┐
-│   CLI Agent     │
-│  (boatmanmode)  │
-└────────┬────────┘
-         │ Emits JSON events to stdout
-         │ agent_started, claude_stream, agent_completed, progress
-         ▼
-┌─────────────────┐
-│  Integration    │ (desktop/boatmanmode/integration.go)
-│    Layer        │ Captures stdout, parses JSON
-│                 │ Calls MessageCallback for session routing
-└────────┬────────┘
-         │
-    ┌────┴─────────────────────────┐
-    │                              │
-    ▼                              ▼
-┌─────────────┐          ┌─────────────────────────┐
-│ Wails emit  │          │ app.go → Session methods │
-│ boatmanmode │          │ RegisterBoatmanAgent()   │
-│ :event      │          │ SetCurrentAgent()        │
-│             │          │ AddBoatmanMessage()      │
-│             │          │ ProcessExternalStream    │
-│             │          │ Line() (claude_stream)   │
-└──────┬──────┘          └───────────┬──────────────┘
-       │                             │
-       │                             │ agent:message (Wails)
-       ▼                             ▼
-┌──────────────────────────────────────┐
-│   Desktop UI (React)                 │
-│   useAgent.ts handles events         │
-│   AgentLogsPanel groups by agent     │
-│   MessageBubble shows agent badges   │
-│   TaskDetail shows phase info        │
-└──────────────────────────────────────┘
+┌──────────────────┐        ┌──────────────────┐
+│   CLI Agent      │        │  CLI Triage      │
+│  (boatman work)  │        │ (boatman triage) │
+└────────┬─────────┘        └────────┬─────────┘
+         │                           │
+         │  JSON events to stdout    │
+         ▼                           ▼
+┌──────────────────┐        ┌──────────────────┐
+│  BoatmanMode     │        │  Triage          │
+│  Integration     │        │  Integration     │
+│  (subprocess)    │        │  (subprocess)    │
+└────────┬─────────┘        └────────┬─────────┘
+         │                           │
+         │  Wails events             │
+         ▼                           ▼
+┌──────────────────────────────────────────────┐
+│   Desktop UI (React)                         │
+│                                              │
+│   ChatView     TriageView                    │
+│   ├─ Messages  ├─ ResultsTable (sortable)    │
+│   ├─ Resume    ├─ ClusterView (grouped)      │
+│   └─ AgentLogs └─ PlanView (validated)       │
+└──────────────────────────────────────────────┘
 ```
 
-### Directory Structure Philosophy
+### Directory Structure
 
-- **`cli/`**: Core autonomous agent logic, no GUI dependencies
-- **`desktop/`**: Presentation layer that consumes CLI events
-- **`go.work`**: Workspace ties them together for development
-- Each component maintains its own `go.mod` for independent versioning
+```
+boatman/
+├── cli/
+│   ├── cmd/boatman/         # CLI entry point
+│   └── internal/
+│       ├── agent/           # 9-step work pipeline + resume
+│       ├── triage/          # Triage pipeline (ingest, score, classify, cluster)
+│       ├── plan/            # Plan generation + 4-gate validation
+│       ├── executor/        # Claude execution + generated file filtering
+│       ├── scottbott/       # Code review agent
+│       ├── planner/         # Codebase analysis + plan generation
+│       ├── testrunner/      # Test detection + execution
+│       ├── worktree/        # Git worktree management
+│       ├── github/          # PR creation (draft + ready + update)
+│       ├── events/          # JSON event emission
+│       ├── brain/           # Domain knowledge extraction
+│       ├── contextpin/      # Multi-file context coordination
+│       ├── coordinator/     # Agent message bus + work claiming
+│       ├── cost/            # Token usage tracking
+│       ├── diffverify/      # Refactor verification
+│       ├── handoff/         # Structured inter-agent context
+│       └── cli/             # Cobra command definitions
+│
+├── desktop/
+│   ├── app.go               # Wails app (sessions, streaming, triage)
+│   ├── agent/               # Session management + persistence
+│   ├── boatmanmode/          # CLI subprocess integration
+│   ├── triage/               # Triage subprocess integration
+│   └── frontend/src/
+│       ├── components/
+│       │   ├── chat/         # ChatView, MessageBubble, Resume banner
+│       │   └── triage/       # TriageView, ResultsTable, PlanView, etc.
+│       ├── hooks/            # useAgent.ts (session state management)
+│       └── types/            # TypeScript type definitions
+│
+└── go.work                   # Go workspace configuration
+```

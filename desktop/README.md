@@ -20,6 +20,24 @@ Boatman is a native desktop application built with Wails (Go + React) that provi
 - **Agent Logs**: Real-time streaming logs panel to see agent activity and tool usage
 - **Task Detail Modal**: Clickable task cards showing diffs, feedback, plans, and issues
 
+### 📊 Triage Mode
+- **Backlog Analysis**: Score and classify tickets from Linear using a 7-dimension AI rubric
+- **Deterministic Classification**: Hard stops for payments/auth/migrations, threshold gates for everything else
+- **4 Categories**: AI_DEFINITE, AI_LIKELY, HUMAN_REVIEW_REQUIRED, HUMAN_ONLY
+- **Ticket Clustering**: Groups related tickets by shared domains, files, and dependencies
+- **Plan Generation**: Claude explores the repo and generates validated execution plans
+- **Execute from Triage**: One click to create a BoatmanMode session with the plan pre-loaded
+- **Real-time Progress**: Live scoring progress bar and event feed during pipeline execution
+
+See [TRIAGE.md](./TRIAGE.md) for full documentation.
+
+### 🚣 BoatmanMode
+- **Autonomous Execution**: 9-step pipeline from planning through PR creation
+- **Draft PR Checkpoint**: Work preserved as draft PR before review/refactor starts
+- **Resume Failed Runs**: Pick up from review/refactor without re-executing the task
+- **Generated File Filtering**: Protobuf, GraphQL codegen, and Wails bindings excluded from review
+- **Real-time Streaming**: See planning, execution, review, and refactor phases live
+
 ### 🔥 Firefighter Mode
 - **Linear Integration**: Automatically monitors triage queue for production incidents
 - **Error Investigation**: Connects Bugsnag errors with Datadog logs and git history
