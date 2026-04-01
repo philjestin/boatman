@@ -1,4 +1,4 @@
-import { Menu, Settings, Plus, FolderOpen, Search, Flame, PlayCircle } from 'lucide-react';
+import { Menu, Settings, Plus, FolderOpen, Search, Flame, PlayCircle, Filter } from 'lucide-react';
 import { useStore } from '../../store';
 
 interface HeaderProps {
@@ -8,9 +8,10 @@ interface HeaderProps {
   onOpenSearch: () => void;
   onStartFirefighter: () => void;
   onStartBoatmanMode: () => void;
+  onStartTriage: () => void;
 }
 
-export function Header({ onNewSession, onOpenProject, onOpenSettings, onOpenSearch, onStartFirefighter, onStartBoatmanMode }: HeaderProps) {
+export function Header({ onNewSession, onOpenProject, onOpenSettings, onOpenSearch, onStartFirefighter, onStartBoatmanMode, onStartTriage }: HeaderProps) {
   const { toggleSidebar, sidebarOpen } = useStore();
 
   return (
@@ -56,6 +57,14 @@ export function Header({ onNewSession, onOpenProject, onOpenSettings, onOpenSear
         >
           <PlayCircle className="w-4 h-4" />
           <span>Boatman Mode</span>
+        </button>
+        <button
+          onClick={onStartTriage}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-amber-500 text-white rounded-md hover:bg-amber-600 transition-colors no-drag"
+          title="Triage Backlog"
+        >
+          <Filter className="w-4 h-4" />
+          <span>Triage</span>
         </button>
         <button
           onClick={onOpenSearch}

@@ -46,12 +46,24 @@ export function CreateFirefighterSession(arg1, arg2, arg3) {
   return window['go']['main']['App']['CreateFirefighterSession'](arg1, arg2, arg3);
 }
 
+export function CreateTriageSession(arg1) {
+  return window['go']['main']['App']['CreateTriageSession'](arg1);
+}
+
 export function DeleteAgentSession(arg1) {
   return window['go']['main']['App']['DeleteAgentSession'](arg1);
 }
 
 export function ExecuteLinearTicketWithBoatmanMode(arg1, arg2, arg3) {
   return window['go']['main']['App']['ExecuteLinearTicketWithBoatmanMode'](arg1, arg2, arg3);
+}
+
+export function ExecuteTriageTicket(arg1, arg2) {
+  return window['go']['main']['App']['ExecuteTriageTicket'](arg1, arg2);
+}
+
+export function ExportTriagePDF(arg1) {
+  return window['go']['main']['App']['ExportTriagePDF'](arg1);
 }
 
 export function FetchLinearTicketsForBoatmanMode(arg1, arg2) {
@@ -206,6 +218,10 @@ export function GetSignalsByDomain(arg1) {
   return window['go']['main']['App']['GetSignalsByDomain'](arg1);
 }
 
+export function GetTriageResult(arg1) {
+  return window['go']['main']['App']['GetTriageResult'](arg1);
+}
+
 export function GetWorkspaceInfo(arg1) {
   return window['go']['main']['App']['GetWorkspaceInfo'](arg1);
 }
@@ -216,6 +232,10 @@ export function GetWorktreeDiff(arg1, arg2) {
 
 export function HandleBoatmanModeEvent(arg1, arg2, arg3) {
   return window['go']['main']['App']['HandleBoatmanModeEvent'](arg1, arg2, arg3);
+}
+
+export function HandleTriageEvent(arg1, arg2, arg3) {
+  return window['go']['main']['App']['HandleTriageEvent'](arg1, arg2, arg3);
 }
 
 export function InvestigateLinearTicket(arg1, arg2) {
@@ -306,6 +326,10 @@ export function RemoveSessionTag(arg1, arg2) {
   return window['go']['main']['App']['RemoveSessionTag'](arg1, arg2);
 }
 
+export function ResumeBoatmanModeExecution(arg1) {
+  return window['go']['main']['App']['ResumeBoatmanModeExecution'](arg1);
+}
+
 export function RunHarness(arg1, arg2) {
   return window['go']['main']['App']['RunHarness'](arg1, arg2);
 }
@@ -380,6 +404,10 @@ export function StopHarness(arg1) {
 
 export function StreamBoatmanModeExecution(arg1, arg2, arg3, arg4, arg5) {
   return window['go']['main']['App']['StreamBoatmanModeExecution'](arg1, arg2, arg3, arg4, arg5);
+}
+
+export function StreamTriageExecution(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['StreamTriageExecution'](arg1, arg2, arg3, arg4);
 }
 
 export function UpdateMCPServer(arg1) {

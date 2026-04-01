@@ -11,6 +11,8 @@ require (
 
 require gopkg.in/yaml.v3 v3.0.1
 
+require github.com/go-pdf/fpdf v0.9.0
+
 require (
 	github.com/bep/debounce v1.2.1 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect

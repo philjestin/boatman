@@ -17,6 +17,7 @@ import {
 import type { Project, AgentSession, SessionStatus } from '../../types';
 import { FirefighterBadge } from '../firefighter/FirefighterBadge';
 import { BoatmanModeBadge } from '../boatmanmode/BoatmanModeBadge';
+import { TriageBadge } from '../triage/TriageBadge';
 import { ClaudeBadge } from '../chat/ClaudeBadge';
 
 interface SidebarProps {
@@ -27,6 +28,7 @@ interface SidebarProps {
   onSessionSelect: (sessionId: string) => void;
   onProjectSelect: (projectId: string) => void;
   onDeleteSession: (sessionId: string) => void;
+  onDeleteAllSessions?: () => void;
   onStopSession?: (sessionId: string) => void;
   onToggleFavorite?: (sessionId: string) => void;
   onAddTag?: (sessionId: string, tag: string) => void;
@@ -68,6 +70,7 @@ export function Sidebar({
   onSessionSelect,
   onProjectSelect,
   onDeleteSession,
+  onDeleteAllSessions,
   onStopSession,
   onToggleFavorite,
   onAddTag,
@@ -125,23 +128,38 @@ export function Sidebar({
 
       {/* Sessions Section */}
       <div className="flex-1 overflow-y-auto">
-        <button
-          onClick={() => setSessionsExpanded(!sessionsExpanded)}
-          className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-slate-400 uppercase tracking-wider hover:bg-slate-800"
-        >
-          {sessionsExpanded ? (
-            <ChevronDown className="w-3 h-3" />
-          ) : (
-            <ChevronRight className="w-3 h-3" />
+        <div className="flex items-center">
+          <button
+            onClick={() => setSessionsExpanded(!sessionsExpanded)}
+            className="flex-1 flex items-center gap-2 px-3 py-2 text-xs font-medium text-slate-400 uppercase tracking-wider hover:bg-slate-800"
+          >
+            {sessionsExpanded ? (
+              <ChevronDown className="w-3 h-3" />
+            ) : (
+              <ChevronRight className="w-3 h-3" />
+            )}
+            Sessions
+          </button>
+          {onDeleteAllSessions && sessions.length > 0 && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onDeleteAllSessions();
+              }}
+              className="px-2 py-2 text-xs text-slate-500 hover:text-red-400 transition-colors"
+              aria-label="Delete all sessions"
+              title="Delete all sessions"
+            >
+              <Trash2 className="w-3 h-3" />
+            </button>
           )}
-          Sessions
-        </button>
+        </div>
         {sessionsExpanded && (
           <div className="px-2 pb-2">
             {sessions.length === 0 ? (
               <p className="px-2 py-1 text-xs text-slate-500">No active sessions</p>
             ) : (
-              sessions.map((session) => (
+              [...sessions].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).map((session) => (
                 <div key={session.id} className="relative">
                   <div
                     className={`group flex items-start gap-2 px-2 py-1.5 rounded-md transition-colors cursor-pointer ${
@@ -193,7 +211,7 @@ export function Sidebar({
                       <div className="flex items-center gap-2 mt-0.5">
                         <p className="text-xs text-slate-500 flex items-center gap-1">
                           <Clock className="w-3 h-3" />
-                          {new Date(session.createdAt).toLocaleTimeString()}
+                          {new Date(session.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} {new Date(session.createdAt).toLocaleTimeString()}
                         </p>
                         {(!session.mode || session.mode === 'standard' || session.mode === '') && (
                           <ClaudeBadge className="flex-shrink-0" />
@@ -203,6 +221,9 @@ export function Sidebar({
                         )}
                         {session.mode === 'boatmanmode' && (
                           <BoatmanModeBadge className="flex-shrink-0" />
+                        )}
+                        {session.mode === 'triage' && (
+                          <TriageBadge className="flex-shrink-0" />
                         )}
                       </div>
                       {session.tags && session.tags.length > 0 && (

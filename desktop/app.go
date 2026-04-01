@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -10,6 +12,7 @@ import (
 	"boatman/agent"
 	"boatman/auth"
 	bmintegration "boatman/boatmanmode"
+	triageintegration "boatman/triage"
 	"boatman/config"
 	"boatman/diff"
 	gitpkg "boatman/git"
@@ -156,6 +159,7 @@ type AgentSessionInfo struct {
 	IsFavorite      bool                `json:"isFavorite,omitempty"`
 	Model           string              `json:"model,omitempty"`
 	ReasoningEffort string              `json:"reasoningEffort,omitempty"`
+	Mode            string              `json:"mode,omitempty"`
 }
 
 // CreateAgentSession creates a new agent session
@@ -172,6 +176,7 @@ func (a *App) CreateAgentSession(projectPath string) (*AgentSessionInfo, error) 
 		CreatedAt:       session.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 		Model:           session.Model,
 		ReasoningEffort: session.ReasoningEffort,
+		Mode:            session.Mode,
 	}, nil
 }
 
@@ -190,6 +195,7 @@ func (a *App) CreateFirefighterSession(projectPath string, scope string, slackCh
 		Tags:            session.Tags,
 		Model:           session.Model,
 		ReasoningEffort: session.ReasoningEffort,
+		Mode:            session.Mode,
 	}, nil
 }
 
@@ -209,6 +215,7 @@ func (a *App) CreateBoatmanModeSession(projectPath string, input string, mode st
 		Tags:            session.Tags,
 		Model:           session.Model,
 		ReasoningEffort: session.ReasoningEffort,
+		Mode:            session.Mode,
 	}, nil
 }
 
@@ -324,6 +331,7 @@ func (a *App) ListAgentSessions() []AgentSessionInfo {
 			IsFavorite:      s.IsFavorite,
 			Model:           s.Model,
 			ReasoningEffort: s.ReasoningEffort,
+			Mode:            s.Mode,
 		}
 	}
 	return infos
@@ -886,6 +894,23 @@ func (a *App) StreamBoatmanModeExecution(sessionID, input, mode, linearAPIKey, p
 	// Get the session so we can route messages through it
 	session, sessionErr := a.agentManager.GetSession(sessionID)
 
+	// Write triage plan to temp file if one is attached to the session.
+	var planFile string
+	if sessionErr == nil && session != nil {
+		if triagePlan, ok := session.ModeConfig["triagePlan"]; ok && triagePlan != nil {
+			planJSON, err := json.Marshal(triagePlan)
+			if err == nil {
+				tmpFile, err := os.CreateTemp("", "boatman-plan-*.json")
+				if err == nil {
+					tmpFile.Write(planJSON)
+					tmpFile.Close()
+					planFile = tmpFile.Name()
+					fmt.Printf("[boatmanmode] Using triage plan: %s\n", planFile)
+				}
+			}
+		}
+	}
+
 	// Run execution in background to avoid blocking the frontend
 	go func() {
 		defer func() {
@@ -952,8 +977,21 @@ func (a *App) StreamBoatmanModeExecution(sessionID, input, mode, linearAPIKey, p
 		}
 
 		// Execute with streaming (use app context for Wails events)
-		_, err := bmIntegration.StreamExecution(a.ctx, sessionID, input, mode, outputChan, onMessage)
+		// Check if this session is marked for resume
+		isResume := false
+		if session != nil {
+			if r, ok := session.ModeConfig["resume"]; ok {
+				isResume, _ = r.(bool)
+			}
+		}
+
+		_, err := bmIntegration.StreamExecution(a.ctx, sessionID, input, mode, planFile, isResume, outputChan, onMessage)
 		close(outputChan)
+
+		// Clean up temp plan file.
+		if planFile != "" {
+			os.Remove(planFile)
+		}
 
 		if err != nil {
 			fmt.Printf("[boatmanmode] Execution error: %v\n", err)
@@ -978,6 +1016,35 @@ func (a *App) StreamBoatmanModeExecution(sessionID, input, mode, linearAPIKey, p
 	}()
 
 	return nil
+}
+
+// ResumeBoatmanModeExecution resumes a failed boatmanmode session from the review/refactor stage.
+// It sets the "resume" flag on the session's ModeConfig and re-runs StreamBoatmanModeExecution.
+func (a *App) ResumeBoatmanModeExecution(sessionID string) error {
+	session, err := a.agentManager.GetSession(sessionID)
+	if err != nil {
+		return fmt.Errorf("session not found: %w", err)
+	}
+
+	// Mark session for resume
+	session.SetModeConfigValue("resume", true)
+
+	// Extract the original input and mode from the session
+	input, _ := session.ModeConfig["input"].(string)
+	mode, _ := session.ModeConfig["mode"].(string)
+	if input == "" {
+		return fmt.Errorf("session has no input to resume")
+	}
+	if mode == "" {
+		mode = "ticket"
+	}
+
+	// Get preferences for API keys
+	prefs := a.config.GetPreferences()
+	linearAPIKey := prefs.LinearAPIKey
+
+	// Re-run execution with resume flag (StreamBoatmanModeExecution reads ModeConfig["resume"])
+	return a.StreamBoatmanModeExecution(sessionID, input, mode, linearAPIKey, session.ProjectPath)
 }
 
 // HandleBoatmanModeEvent processes boatmanmode events and updates session state
@@ -1108,6 +1175,294 @@ func (a *App) FetchLinearTicketsForBoatmanMode(linearAPIKey, projectPath string)
 
 	// Tickets are already in the right format from boatmanmode CLI
 	return tickets, nil
+}
+
+// =============================================================================
+// Triage Integration Methods
+// =============================================================================
+
+// CreateTriageSession creates a new triage agent session.
+func (a *App) CreateTriageSession(projectPath string) (*AgentSessionInfo, error) {
+	session, err := a.agentManager.CreateTriageSession(projectPath)
+	if err != nil {
+		return nil, err
+	}
+
+	return &AgentSessionInfo{
+		ID:          session.ID,
+		ProjectPath: session.ProjectPath,
+		Status:      session.Status,
+		CreatedAt:   session.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		Tags:        session.Tags,
+		Mode:        session.Mode,
+	}, nil
+}
+
+// StreamTriageExecution runs the triage pipeline with streaming output.
+// Returns immediately and runs the execution in the background.
+func (a *App) StreamTriageExecution(sessionID string, opts triageintegration.TriageOptions, linearAPIKey, projectPath string) error {
+	prefs := a.config.GetPreferences()
+	claudeAPIKey := prefs.APIKey
+
+	integration, err := triageintegration.NewIntegration(linearAPIKey, claudeAPIKey, projectPath)
+	if err != nil {
+		return fmt.Errorf("failed to create triage integration: %w", err)
+	}
+
+	session, sessionErr := a.agentManager.GetSession(sessionID)
+	if sessionErr == nil && session != nil {
+		session.Status = "running"
+	}
+
+	// Emit status change so frontend updates
+	runtime.EventsEmit(a.ctx, "agent:status", map[string]interface{}{
+		"sessionId": sessionID,
+		"status":    "running",
+	})
+
+	runtime.EventsEmit(a.ctx, "triage:started", map[string]interface{}{
+		"sessionId": sessionID,
+	})
+
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				fmt.Printf("[triage] Recovered from panic: %v\n", r)
+				func() {
+					defer func() { recover() }()
+					runtime.EventsEmit(a.ctx, "triage:error", map[string]interface{}{
+						"sessionId": sessionID,
+						"error":     fmt.Sprintf("Execution panic: %v", r),
+					})
+				}()
+			}
+		}()
+
+		outputChan := make(chan string, 100)
+
+		go func() {
+			defer func() { recover() }()
+			for msg := range outputChan {
+				func() {
+					defer func() { recover() }()
+					runtime.EventsEmit(a.ctx, "triage:output", map[string]interface{}{
+						"sessionId": sessionID,
+						"message":   msg,
+					})
+				}()
+			}
+		}()
+
+		// Handle events directly in the Go backend to avoid race conditions
+		// with the frontend round-trip. Store triage_complete result before
+		// emitting the completion event to the frontend.
+		onEvent := func(event triageintegration.TriageEvent) {
+			if sessionErr != nil || session == nil {
+				return
+			}
+			switch event.Type {
+			case "triage_complete":
+				if event.Data != nil {
+					if result, ok := event.Data["result"]; ok {
+						session.SetModeConfigValue("triageResult", result)
+					}
+					if stats, ok := event.Data["stats"]; ok {
+						session.SetModeConfigValue("triageStats", stats)
+					}
+				}
+			case "plan_complete":
+				if event.Data != nil {
+					if results, ok := event.Data["results"]; ok {
+						session.SetModeConfigValue("plans", results)
+					}
+					if stats, ok := event.Data["stats"]; ok {
+						session.SetModeConfigValue("planStats", stats)
+					}
+				}
+			}
+		}
+
+		err := integration.StreamTriageExecution(a.ctx, sessionID, opts, outputChan, onEvent)
+		close(outputChan)
+
+		if err != nil {
+			fmt.Printf("[triage] Execution error: %v\n", err)
+			runtime.EventsEmit(a.ctx, "triage:error", map[string]interface{}{
+				"sessionId": sessionID,
+				"error":     err.Error(),
+			})
+		} else {
+			runtime.EventsEmit(a.ctx, "triage:complete", map[string]interface{}{
+				"sessionId": sessionID,
+			})
+		}
+
+		if sessionErr == nil && session != nil {
+			if saveErr := agent.SaveSession(session); saveErr != nil {
+				fmt.Printf("[triage] Warning: failed to save session %s: %v\n", sessionID, saveErr)
+			}
+		}
+	}()
+
+	return nil
+}
+
+// HandleTriageEvent processes triage events and updates session state.
+func (a *App) HandleTriageEvent(sessionID string, eventType string, eventData map[string]interface{}) error {
+	session, err := a.agentManager.GetSession(sessionID)
+	if err != nil {
+		return err
+	}
+
+	switch eventType {
+	case "triage_started":
+		session.AddBoatmanMessage("system", "Triage pipeline started")
+	case "triage_fetch_complete":
+		message, _ := eventData["message"].(string)
+		session.AddBoatmanMessage("system", message)
+	case "triage_scoring_started":
+		message, _ := eventData["message"].(string)
+		session.AddBoatmanMessage("system", message)
+	case "triage_ticket_scored":
+		message, _ := eventData["message"].(string)
+		session.AddBoatmanMessage("system", message)
+	case "triage_scoring_complete":
+		message, _ := eventData["message"].(string)
+		session.AddBoatmanMessage("system", message)
+	case "triage_complete":
+		// Store the full result in ModeConfig for the frontend to retrieve
+		if data, ok := eventData["data"].(map[string]interface{}); ok {
+			if result, ok := data["result"]; ok {
+				session.SetModeConfigValue("triageResult", result)
+			}
+			if stats, ok := data["stats"]; ok {
+				session.SetModeConfigValue("triageStats", stats)
+			}
+		}
+		session.AddBoatmanMessage("system", "Triage pipeline complete")
+	case "plan_started":
+		message, _ := eventData["message"].(string)
+		session.AddBoatmanMessage("system", message)
+	case "plan_ticket_planned":
+		message, _ := eventData["message"].(string)
+		session.AddBoatmanMessage("system", message)
+	case "plan_complete":
+		if data, ok := eventData["data"].(map[string]interface{}); ok {
+			if results, ok := data["results"]; ok {
+				session.SetModeConfigValue("plans", results)
+			}
+			if stats, ok := data["stats"]; ok {
+				session.SetModeConfigValue("planStats", stats)
+			}
+		}
+		session.AddBoatmanMessage("system", "Plan generation complete")
+	case "triage_error":
+		message, _ := eventData["message"].(string)
+		session.AddBoatmanMessage("system", fmt.Sprintf("Triage error: %s", message))
+	}
+
+	return nil
+}
+
+// GetTriageResult returns the stored triage result for a session.
+func (a *App) GetTriageResult(sessionID string) (map[string]interface{}, error) {
+	session, err := a.agentManager.GetSession(sessionID)
+	if err != nil {
+		return nil, err
+	}
+	return session.ModeConfig, nil
+}
+
+// ExecuteTriageTicket creates a BoatmanMode session to execute a triage-identified ticket.
+// If the triage session has a pre-generated plan for this ticket, it is stored
+// in the new session's ModeConfig so that StreamBoatmanModeExecution can pass
+// it to the CLI via --plan-file, skipping the planning step.
+func (a *App) ExecuteTriageTicket(sessionID, ticketID string) (*AgentSessionInfo, error) {
+	triageSession, err := a.agentManager.GetSession(sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("triage session not found: %w", err)
+	}
+
+	info, err := a.CreateBoatmanModeSession(triageSession.ProjectPath, ticketID, "ticket")
+	if err != nil {
+		return nil, err
+	}
+
+	// Look up the matching triage plan and attach it to the new session.
+	if plans, ok := triageSession.ModeConfig["plans"]; ok {
+		if planList, ok := plans.([]interface{}); ok {
+			for _, p := range planList {
+				pm, ok := p.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				if pm["ticketId"] == ticketID {
+					if planData, ok := pm["plan"]; ok && planData != nil {
+						bmSession, _ := a.agentManager.GetSession(info.ID)
+						if bmSession != nil {
+							bmSession.SetModeConfigValue("triagePlan", planData)
+						}
+					}
+					break
+				}
+			}
+		}
+	}
+
+	return info, nil
+}
+
+// ExportTriagePDF exports the triage result for a session as a PDF file.
+// Opens a native save dialog and writes the PDF to the chosen path.
+func (a *App) ExportTriagePDF(sessionID string) (string, error) {
+	session, err := a.agentManager.GetSession(sessionID)
+	if err != nil {
+		return "", fmt.Errorf("session not found: %w", err)
+	}
+
+	resultData, ok := session.ModeConfig["triageResult"]
+	if !ok {
+		return "", fmt.Errorf("no triage result available for this session")
+	}
+
+	resultMap, ok := resultData.(map[string]interface{})
+	if !ok {
+		return "", fmt.Errorf("triage result has unexpected format")
+	}
+
+	// Open native save dialog
+	savePath, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
+		Title:           "Export Triage Report",
+		DefaultFilename: fmt.Sprintf("triage-report-%s.pdf", time.Now().Format("2006-01-02")),
+		Filters: []runtime.FileFilter{
+			{DisplayName: "PDF Files", Pattern: "*.pdf"},
+		},
+	})
+	if err != nil {
+		return "", fmt.Errorf("save dialog error: %w", err)
+	}
+	if savePath == "" {
+		return "", nil // User cancelled
+	}
+
+	// Ensure .pdf extension
+	if !strings.HasSuffix(strings.ToLower(savePath), ".pdf") {
+		savePath += ".pdf"
+	}
+
+	// Attach plan data if available.
+	if plans, ok := session.ModeConfig["plans"]; ok {
+		resultMap["plans"] = plans
+	}
+	if planStats, ok := session.ModeConfig["planStats"]; ok {
+		resultMap["planStats"] = planStats
+	}
+
+	if err := triageintegration.GeneratePDF(resultMap, savePath); err != nil {
+		return "", fmt.Errorf("failed to generate PDF: %w", err)
+	}
+
+	return savePath, nil
 }
 
 // =============================================================================

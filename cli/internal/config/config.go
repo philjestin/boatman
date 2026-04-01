@@ -38,6 +38,9 @@ type Config struct {
 	// Brain settings
 	Brain BrainConfig
 
+	// Triage settings
+	Triage TriageConfig
+
 	// Debug enables verbose logging
 	Debug bool
 
@@ -144,6 +147,27 @@ type ModelConfig struct {
 
 	// TestRunner model for test output parsing (empty = CLI default)
 	TestRunner string
+
+	// Scorer model for triage rubric scoring (empty = CLI default)
+	Scorer string
+}
+
+// TriageConfig holds triage pipeline settings.
+type TriageConfig struct {
+	// StalenessHours is the TTL for normalized ticket records (default: 168 = 7 days).
+	StalenessHours int
+
+	// DefaultTeams are the default team keys for batch fetch when --teams is not specified.
+	DefaultTeams []string
+
+	// OutputDir is where decision logs and context docs are stored.
+	OutputDir string
+
+	// MaxConcurrency is the maximum number of concurrent Claude scoring calls.
+	MaxConcurrency int
+
+	// PostComments controls whether to post rubric breakdown to Linear by default.
+	PostComments bool
 }
 
 // TokenBudgetConfig holds context token budget settings.
@@ -201,6 +225,7 @@ func Load() (*Config, error) {
 				Refactor:   getStringOrDefault("claude.models.refactor", ""),   // Empty = use CLI default
 				Preflight:  getStringOrDefault("claude.models.preflight", ""),  // Empty = use CLI default
 				TestRunner: getStringOrDefault("claude.models.test_runner", ""), // Empty = use CLI default
+				Scorer:     getStringOrDefault("claude.models.scorer", ""),      // Empty = use CLI default
 			},
 		},
 
@@ -214,6 +239,14 @@ func Load() (*Config, error) {
 			Enabled:     getBoolOrDefault("brain.enabled", true),
 			MaxBrains:   getIntOrDefault("brain.max_brains", 3),
 			TokenBudget: getIntOrDefault("brain.token_budget", 2000),
+		},
+
+		Triage: TriageConfig{
+			StalenessHours: getIntOrDefault("triage.staleness_hours", 168),
+			DefaultTeams:   viper.GetStringSlice("triage.default_teams"),
+			OutputDir:      getStringOrDefault("triage.output_dir", ".boatman-triage"),
+			MaxConcurrency: getIntOrDefault("triage.max_concurrency", 3),
+			PostComments:   getBoolOrDefault("triage.post_comments", false),
 		},
 	}
 

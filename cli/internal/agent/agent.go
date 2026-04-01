@@ -35,6 +35,10 @@ type Agent struct {
 	config       *config.Config
 	linearClient *linear.Client
 	coordinator  *coordinator.Coordinator
+
+	// PreloadedPlan, if set, is used instead of running the planning agent.
+	// This allows triage-generated plans to be reused during execution.
+	PreloadedPlan *planner.Plan
 }
 
 // WorkResult represents the outcome of the work command.
@@ -63,6 +67,7 @@ type workContext struct {
 	iterations   int
 	startTime    time.Time
 	costTracker  *cost.Tracker
+	draftPRURL   string // URL of draft PR created as safety checkpoint
 }
 
 // New creates a new Agent.
@@ -121,6 +126,13 @@ func (a *Agent) Work(ctx context.Context, t task.Task) (*WorkResult, error) {
 		return nil, err
 	}
 
+	// Step 5b: Safety checkpoint — commit, push, and create a draft PR so work
+	// is preserved even if test/review/refactor hangs or fails.
+	if err := a.stepDraftPR(ctx, wc); err != nil {
+		// Draft PR failure is non-fatal — log and continue
+		fmt.Printf("   ⚠️  Draft PR checkpoint failed: %v\n", err)
+	}
+
 	// Step 6: Run tests and initial review (parallel)
 	if err := a.stepTestAndReview(ctx, wc); err != nil {
 		return nil, err
@@ -154,11 +166,120 @@ func (a *Agent) Work(ctx context.Context, t task.Task) (*WorkResult, error) {
 
 	// Check if review passed
 	if !wc.reviewResult.Passed {
-		return &WorkResult{
+		result := &WorkResult{
 			PRCreated:  false,
 			Message:    "Review did not pass after max iterations",
 			Iterations: wc.iterations,
-		}, nil
+		}
+		if wc.draftPRURL != "" {
+			result.PRURL = wc.draftPRURL
+			result.PRCreated = true
+			result.Message = "Review did not pass — draft PR preserved: " + wc.draftPRURL
+		}
+		return result, nil
+	}
+
+	// Step 8: Commit and push final reviewed changes
+	if err := a.stepCommitAndPush(ctx, wc); err != nil {
+		return nil, err
+	}
+
+	// Step 9: Finalize PR (update body with review info, mark ready)
+	return a.stepFinalizePR(ctx, wc)
+}
+
+// ResumeWork resumes a previously failed execution from the review/refactor stage.
+// It reuses the existing worktree (which contains the code changes from the failed run)
+// and jumps directly to the test-and-review → refactor loop → commit → PR pipeline.
+func (a *Agent) ResumeWork(ctx context.Context, t task.Task) (*WorkResult, error) {
+	wc := &workContext{
+		task:        t,
+		startTime:   time.Now(),
+		costTracker: cost.NewTracker(),
+	}
+
+	a.coordinator.Start(ctx)
+	defer a.coordinator.Stop()
+
+	// Step 1: Display task info
+	if err := a.stepPrepareTask(ctx, wc); err != nil {
+		return nil, err
+	}
+
+	// Step 2: Find and reuse existing worktree (instead of creating a new one)
+	if err := a.stepResumeWorktree(ctx, wc); err != nil {
+		return nil, err
+	}
+
+	// Initialize brain collector
+	if a.config.Brain.Enabled {
+		collector, err := brain.NewCollector(wc.worktree.Path)
+		if err == nil {
+			wc.collector = collector
+			defer collector.Flush()
+		}
+	}
+
+	// Skip planning — the code is already written.
+	// Create executor to detect changed files.
+	wc.exec = executor.New(wc.worktree.Path, a.config)
+	changedFiles, err := wc.exec.DetectChangedFiles()
+	if err != nil {
+		return nil, fmt.Errorf("failed to detect changed files in worktree: %w", err)
+	}
+	if len(changedFiles) == 0 {
+		return nil, fmt.Errorf("no changed files found in worktree — nothing to resume")
+	}
+
+	fmt.Printf("   📁 Found %d changed files in worktree\n", len(changedFiles))
+	for _, f := range changedFiles {
+		fmt.Printf("      • %s\n", f)
+	}
+	fmt.Println()
+
+	// Build a synthetic execution result from the existing worktree state.
+	wc.execResult = &executor.ExecutionResult{
+		Success:      true,
+		FilesChanged: changedFiles,
+	}
+
+	// Stage changes
+	fmt.Println("   📥 Staging changes...")
+	if err := wc.exec.StageChanges(); err != nil {
+		return nil, fmt.Errorf("failed to stage changes: %w", err)
+	}
+
+	// Safety checkpoint — ensure draft PR exists for resumed runs too
+	if err := a.stepDraftPR(ctx, wc); err != nil {
+		fmt.Printf("   ⚠️  Draft PR checkpoint failed: %v\n", err)
+	}
+
+	// Step 6: Run tests and review
+	if err := a.stepTestAndReview(ctx, wc); err != nil {
+		return nil, err
+	}
+
+	// Step 7: Review & refactor loop
+	if err := a.stepRefactorLoop(ctx, wc); err != nil {
+		return nil, err
+	}
+
+	// Release context pins
+	wc.pinner.Unpin("executor")
+
+	// Check if review passed
+	if !wc.reviewResult.Passed {
+		result := &WorkResult{
+			PRCreated:  false,
+			Message:    "Review did not pass after max iterations",
+			Iterations: wc.iterations,
+		}
+		if wc.draftPRURL != "" {
+			result.PRURL = wc.draftPRURL
+			result.PRCreated = true
+			result.Message = "Review did not pass — draft PR preserved: " + wc.draftPRURL
+		}
+		return result, nil
 	}
 
 	// Step 8: Commit and push
@@ -166,8 +287,66 @@ func (a *Agent) Work(ctx context.Context, t task.Task) (*WorkResult, error) {
 		return nil, err
 	}
 
-	// Step 9: Create PR
-	return a.stepCreatePR(ctx, wc)
+	// Step 9: Finalize PR
+	return a.stepFinalizePR(ctx, wc)
+}
+
+// stepResumeWorktree finds an existing worktree for the task's branch.
+func (a *Agent) stepResumeWorktree(ctx context.Context, wc *workContext) error {
+	agentID := fmt.Sprintf("resume-worktree-%s", wc.task.GetID())
+	events.AgentStarted(agentID, "Resume Worktree", "Finding existing worktree")
+
+	printStep(2, 9, "Resuming existing worktree")
+
+	repoPath, err := os.Getwd()
+	if err != nil {
+		events.AgentCompleted(agentID, "Resume Worktree", "failed")
+		return fmt.Errorf("failed to get working directory: %w", err)
+	}
+
+	wtManager, err := worktree.New(repoPath)
+	if err != nil {
+		events.AgentCompleted(agentID, "Resume Worktree", "failed")
+		return fmt.Errorf("failed to create worktree manager: %w", err)
+	}
+
+	branchName := wc.task.GetBranchName()
+	fmt.Printf("   🌿 Looking for worktree with branch: %s\n", branchName)
+
+	// List existing worktrees and find one matching this branch
+	worktrees, err := wtManager.List()
+	if err != nil {
+		events.AgentCompleted(agentID, "Resume Worktree", "failed")
+		return fmt.Errorf("failed to list worktrees: %w", err)
+	}
+
+	var found *worktree.Worktree
+	for _, wt := range worktrees {
+		if wt.BranchName == branchName {
+			found = wt
+			break
+		}
+	}
+
+	if found == nil {
+		events.AgentCompleted(agentID, "Resume Worktree", "failed")
+		return fmt.Errorf("no existing worktree found for branch %s — cannot resume", branchName)
+	}
+
+	fmt.Printf("   ♻️  Found existing worktree: %s\n", found.Path)
+	fmt.Println()
+
+	wc.worktree = found
+	wc.branchName = branchName
+	wc.pinner = contextpin.New(found.Path)
+	wc.pinner.SetCoordinator(a.coordinator)
+
+	events.AgentCompletedWithData(agentID, "Resume Worktree", "success", map[string]any{
+		"worktree_path": found.Path,
+		"branch":        branchName,
+		"resumed":       true,
+	})
+	return nil
 }
 
 // stepPrepareTask displays task information (Step 1).
@@ -243,39 +422,51 @@ func (a *Agent) stepSetupWorktree(ctx context.Context, wc *workContext) error {
 }
 
 // stepPlanning runs the planning agent to analyze the task (Step 3).
+// If a PreloadedPlan is set on the agent, it is used directly and the
+// Claude planning call is skipped — saving tokens and time.
 func (a *Agent) stepPlanning(ctx context.Context, wc *workContext) error {
 	agentID := fmt.Sprintf("planning-%s", wc.task.GetID())
-	events.AgentStarted(agentID, "Planning & Analysis", "Analyzing codebase and creating implementation plan")
 
 	printStep(3, 9, "Planning & analysis (parallel)")
 
-	var wg sync.WaitGroup
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		planAgent := planner.New(wc.worktree.Path, a.config)
-		plan, usage, err := planAgent.Analyze(ctx, wc.task)
-		if err != nil {
-			fmt.Printf("   ⚠️  Planning failed: %v (continuing without plan)\n", err)
-			events.AgentCompleted(agentID, "Planning & Analysis", "failed")
-			return
-		}
-		wc.plan = plan
-		if usage != nil {
-			wc.costTracker.Add("Planning", *usage)
-		}
-		// Include plan summary in metadata
-		planText := ""
-		if plan != nil {
-			planText = plan.Summary
-		}
+	// Use pre-generated triage plan if available.
+	if a.PreloadedPlan != nil {
+		events.AgentStarted(agentID, "Planning & Analysis", "Using pre-generated triage plan")
+		wc.plan = a.PreloadedPlan
+		fmt.Printf("   📋 Using pre-generated plan: %s\n", truncate(a.PreloadedPlan.Summary, 120))
+		fmt.Printf("   📁 %d candidate files, %d warnings\n", len(a.PreloadedPlan.RelevantFiles), len(a.PreloadedPlan.Warnings))
 		events.AgentCompletedWithData(agentID, "Planning & Analysis", "success", map[string]any{
-			"plan": planText,
+			"plan":       a.PreloadedPlan.Summary,
+			"preloaded":  true,
 		})
-	}()
+	} else {
+		events.AgentStarted(agentID, "Planning & Analysis", "Analyzing codebase and creating implementation plan")
 
-	wg.Wait()
+		var wg sync.WaitGroup
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			planAgent := planner.New(wc.worktree.Path, a.config)
+			plan, usage, err := planAgent.Analyze(ctx, wc.task)
+			if err != nil {
+				fmt.Printf("   ⚠️  Planning failed: %v (continuing without plan)\n", err)
+				events.AgentCompleted(agentID, "Planning & Analysis", "failed")
+				return
+			}
+			wc.plan = plan
+			if usage != nil {
+				wc.costTracker.Add("Planning", *usage)
+			}
+			planText := ""
+			if plan != nil {
+				planText = plan.Summary
+			}
+			events.AgentCompletedWithData(agentID, "Planning & Analysis", "success", map[string]any{
+				"plan": planText,
+			})
+		}()
+		wg.Wait()
+	}
 
 	// Load matching brains based on task content and plan
 	if a.config.Brain.Enabled {
@@ -644,6 +835,167 @@ func (a *Agent) doRefactor(ctx context.Context, wc *workContext, previousDiff st
 	return nil
 }
 
+// stepDraftPR creates a safety-checkpoint draft PR right after execution,
+// before test/review/refactor. This preserves work even if later stages hang or fail.
+func (a *Agent) stepDraftPR(ctx context.Context, wc *workContext) error {
+	agentID := fmt.Sprintf("draft-pr-%s", wc.task.GetID())
+	events.AgentStarted(agentID, "Draft PR", "Creating safety checkpoint draft PR")
+
+	fmt.Println("   📋 Creating draft PR checkpoint...")
+
+	// Stage and commit current state
+	if err := wc.exec.StageChanges(); err != nil {
+		events.AgentCompleted(agentID, "Draft PR", "failed")
+		return fmt.Errorf("failed to stage changes for draft PR: %w", err)
+	}
+
+	commitMsg := fmt.Sprintf("wip(%s): %s [draft checkpoint]",
+		wc.task.GetID(),
+		wc.task.GetTitle(),
+	)
+	if err := wc.exec.Commit(commitMsg); err != nil {
+		events.AgentCompleted(agentID, "Draft PR", "failed")
+		return fmt.Errorf("failed to commit for draft PR: %w", err)
+	}
+
+	// Push
+	if err := wc.exec.Push(wc.branchName); err != nil {
+		events.AgentCompleted(agentID, "Draft PR", "failed")
+		return fmt.Errorf("failed to push for draft PR: %w", err)
+	}
+
+	// Build draft body
+	metadata := wc.task.GetMetadata()
+	var draftBody string
+	if metadata.Source == task.SourceLinear {
+		draftBody = fmt.Sprintf("## %s\n\n### Ticket\n[%s](https://linear.app/issue/%s)\n\n"+
+			"### Status\nDraft checkpoint — review/refactor in progress.\n\n---\n*Automated by BoatmanMode*",
+			wc.task.GetTitle(), wc.task.GetID(), wc.task.GetID())
+	} else {
+		draftBody = fmt.Sprintf("## %s\n\n### Status\nDraft checkpoint — review/refactor in progress.\n\n---\n*Automated by BoatmanMode*",
+			wc.task.GetTitle())
+	}
+
+	prResult, err := github.CreateDraftPRInDir(ctx, wc.worktree.Path, wc.task.GetTitle(), draftBody, a.config.BaseBranch)
+	if err != nil {
+		events.AgentCompleted(agentID, "Draft PR", "failed")
+		return fmt.Errorf("failed to create draft PR: %w", err)
+	}
+
+	wc.draftPRURL = prResult.URL
+	fmt.Printf("   📋 Draft PR: %s\n\n", prResult.URL)
+	events.AgentCompleted(agentID, "Draft PR", "success")
+	return nil
+}
+
+// stepFinalizePR updates the draft PR body with review results and marks it ready.
+// If no draft PR exists, falls back to creating a new PR.
+func (a *Agent) stepFinalizePR(ctx context.Context, wc *workContext) (*WorkResult, error) {
+	if wc.draftPRURL == "" {
+		// No draft PR — create from scratch (fallback)
+		return a.stepCreatePR(ctx, wc)
+	}
+
+	agentID := fmt.Sprintf("finalize-pr-%s", wc.task.GetID())
+	events.AgentStarted(agentID, "Finalize PR", "Updating draft PR and marking ready")
+
+	printStep(9, 9, "Finalizing pull request")
+
+	// Build final PR body with review info
+	prBody := a.buildPRBody(wc)
+
+	// Update PR body
+	if err := github.UpdatePRBody(ctx, wc.worktree.Path, prBody); err != nil {
+		fmt.Printf("   ⚠️  Failed to update PR body: %v\n", err)
+	}
+
+	// Mark PR ready
+	fmt.Println("   ✅ Marking PR as ready for review...")
+	if err := github.MarkPRReady(ctx, wc.worktree.Path); err != nil {
+		events.AgentCompleted(agentID, "Finalize PR", "failed")
+		return nil, fmt.Errorf("failed to mark PR ready: %w", err)
+	}
+
+	events.AgentCompleted(agentID, "Finalize PR", "success")
+	a.printWorkflowSummary(wc, wc.draftPRURL)
+
+	return &WorkResult{
+		PRCreated:    true,
+		PRURL:        wc.draftPRURL,
+		Message:      "Successfully finalized PR",
+		Iterations:   wc.iterations,
+		TestsPassed:  wc.testResult == nil || wc.testResult.Passed,
+		TestCoverage: getTestCoverage(wc.testResult),
+	}, nil
+}
+
+// buildPRBody generates the full PR description with review results.
+func (a *Agent) buildPRBody(wc *workContext) string {
+	metadata := wc.task.GetMetadata()
+
+	if metadata.Source == task.SourceLinear {
+		return fmt.Sprintf(`## %s
+
+### Ticket
+[%s](https://linear.app/issue/%s)
+
+### Description
+%s
+
+### Changes
+%s
+
+### Quality
+- Review iterations: %d
+- Tests: %s
+- Coverage: %.1f%%
+
+---
+*Automated by BoatmanMode*
+`,
+			wc.task.GetTitle(),
+			wc.task.GetID(), wc.task.GetID(),
+			wc.task.GetDescription(),
+			wc.reviewResult.Summary,
+			wc.iterations,
+			formatTestStatus(wc.testResult),
+			getTestCoverage(wc.testResult),
+		)
+	}
+
+	taskType := "Prompt-based"
+	if metadata.Source == task.SourceFile {
+		taskType = "File-based"
+	}
+	return fmt.Sprintf(`## %s
+
+### Task
+%s task (%s)
+
+### Description
+%s
+
+### Changes
+%s
+
+### Quality
+- Review iterations: %d
+- Tests: %s
+- Coverage: %.1f%%
+
+---
+*Automated by BoatmanMode*
+`,
+		wc.task.GetTitle(),
+		taskType, wc.task.GetID(),
+		truncate(wc.task.GetDescription(), 500),
+		wc.reviewResult.Summary,
+		wc.iterations,
+		formatTestStatus(wc.testResult),
+		getTestCoverage(wc.testResult),
+	)
+}
+
 // stepCommitAndPush commits and pushes changes (Step 8).
 func (a *Agent) stepCommitAndPush(ctx context.Context, wc *workContext) error {
 	agentID := fmt.Sprintf("commit-%s", wc.task.GetID())
@@ -656,8 +1008,13 @@ func (a *Agent) stepCommitAndPush(ctx context.Context, wc *workContext) error {
 		wc.task.GetTitle(),
 		wc.reviewResult.Summary,
 	)
-	fmt.Println("   💾 Creating commit...")
+	fmt.Println("   💾 Staging and creating commit...")
 	fmt.Printf("   📝 Message: %s\n", strings.Split(commitMsg, "\n")[0])
+
+	if err := wc.exec.StageChanges(); err != nil {
+		events.AgentCompleted(agentID, "Commit & Push", "failed")
+		return fmt.Errorf("failed to stage changes: %w", err)
+	}
 
 	if err := wc.exec.Commit(commitMsg); err != nil {
 		events.AgentCompleted(agentID, "Commit & Push", "failed")

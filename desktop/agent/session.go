@@ -1575,9 +1575,14 @@ func (s *Session) TrimMessagesIfNeeded(maxMessages int, archive bool) error {
 		return nil
 	}
 
-	// Calculate how many messages to remove
+	// Calculate how many messages to remove (defensive bounds check)
 	overflow := len(s.Messages) - maxMessages
-	messagesToArchive := s.Messages[:overflow]
+	if overflow <= 0 || overflow > len(s.Messages) {
+		return nil
+	}
+	// Copy before reslicing to avoid aliased slice issues
+	messagesToArchive := make([]Message, overflow)
+	copy(messagesToArchive, s.Messages[:overflow])
 	s.Messages = s.Messages[overflow:]
 
 	// Archive if enabled

@@ -188,13 +188,45 @@ func (m *Manager) CreateBoatmanModeSession(projectPath string, input string, mod
 	// Set up event handlers
 	m.setupSessionHandlers(session, sessionID)
 
-	// Set trim settings from config
+	// Set trim settings from config — boatmanmode sessions produce significantly
+	// more messages than interactive sessions, so use a higher limit.
+	if m.configGetter != nil {
+		maxMessages := m.configGetter.GetMaxMessagesPerSession()
+		if maxMessages < 5000 {
+			maxMessages = 5000
+		}
+		archive := m.configGetter.GetArchiveOldMessages()
+		session.SetTrimSettings(maxMessages, archive)
+
+		// Set agent cleanup settings
+		maxAgents := m.configGetter.GetMaxAgentsPerSession()
+		keepCompleted := m.configGetter.GetKeepCompletedAgents()
+		session.SetAgentCleanupSettings(maxAgents, keepCompleted)
+	}
+
+	m.sessions[sessionID] = session
+	return session, nil
+}
+
+// CreateTriageSession creates a new triage agent session.
+func (m *Manager) CreateTriageSession(projectPath string) (*Session, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	sessionID := uuid.New().String()
+	session := NewSession(sessionID, projectPath)
+
+	session.Mode = "triage"
+	session.ModeConfig = map[string]interface{}{}
+	session.Tags = append(session.Tags, "triage")
+
+	m.setupSessionHandlers(session, sessionID)
+
 	if m.configGetter != nil {
 		maxMessages := m.configGetter.GetMaxMessagesPerSession()
 		archive := m.configGetter.GetArchiveOldMessages()
 		session.SetTrimSettings(maxMessages, archive)
 
-		// Set agent cleanup settings
 		maxAgents := m.configGetter.GetMaxAgentsPerSession()
 		keepCompleted := m.configGetter.GetKeepCompletedAgents()
 		session.SetAgentCleanupSettings(maxAgents, keepCompleted)

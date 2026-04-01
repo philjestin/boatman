@@ -29,12 +29,13 @@ type TokenBudget struct {
 	Total   int // Total token budget
 }
 
-// DefaultBudget provides reasonable defaults for most models.
+// DefaultBudget provides reasonable defaults for modern models (200K context).
+// Reserves ~30% of the context window for output.
 var DefaultBudget = TokenBudget{
-	System:  8000,
-	User:    50000,
-	Context: 30000,
-	Total:   100000,
+	System:  20000,
+	User:    100000,
+	Context: 60000,
+	Total:   150000,
 }
 
 // EstimateTokens provides a rough token count for a string.

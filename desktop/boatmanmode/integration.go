@@ -26,23 +26,16 @@ func NewIntegration(linearAPIKey, claudeAPIKey, repoPath string) (*Integration, 
 	// Find boatmanmode binary in PATH or use default location
 	boatmanmodePath, err := exec.LookPath("boatman")
 	if err != nil {
-		// Try monorepo location first
 		homeDir := os.Getenv("HOME")
 		if homeDir == "" {
 			homeDir = "/Users/pmiddleton"
 		}
-		monorepoPath := filepath.Join(homeDir, "workspace/personal/boatman-ecosystem/cli/boatman")
+		boatmanCLIPath := filepath.Join(homeDir, "workspace/handshake/boatman/cli/boatman")
 
-		// Fall back to old standalone location
-		standalonePath := filepath.Join(homeDir, "workspace/handshake/boatmanmode/boatman")
-
-		// Check monorepo location first
-		if _, err := os.Stat(monorepoPath); err == nil {
-			boatmanmodePath = monorepoPath
-		} else if _, err := os.Stat(standalonePath); err == nil {
-			boatmanmodePath = standalonePath
+		if _, err := os.Stat(boatmanCLIPath); err == nil {
+			boatmanmodePath = boatmanCLIPath
 		} else {
-			return nil, fmt.Errorf("boatman binary not found in PATH, monorepo (%s), or standalone (%s). Please build: cd ~/workspace/personal/boatman-ecosystem && make build-cli", monorepoPath, standalonePath)
+			return nil, fmt.Errorf("boatman binary not found in PATH or at %s. Please build: cd ~/workspace/handshake/boatman/cli && go build -o boatman ./cmd/boatman", boatmanCLIPath)
 		}
 	}
 
@@ -122,20 +115,23 @@ type MessageCallback func(role, content string)
 // StreamExecution runs the workflow with live streaming output
 // It parses structured JSON events for agent/task tracking and emits them via Wails runtime
 // mode can be "ticket" or "prompt"
+// planFile, if non-empty, passes a pre-generated triage plan to the work command
+// resume, if true, adds the --resume flag to skip to review/refactor using the existing worktree
 // onMessage, if non-nil, receives non-JSON output lines as messages for the session
-func (i *Integration) StreamExecution(ctx context.Context, sessionID string, input string, mode string, outputChan chan<- string, onMessage MessageCallback) (map[string]interface{}, error) {
-	var cmd *exec.Cmd
+func (i *Integration) StreamExecution(ctx context.Context, sessionID string, input string, mode string, planFile string, resume bool, outputChan chan<- string, onMessage MessageCallback) (map[string]interface{}, error) {
+	var args []string
 	if mode == "ticket" {
-		cmd = exec.CommandContext(ctx, i.boatmanmodePath,
-			"work", input,
-		)
+		args = []string{"work", input}
 	} else {
-		// prompt mode
-		cmd = exec.CommandContext(ctx, i.boatmanmodePath,
-			"work",
-			"--prompt", input,
-		)
+		args = []string{"work", "--prompt", input}
 	}
+	if planFile != "" {
+		args = append(args, "--plan-file", planFile)
+	}
+	if resume {
+		args = append(args, "--resume")
+	}
+	cmd := exec.CommandContext(ctx, i.boatmanmodePath, args...)
 	cmd.Dir = i.repoPath
 
 	// Set environment variables for authentication
@@ -222,11 +218,13 @@ func (i *Integration) StreamExecution(ctx context.Context, sessionID string, inp
 					outputChan <- line + "\n"
 				}
 			} else {
-				// Regular output line (not JSON event)
+				// Regular output line (not JSON event).
+				// Only send to the debug output channel — do NOT create session
+				// messages for these. Structured events (claude_stream, progress,
+				// agent_started, etc.) already provide meaningful UI updates.
+				// Forwarding raw lines floods the chat with per-line code output
+				// from execution/refactor stages.
 				outputChan <- line + "\n"
-				if onMessage != nil {
-					onMessage("assistant", line)
-				}
 			}
 		}
 

@@ -173,8 +173,10 @@ func LoadSession(sessionID string) (*Session, error) {
 	// Initialize context for the session (required for sending messages)
 	session.ctx, session.cancel = context.WithCancel(context.Background())
 
-	// Set status to idle if it was stopped/error (make session usable again)
-	if session.Status == SessionStatusStopped || session.Status == SessionStatusError {
+	// Set status to idle if it was stopped/error/running (make session usable again).
+	// Sessions that were "running" at save time had their process die without
+	// transitioning — treat them as stale.
+	if session.Status == SessionStatusStopped || session.Status == SessionStatusError || session.Status == SessionStatusRunning {
 		session.Status = SessionStatusIdle
 	}
 

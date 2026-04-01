@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/philjestin/boatmanmode/internal/retry"
 )
@@ -316,4 +317,348 @@ func isRetryableError(msg string) bool {
 		}
 	}
 	return false
+}
+
+// Comment represents a Linear issue comment.
+type Comment struct {
+	Body      string    `json:"body"`
+	CreatedAt time.Time `json:"createdAt"`
+	UserName  string    `json:"userName"`
+}
+
+// FullTicket extends Ticket with additional fields needed for triage.
+type FullTicket struct {
+	Ticket
+	Comments    []Comment `json:"comments"`
+	Team        string    `json:"team"`
+	ProjectName string    `json:"projectName"`
+	Estimate    *float64  `json:"estimate"`
+	UpdatedAt   time.Time `json:"updatedAt"`
+	CreatedAt   time.Time `json:"createdAt"`
+}
+
+// ListOptions configures batch ticket fetching.
+type ListOptions struct {
+	TeamKeys []string // Filter by team key (e.g., "ENG", "FE")
+	States   []string // Filter by state type (e.g., "backlog", "triage", "unstarted")
+	Limit    int      // Max tickets to fetch (0 = 50)
+	Labels   []string // Optional label filter
+}
+
+// ListTickets fetches multiple tickets matching the given filters with pagination.
+func (c *Client) ListTickets(ctx context.Context, opts ListOptions) ([]FullTicket, error) {
+	limit := opts.Limit
+	if limit <= 0 {
+		limit = 50
+	}
+
+	// Build the filter object dynamically
+	filter := map[string]interface{}{}
+
+	if len(opts.TeamKeys) > 0 {
+		filter["team"] = map[string]interface{}{
+			"key": map[string]interface{}{
+				"in": opts.TeamKeys,
+			},
+		}
+	}
+
+	if len(opts.States) > 0 {
+		filter["state"] = map[string]interface{}{
+			"type": map[string]interface{}{
+				"in": opts.States,
+			},
+		}
+	}
+
+	if len(opts.Labels) > 0 {
+		filter["labels"] = map[string]interface{}{
+			"name": map[string]interface{}{
+				"in": opts.Labels,
+			},
+		}
+	}
+
+	var allTickets []FullTicket
+	var cursor *string
+	pageSize := 50
+	if limit < pageSize {
+		pageSize = limit
+	}
+
+	for {
+		remaining := limit - len(allTickets)
+		if remaining <= 0 {
+			break
+		}
+		fetchCount := pageSize
+		if remaining < fetchCount {
+			fetchCount = remaining
+		}
+
+		tickets, nextCursor, err := c.listTicketsPage(ctx, filter, fetchCount, cursor)
+		if err != nil {
+			return allTickets, err
+		}
+
+		allTickets = append(allTickets, tickets...)
+
+		if nextCursor == nil || len(tickets) < fetchCount {
+			break
+		}
+		cursor = nextCursor
+	}
+
+	return allTickets, nil
+}
+
+// listTicketsPage fetches a single page of tickets.
+func (c *Client) listTicketsPage(ctx context.Context, filter map[string]interface{}, first int, after *string) ([]FullTicket, *string, error) {
+	query := `
+		query ListIssues($filter: IssueFilter, $first: Int!, $after: String) {
+			issues(filter: $filter, first: $first, after: $after, orderBy: updatedAt) {
+				nodes {
+					id
+					identifier
+					title
+					description
+					branchName
+					priority
+					estimate
+					updatedAt
+					createdAt
+					state {
+						name
+						type
+					}
+					labels {
+						nodes {
+							name
+						}
+					}
+					team {
+						key
+					}
+					project {
+						name
+					}
+					comments(first: 5) {
+						nodes {
+							body
+							createdAt
+							user {
+								name
+							}
+						}
+					}
+				}
+				pageInfo {
+					hasNextPage
+					endCursor
+				}
+			}
+		}
+	`
+
+	variables := map[string]interface{}{
+		"filter": filter,
+		"first":  first,
+	}
+	if after != nil {
+		variables["after"] = *after
+	}
+
+	resp, err := c.execute(ctx, query, variables)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var result struct {
+		Data struct {
+			Issues struct {
+				Nodes []struct {
+					ID          string   `json:"id"`
+					Identifier  string   `json:"identifier"`
+					Title       string   `json:"title"`
+					Description string   `json:"description"`
+					BranchName  string   `json:"branchName"`
+					Priority    int      `json:"priority"`
+					Estimate    *float64 `json:"estimate"`
+					UpdatedAt   string   `json:"updatedAt"`
+					CreatedAt   string   `json:"createdAt"`
+					State       struct {
+						Name string `json:"name"`
+						Type string `json:"type"`
+					} `json:"state"`
+					Labels struct {
+						Nodes []struct {
+							Name string `json:"name"`
+						} `json:"nodes"`
+					} `json:"labels"`
+					Team struct {
+						Key string `json:"key"`
+					} `json:"team"`
+					Project *struct {
+						Name string `json:"name"`
+					} `json:"project"`
+					Comments struct {
+						Nodes []struct {
+							Body      string `json:"body"`
+							CreatedAt string `json:"createdAt"`
+							User      *struct {
+								Name string `json:"name"`
+							} `json:"user"`
+						} `json:"nodes"`
+					} `json:"comments"`
+				} `json:"nodes"`
+				PageInfo struct {
+					HasNextPage bool    `json:"hasNextPage"`
+					EndCursor   *string `json:"endCursor"`
+				} `json:"pageInfo"`
+			} `json:"issues"`
+		} `json:"data"`
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+
+	if err := json.Unmarshal(resp, &result); err != nil {
+		return nil, nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	if len(result.Errors) > 0 {
+		return nil, nil, fmt.Errorf("linear API error: %s", result.Errors[0].Message)
+	}
+
+	tickets := make([]FullTicket, 0, len(result.Data.Issues.Nodes))
+	for _, issue := range result.Data.Issues.Nodes {
+		labels := make([]string, len(issue.Labels.Nodes))
+		for i, l := range issue.Labels.Nodes {
+			labels[i] = l.Name
+		}
+
+		comments := make([]Comment, 0, len(issue.Comments.Nodes))
+		for _, c := range issue.Comments.Nodes {
+			userName := ""
+			if c.User != nil {
+				userName = c.User.Name
+			}
+			createdAt, _ := time.Parse(time.RFC3339, c.CreatedAt)
+			comments = append(comments, Comment{
+				Body:      c.Body,
+				CreatedAt: createdAt,
+				UserName:  userName,
+			})
+		}
+
+		projectName := ""
+		if issue.Project != nil {
+			projectName = issue.Project.Name
+		}
+
+		updatedAt, _ := time.Parse(time.RFC3339, issue.UpdatedAt)
+		createdAt, _ := time.Parse(time.RFC3339, issue.CreatedAt)
+
+		tickets = append(tickets, FullTicket{
+			Ticket: Ticket{
+				ID:          issue.ID,
+				Identifier:  issue.Identifier,
+				Title:       issue.Title,
+				Description: issue.Description,
+				State:       issue.State.Name,
+				Priority:    issue.Priority,
+				Labels:      labels,
+				BranchName:  issue.BranchName,
+			},
+			Comments:    comments,
+			Team:        issue.Team.Key,
+			ProjectName: projectName,
+			Estimate:    issue.Estimate,
+			UpdatedAt:   updatedAt,
+			CreatedAt:   createdAt,
+		})
+	}
+
+	var nextCursor *string
+	if result.Data.Issues.PageInfo.HasNextPage {
+		nextCursor = result.Data.Issues.PageInfo.EndCursor
+	}
+
+	return tickets, nextCursor, nil
+}
+
+// AddComment posts a comment to a Linear issue.
+// issueID must be the UUID (Ticket.ID), not the human-readable identifier.
+func (c *Client) AddComment(ctx context.Context, issueID string, body string) error {
+	query := `
+		mutation CreateComment($issueId: String!, $body: String!) {
+			commentCreate(input: { issueId: $issueId, body: $body }) {
+				success
+				comment {
+					id
+				}
+			}
+		}
+	`
+
+	variables := map[string]interface{}{
+		"issueId": issueID,
+		"body":    body,
+	}
+
+	resp, err := c.execute(ctx, query, variables)
+	if err != nil {
+		return fmt.Errorf("failed to create comment: %w", err)
+	}
+
+	var result struct {
+		Data struct {
+			CommentCreate struct {
+				Success bool `json:"success"`
+			} `json:"commentCreate"`
+		} `json:"data"`
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+
+	if err := json.Unmarshal(resp, &result); err != nil {
+		return fmt.Errorf("failed to parse comment response: %w", err)
+	}
+
+	if len(result.Errors) > 0 {
+		return fmt.Errorf("linear API error: %s", result.Errors[0].Message)
+	}
+
+	if !result.Data.CommentCreate.Success {
+		return fmt.Errorf("comment creation failed")
+	}
+
+	return nil
+}
+
+// GetFullTicket fetches a single ticket with all triage-relevant fields.
+func (c *Client) GetFullTicket(ctx context.Context, identifier string) (*FullTicket, error) {
+	teamKey, number, ok := parseIdentifier(identifier)
+	if !ok {
+		return nil, fmt.Errorf("invalid identifier format: %s (expected TEAM-123)", identifier)
+	}
+
+	filter := map[string]interface{}{
+		"team": map[string]interface{}{
+			"key": map[string]interface{}{"eq": teamKey},
+		},
+		"number": map[string]interface{}{"eq": float64(number)},
+	}
+
+	tickets, _, err := c.listTicketsPage(ctx, filter, 1, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(tickets) == 0 {
+		return nil, fmt.Errorf("issue not found: %s", identifier)
+	}
+
+	return &tickets[0], nil
 }

@@ -34,6 +34,8 @@ func ExecuteUserPromptExample(sessionID, projectPath, prompt string) error {
 		sessionID,
 		prompt,
 		"prompt",
+		"", // no pre-generated plan
+		false, // not a resume
 		outputChan,
 		nil,
 	)
@@ -124,6 +126,8 @@ func HybridExecutionExample(sessionID, projectPath, prompt string) error {
 			sessionID,
 			prompt,
 			"prompt",
+			"", // no pre-generated plan
+			false, // not a resume
 			outputChan,
 			nil,
 		)

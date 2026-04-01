@@ -341,6 +341,178 @@ export interface Incident {
 }
 
 // =============================================================================
+// Triage Types
+// =============================================================================
+
+export type TriageCategory = 'AI_DEFINITE' | 'AI_LIKELY' | 'HUMAN_REVIEW_REQUIRED' | 'HUMAN_ONLY';
+
+export interface TriageRubricScores {
+  clarity: number;
+  codeLocality: number;
+  patternMatch: number;
+  validationStrength: number;
+  dependencyRisk: number;
+  productAmbiguity: number;
+  blastRadius: number;
+}
+
+export interface TriageGateResult {
+  gate: string;
+  passed: boolean;
+  reason?: string;
+}
+
+export interface TriageSignals {
+  mentionsFiles: string[];
+  domains: string[];
+  labels: string[];
+  dependencies: string[];
+  acceptanceCriteriaPresent: boolean;
+  acceptanceCriteriaExplicit: boolean;
+  hasDesignSpec: boolean;
+  commentCount: number;
+  teamKey: string;
+  projectName: string;
+}
+
+export interface TriageNormalizedTicket {
+  ticketId: string;
+  title: string;
+  summary: string;
+  description: string;
+  ingestedAt: string;
+  staleAfter: string;
+  signals: TriageSignals;
+}
+
+export interface TriageClassification {
+  ticketId: string;
+  category: TriageCategory;
+  rubric: TriageRubricScores;
+  uncertainAxes: string[];
+  reasons: string[];
+  hardStops: string[] | null;
+  gateResults: TriageGateResult[];
+}
+
+export interface TriageCostCeiling {
+  maxTokensPerTicket: number;
+  maxAgentMinutesPerTicket: number;
+}
+
+export interface TriageCluster {
+  clusterId: string;
+  tickets: string[];
+  repoAreas: string[];
+  rationale: string;
+}
+
+export interface TriageContextDoc {
+  clusterId: string;
+  rationale: string;
+  tickets: string[];
+  repoAreas: string[];
+  knownPatterns: string[];
+  validationPlan: string[];
+  risks: string[];
+  costCeiling: TriageCostCeiling;
+}
+
+export interface TriageStats {
+  totalTickets: number;
+  aiDefiniteCount: number;
+  aiLikelyCount: number;
+  humanReviewCount: number;
+  humanOnlyCount: number;
+  clusterCount: number;
+  totalTokensUsed: number;
+  totalCostUsd: number;
+}
+
+export interface TriageResult {
+  tickets: TriageNormalizedTicket[];
+  classifications: TriageClassification[];
+  clusters: TriageCluster[];
+  contextDocs: TriageContextDoc[];
+  stats: TriageStats;
+  plans?: PlanResult[];
+  planStats?: PlanStats;
+}
+
+// =============================================================================
+// Plan Types (Stage 4)
+// =============================================================================
+
+export interface TicketPlan {
+  ticketId: string;
+  approach: string;
+  candidateFiles: string[];
+  newFiles: string[];
+  deletedFiles: string[];
+  validation: string[];
+  rollback: string;
+  stopConditions: string[];
+  uncertainties: string[];
+}
+
+export interface PlanGateResult {
+  gate: string;
+  passed: boolean;
+  reason?: string;
+}
+
+export interface PlanValidation {
+  passed: boolean;
+  gateResults: PlanGateResult[];
+  validatedFiles: string[];
+  missingFiles: string[];
+  outOfScopeFiles: string[];
+}
+
+export interface PlanResult {
+  ticketId: string;
+  plan: TicketPlan | null;
+  validation: PlanValidation | null;
+  usage?: { input_tokens: number; output_tokens: number; total_cost_usd: number };
+  error?: string;
+}
+
+export interface PlanStats {
+  total: number;
+  passed: number;
+  failed: number;
+  totalTokensUsed: number;
+  totalCostUsd: number;
+}
+
+export interface TriageOptions {
+  teams: string[];
+  states: string[];
+  limit: number;
+  ticketIds: string[];
+  postComments: boolean;
+  dryRun: boolean;
+  outputDir: string;
+  concurrency: number;
+  generatePlans: boolean;
+  repoPath: string;
+}
+
+export interface TriageEvent {
+  type: string;
+  id?: string;
+  name?: string;
+  status?: string;
+  message?: string;
+  data?: Record<string, any>;
+}
+
+export interface TriageEventPayload {
+  sessionId: string;
+  event: TriageEvent;
+}
+
+// =============================================================================
 // Harness Types
 // =============================================================================
 

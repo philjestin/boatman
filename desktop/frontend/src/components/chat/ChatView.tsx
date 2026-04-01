@@ -3,7 +3,7 @@ import { MessageBubble } from './MessageBubble';
 import { InputArea } from './InputArea';
 import { AgentLogsPanel } from './AgentLogsPanel';
 import { ChatHeader } from './ChatHeader';
-import { Loader2, StopCircle, ArrowDown } from 'lucide-react';
+import { Loader2, StopCircle, ArrowDown, RotateCcw } from 'lucide-react';
 import type { Message, SessionStatus } from '../../types';
 
 interface ChatViewProps {
@@ -11,6 +11,7 @@ interface ChatViewProps {
   status: SessionStatus;
   onSendMessage: (content: string) => void;
   onStop?: () => void;
+  onResume?: () => void;
   isLoading?: boolean;
   hasMoreMessages?: boolean;
   onLoadMore?: () => void;
@@ -28,6 +29,7 @@ export function ChatView({
   status,
   onSendMessage,
   onStop,
+  onResume,
   isLoading = false,
   hasMoreMessages = false,
   onLoadMore,
@@ -177,6 +179,20 @@ export function ChatView({
               <StopCircle className="w-4 h-4" />
             </button>
           )}
+        </div>
+      )}
+
+      {/* Resume banner for non-running boatmanmode sessions */}
+      {onResume && status !== 'running' && mode === 'boatmanmode' && messages.length > 0 && (
+        <div className="flex items-center justify-center gap-3 py-3 px-4 bg-amber-900/30 border-y border-amber-700/30">
+          <span className="text-sm text-amber-300">Execution stopped. You can resume from the review/refactor stage.</span>
+          <button
+            onClick={onResume}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-amber-100 bg-amber-600 hover:bg-amber-500 rounded-md transition-colors"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            Resume
+          </button>
         </div>
       )}
 

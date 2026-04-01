@@ -543,6 +543,7 @@ export namespace main {
 	    isFavorite?: boolean;
 	    model?: string;
 	    reasoningEffort?: string;
+	    mode?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new AgentSessionInfo(source);
@@ -558,6 +559,7 @@ export namespace main {
 	        this.isFavorite = source["isFavorite"];
 	        this.model = source["model"];
 	        this.reasoningEffort = source["reasoningEffort"];
+	        this.mode = source["mode"];
 	    }
 	}
 	export class GitStatus {
@@ -971,6 +973,41 @@ export namespace services {
 	        this.count = source["count"];
 	        this.firstSeen = source["firstSeen"];
 	        this.lastSeen = source["lastSeen"];
+	    }
+	}
+
+}
+
+export namespace triage {
+	
+	export class TriageOptions {
+	    teams: string[];
+	    states: string[];
+	    limit: number;
+	    ticketIds: string[];
+	    postComments: boolean;
+	    dryRun: boolean;
+	    outputDir: string;
+	    concurrency: number;
+	    generatePlans: boolean;
+	    repoPath: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new TriageOptions(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.teams = source["teams"];
+	        this.states = source["states"];
+	        this.limit = source["limit"];
+	        this.ticketIds = source["ticketIds"];
+	        this.postComments = source["postComments"];
+	        this.dryRun = source["dryRun"];
+	        this.outputDir = source["outputDir"];
+	        this.concurrency = source["concurrency"];
+	        this.generatePlans = source["generatePlans"];
+	        this.repoPath = source["repoPath"];
 	    }
 	}
 

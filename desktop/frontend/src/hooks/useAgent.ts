@@ -1,6 +1,6 @@
 import { useEffect, useCallback } from 'react';
 import { useStore } from '../store';
-import type { AgentSession, Message, Task, SessionStatus, BoatmanModeEventPayload } from '../types';
+import type { AgentSession, Message, Task, SessionStatus, BoatmanModeEventPayload, TriageEventPayload, TriageOptions } from '../types';
 
 // Import Wails bindings (will be generated)
 import {
@@ -22,6 +22,12 @@ import {
   IsFirefighterMonitoringActive,
   HandleBoatmanModeEvent,
   StreamBoatmanModeExecution,
+  CreateTriageSession,
+  StreamTriageExecution,
+  HandleTriageEvent,
+  GetTriageResult,
+  ExecuteTriageTicket,
+  ResumeBoatmanModeExecution,
   SetSessionModel,
   SetSessionReasoningEffort,
 } from '../../wailsjs/go/main/App';
@@ -103,6 +109,37 @@ export function useAgent() {
       updateSessionStatus(data.sessionId, 'stopped');
     };
 
+    // Handle triage events
+    const triageEventHandler = async (data: TriageEventPayload) => {
+      console.log('[FRONTEND] Received triage event:', data);
+      try {
+        await HandleTriageEvent(data.sessionId, data.event.type, data.event);
+      } catch (err) {
+        console.error('Failed to handle triage event:', err);
+      }
+    };
+
+    const triageErrorHandler = (data: { sessionId: string; error: string }) => {
+      console.error('[FRONTEND] Triage error:', data.error);
+      addMessage(data.sessionId, {
+        id: `triage-err-${Date.now()}`,
+        role: 'system',
+        content: `Triage error: ${data.error}`,
+        timestamp: new Date().toISOString(),
+      });
+      updateSessionStatus(data.sessionId, 'error');
+    };
+
+    const triageCompleteHandler = (data: { sessionId: string }) => {
+      addMessage(data.sessionId, {
+        id: `triage-done-${Date.now()}`,
+        role: 'system',
+        content: 'Triage pipeline completed.',
+        timestamp: new Date().toISOString(),
+      });
+      updateSessionStatus(data.sessionId, 'stopped');
+    };
+
     console.log('[FRONTEND] Subscribing to agent events...');
     EventsOn('agent:message', messageHandler);
     EventsOn('agent:task', taskHandler);
@@ -111,6 +148,9 @@ export function useAgent() {
     EventsOn('boatmanmode:output', boatmanOutputHandler);
     EventsOn('boatmanmode:error', boatmanErrorHandler);
     EventsOn('boatmanmode:complete', boatmanCompleteHandler);
+    EventsOn('triage:event', triageEventHandler);
+    EventsOn('triage:error', triageErrorHandler);
+    EventsOn('triage:complete', triageCompleteHandler);
 
     return () => {
       console.log('[FRONTEND] Unsubscribing from agent events...');
@@ -121,6 +161,9 @@ export function useAgent() {
       EventsOff('boatmanmode:output');
       EventsOff('boatmanmode:error');
       EventsOff('boatmanmode:complete');
+      EventsOff('triage:event');
+      EventsOff('triage:error');
+      EventsOff('triage:complete');
     };
   }, [addMessage, updateTask, updateSessionStatus]);
 
@@ -149,6 +192,7 @@ export function useAgent() {
             isFavorite: info.isFavorite || false,
             model: info.model || 'sonnet',
             reasoningEffort: info.reasoningEffort || 'medium',
+            mode: info.mode || '',
           });
         });
       } catch (err) {
@@ -431,6 +475,101 @@ export function useAgent() {
     }
   }, [sessions, setError]);
 
+  // Create a triage session
+  const createTriageSession = useCallback(async (projectPath: string, opts: TriageOptions, linearAPIKey: string): Promise<string | null> => {
+    try {
+      setLoading('sessions', true);
+      const info = await CreateTriageSession(projectPath);
+
+      const session: AgentSession = {
+        id: info.id,
+        projectPath: info.projectPath,
+        status: 'running' as SessionStatus,
+        createdAt: info.createdAt,
+        messages: [],
+        tasks: [],
+        tags: info.tags || [],
+        isFavorite: false,
+        mode: 'triage',
+        modeConfig: { opts },
+      };
+
+      addSession(session);
+      setActiveSession(session.id);
+
+      // Don't call StartAgentSession — triage uses subprocess streaming, not the Claude agent loop.
+      // StartAgentSession sets status to 'idle' which races with StreamTriageExecution's 'running'.
+      await StreamTriageExecution(session.id, opts, linearAPIKey, projectPath);
+
+      return session.id;
+    } catch (err) {
+      setError('Failed to create triage session: ' + err);
+      return null;
+    } finally {
+      setLoading('sessions', false);
+    }
+  }, [addSession, setActiveSession, setLoading, setError]);
+
+  // Execute a triage-identified ticket via BoatmanMode
+  const executeTriageTicket = useCallback(async (triageSessionId: string, ticketID: string, linearAPIKey?: string): Promise<string | null> => {
+    try {
+      const info = await ExecuteTriageTicket(triageSessionId, ticketID);
+      if (!info) return null;
+
+      const session: AgentSession = {
+        id: info.id,
+        projectPath: info.projectPath,
+        status: info.status as SessionStatus,
+        createdAt: info.createdAt,
+        messages: [],
+        tasks: [],
+        tags: info.tags || [],
+        isFavorite: false,
+        mode: 'boatmanmode',
+        modeConfig: { input: ticketID, mode: 'ticket' },
+      };
+
+      addSession(session);
+      setActiveSession(session.id);
+
+      // Start the session and begin execution.
+      await StartAgentSession(session.id);
+      await StreamBoatmanModeExecution(session.id, ticketID, 'ticket', linearAPIKey || '', info.projectPath);
+
+      return session.id;
+    } catch (err) {
+      setError('Failed to execute triage ticket: ' + err);
+      return null;
+    }
+  }, [addSession, setActiveSession, setError]);
+
+  // Resume a failed/stopped boatmanmode session from the review/refactor stage
+  const resumeSession = useCallback(async (sessionId: string) => {
+    try {
+      updateSessionStatus(sessionId, 'running');
+      addMessage(sessionId, {
+        id: `resume-${Date.now()}`,
+        role: 'system',
+        content: 'Resuming execution from review/refactor stage...',
+        timestamp: new Date().toISOString(),
+      });
+      await ResumeBoatmanModeExecution(sessionId);
+    } catch (err) {
+      setError('Failed to resume session: ' + err);
+      updateSessionStatus(sessionId, 'error');
+    }
+  }, [updateSessionStatus, addMessage, setError]);
+
+  // Get triage result for a session
+  const getTriageResult = useCallback(async (sessionId: string) => {
+    try {
+      return await GetTriageResult(sessionId);
+    } catch (err) {
+      console.error('Failed to get triage result:', err);
+      return null;
+    }
+  }, []);
+
   // Check if monitoring is active
   const isMonitoringActive = useCallback(async (sessionId: string): Promise<boolean> => {
     try {
@@ -449,6 +588,10 @@ export function useAgent() {
     createSession,
     createFirefighterSession,
     createBoatmanModeSession,
+    createTriageSession,
+    executeTriageTicket,
+    resumeSession,
+    getTriageResult,
     startSession,
     stopSession,
     deleteSession,

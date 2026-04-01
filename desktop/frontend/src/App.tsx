@@ -14,6 +14,8 @@ import { FirefighterDialog } from './components/firefighter/FirefighterDialog';
 import { FirefighterMonitor } from './components/firefighter/FirefighterMonitor';
 import { FirefighterView } from './components/firefighter/FirefighterView';
 import { BoatmanModeDialog } from './components/boatmanmode/BoatmanModeDialog';
+import { TriageDialog } from './components/triage/TriageDialog';
+import { TriageView } from './components/triage/TriageView';
 import { HarnessView } from './components/harness/HarnessView';
 import { BrainView } from './components/brain/BrainView';
 import { useAgent } from './hooks/useAgent';
@@ -24,7 +26,7 @@ import { useDiff } from './hooks/useDiff';
 import { useStore } from './store';
 import { ListTodo, MessageSquare, FileCode, Hammer, Brain } from 'lucide-react';
 import { ListAgentSessions, SetSessionFavorite, AddSessionTag, RemoveSessionTag } from '../wailsjs/go/main/App';
-import type { Task } from './types';
+import type { Task, TriageOptions } from './types';
 
 type TabView = 'chat' | 'tasks' | 'diff' | 'harness' | 'brain';
 
@@ -32,6 +34,7 @@ function App() {
   const [activeTab, setActiveTab] = useState<TabView>('chat');
   const [firefighterDialogOpen, setFirefighterDialogOpen] = useState(false);
   const [boatmanModeDialogOpen, setBoatmanModeDialogOpen] = useState(false);
+  const [triageDialogOpen, setTriageDialogOpen] = useState(false);
   const [monitoringActive, setMonitoringActive] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
 
@@ -50,6 +53,10 @@ function App() {
     createSession,
     createFirefighterSession,
     createBoatmanModeSession,
+    createTriageSession,
+    executeTriageTicket,
+    resumeSession,
+    getTriageResult,
     deleteSession,
     stopSession,
     selectSession,
@@ -180,6 +187,36 @@ function App() {
       setBoatmanModeDialogOpen(false);
     } else {
       setError('Please open a project first');
+    }
+  };
+
+  // Handle triage session creation
+  const handleStartTriage = async (opts: TriageOptions) => {
+    if (activeProject) {
+      const linearAPIKey = preferences?.linearAPIKey || '';
+      if (!linearAPIKey) {
+        setError('Please configure Linear API key in settings');
+        return;
+      }
+      await createTriageSession(activeProject.path, opts, linearAPIKey);
+      setTriageDialogOpen(false);
+    } else {
+      setError('Please open a project first');
+    }
+  };
+
+  // Handle executing a ticket from triage results
+  const handleExecuteTriageTicket = async (ticketID: string) => {
+    if (activeSession) {
+      const linearAPIKey = preferences?.linearAPIKey || '';
+      await executeTriageTicket(activeSession.id, ticketID, linearAPIKey);
+    }
+  };
+
+  // Handle resuming a failed boatmanmode session
+  const handleResumeSession = async () => {
+    if (activeSession) {
+      await resumeSession(activeSession.id);
     }
   };
 
@@ -359,6 +396,7 @@ function App() {
         onOpenSearch={openSearch}
         onStartFirefighter={() => setFirefighterDialogOpen(true)}
         onStartBoatmanMode={() => setBoatmanModeDialogOpen(true)}
+        onStartTriage={() => setTriageDialogOpen(true)}
       />
 
       {/* Firefighter Dialog */}
@@ -375,6 +413,14 @@ function App() {
         isOpen={boatmanModeDialogOpen}
         onClose={() => setBoatmanModeDialogOpen(false)}
         onStart={handleStartBoatmanMode}
+        projectPath={activeProject?.path || ''}
+      />
+
+      {/* Triage Dialog */}
+      <TriageDialog
+        isOpen={triageDialogOpen}
+        onClose={() => setTriageDialogOpen(false)}
+        onStart={handleStartTriage}
         projectPath={activeProject?.path || ''}
       />
 
@@ -398,6 +444,11 @@ function App() {
           onSessionSelect={selectSession}
           onProjectSelect={selectProject}
           onDeleteSession={deleteSession}
+          onDeleteAllSessions={async () => {
+            for (const s of sessions) {
+              await deleteSession(s.id);
+            }
+          }}
           onStopSession={stopSession}
           onToggleFavorite={handleToggleFavorite}
           onAddTag={handleAddTag}
@@ -486,6 +537,14 @@ function App() {
 
           {/* Tab Content */}
           <div className="flex-1 overflow-hidden">
+            {hasActiveSession && activeTab === 'chat' && activeSession.mode === 'triage' && (
+              <TriageView
+                sessionId={activeSession.id}
+                status={activeSession.status}
+                getTriageResult={getTriageResult}
+                onExecuteTicket={handleExecuteTriageTicket}
+              />
+            )}
             {hasActiveSession && activeTab === 'chat' && activeSession.mode === 'firefighter' && (
               <FirefighterView
                 sessionId={activeSession.id}
@@ -503,12 +562,13 @@ function App() {
                 onReasoningEffortChange={handleReasoningEffortChange}
               />
             )}
-            {hasActiveSession && activeTab === 'chat' && activeSession.mode !== 'firefighter' && (
+            {hasActiveSession && activeTab === 'chat' && activeSession.mode !== 'firefighter' && activeSession.mode !== 'triage' && (
               <ChatView
                 messages={activeSession.messages}
                 status={activeSession.status}
                 onSendMessage={handleSendMessage}
                 onStop={handleStopSession}
+                onResume={handleResumeSession}
                 hasMoreMessages={currentPagination?.hasMore ?? false}
                 onLoadMore={handleLoadMore}
                 model={activeSession.model}

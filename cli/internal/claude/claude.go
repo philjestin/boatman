@@ -75,6 +75,7 @@ type Client struct {
 // StreamChunk represents a chunk from Claude's stream-json output.
 type StreamChunk struct {
 	Type    string `json:"type"`
+	Subtype string `json:"subtype"`
 	Content string `json:"content"`
 	Delta   struct {
 		Type string `json:"type"`
@@ -86,6 +87,8 @@ type StreamChunk struct {
 			Text string `json:"text"`
 		} `json:"content"`
 	} `json:"message"`
+	// Result text (present in "result" type chunks, newer CLI versions)
+	Result string `json:"result"`
 	// Usage data (present in "result" type chunks)
 	Usage struct {
 		InputTokens      int `json:"input_tokens"`
@@ -367,6 +370,13 @@ func (c *Client) doStreamingRequest(ctx context.Context, systemPrompt, userPromp
 				} else {
 					text = chunk.Content
 				}
+			case "assistant":
+				// Newer CLI versions emit full response as "assistant" type
+				for _, content := range chunk.Message.Content {
+					if content.Type == "text" {
+						text = content.Text
+					}
+				}
 			case "message_stop":
 				continue
 			case "result":
@@ -378,9 +388,20 @@ func (c *Client) doStreamingRequest(ctx context.Context, systemPrompt, userPromp
 					CacheWriteTokens: chunk.Usage.CacheWriteTokens,
 					TotalCostUSD:     chunk.TotalCostUSD,
 				}
-				for _, content := range chunk.Message.Content {
-					if content.Type == "text" {
-						text = content.Text
+				// Only capture response text from result if nothing was
+				// captured yet (avoids doubling with "assistant" chunk).
+				if fullResponse.Len() == 0 {
+					// Newer CLI: result text is in top-level "result" field
+					if chunk.Result != "" {
+						text = chunk.Result
+					}
+					// Older CLI: result text is in message.content
+					if text == "" {
+						for _, content := range chunk.Message.Content {
+							if content.Type == "text" {
+								text = content.Text
+							}
+						}
 					}
 				}
 			}

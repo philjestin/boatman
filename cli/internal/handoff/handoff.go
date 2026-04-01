@@ -318,28 +318,27 @@ func (h *RefactorHandoff) ForTokenBudget(maxTokens int) string {
 	// Project rules are critical - include them first (truncated if needed)
 	if h.ProjectRules != "" {
 		sb.WriteString("## Project Rules & Standards (MUST FOLLOW)\n\n")
-		// Reserve ~2000 tokens for rules - they're critical for correct fixes
-		sb.WriteString(TruncateToTokens(h.ProjectRules, 2000))
+		sb.WriteString(TruncateToTokens(h.ProjectRules, 10000))
 		sb.WriteString("\n\n---\n\n")
 	}
 
-	// Original requirements (truncated if long)
+	// Original requirements
 	if h.Requirements != "" {
 		sb.WriteString("## Original Requirements\n\n")
-		sb.WriteString(TruncateToTokens(h.Requirements, 1000))
+		sb.WriteString(TruncateToTokens(h.Requirements, 5000))
 		sb.WriteString("\n\n")
 	}
 
-	// Issues are most important
+	// Issues are most important — never truncated
 	sb.WriteString("## Issues to Fix (MUST ADDRESS ALL)\n\n")
 	for i, issue := range h.Issues {
 		sb.WriteString(fmt.Sprintf("%d. %s\n", i+1, issue))
 	}
 
-	// Guidance is helpful
+	// Guidance
 	if h.Guidance != "" {
 		sb.WriteString("\n## Guidance\n\n")
-		sb.WriteString(TruncateToTokens(h.Guidance, 500))
+		sb.WriteString(TruncateToTokens(h.Guidance, 3000))
 	}
 
 	sb.WriteString("\n\n## Files to Update\n\n")
@@ -347,11 +346,11 @@ func (h *RefactorHandoff) ForTokenBudget(maxTokens int) string {
 		sb.WriteString(fmt.Sprintf("- %s\n", f))
 	}
 
-	// Calculate remaining budget for code
+	// Calculate remaining budget for code — this gets the lion's share
 	headerTokens := EstimateTokens(sb.String())
 	codeBudget := maxTokens - headerTokens - 200
 
-	if codeBudget > 500 {
+	if codeBudget > 1000 {
 		sb.WriteString("\n## Current Implementation (truncated)\n\n")
 		sb.WriteString(TruncateToTokens(h.CurrentCode, codeBudget))
 	}

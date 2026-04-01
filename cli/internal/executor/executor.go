@@ -219,6 +219,11 @@ If implementation already exists, add tests or make improvements as needed.`
 	}, usage, nil
 }
 
+// DetectChangedFiles is the exported version of detectChangedFiles.
+func (e *Executor) DetectChangedFiles() ([]string, error) {
+	return e.detectChangedFiles()
+}
+
 // detectChangedFiles uses git status to find what files Claude modified.
 func (e *Executor) detectChangedFiles() ([]string, error) {
 	// Get list of changed files (staged, unstaged, and untracked)
@@ -249,17 +254,55 @@ func (e *Executor) detectChangedFiles() ([]string, error) {
 		if strings.HasSuffix(file, "/") {
 			continue
 		}
-		
+
+		// Skip generated files that inflate the prompt without useful signal
+		if isGeneratedFile(file) {
+			continue
+		}
+
 		// Verify it's a file, not a directory
 		fullPath := filepath.Join(e.worktreePath, file)
 		if info, err := os.Stat(fullPath); err == nil && info.IsDir() {
 			continue
 		}
-		
+
 		files = append(files, file)
 	}
 
 	return files, nil
+}
+
+// isGeneratedFile returns true for auto-generated files that should be excluded
+// from review/refactor prompts (e.g. protobuf outputs, codegen artifacts).
+func isGeneratedFile(file string) bool {
+	// Protobuf generated files
+	if strings.HasSuffix(file, "_pb.ts") || strings.HasSuffix(file, "_pb.js") ||
+		strings.HasSuffix(file, ".pb.go") || strings.HasSuffix(file, "_pb2.py") {
+		return true
+	}
+
+	// Files in generated/ directories
+	if strings.Contains(file, "/generated/") || strings.HasPrefix(file, "generated/") {
+		return true
+	}
+
+	// Common codegen patterns
+	if strings.Contains(file, ".generated.") || strings.HasSuffix(file, ".gen.go") ||
+		strings.HasSuffix(file, ".gen.ts") {
+		return true
+	}
+
+	// GraphQL generated files
+	if strings.HasSuffix(file, ".graphql.ts") || strings.HasSuffix(file, ".graphql.d.ts") {
+		return true
+	}
+
+	// Wails generated bindings
+	if strings.Contains(file, "wailsjs/go/") {
+		return true
+	}
+
+	return false
 }
 
 // Refactor applies feedback from ScottBott to improve the code.
@@ -271,6 +314,20 @@ func (e *Executor) Refactor(ctx context.Context, t task.Task, reviewFeedback str
 	}
 	fmt.Printf("   📁 Loaded %d changed files\n", len(changedFiles))
 
+	taskPrompt := e.buildPrompt(t)
+
+	// Truncate components to fit within context window (200K models).
+	maxCodeTokens := 60000
+	maxFeedbackTokens := 30000
+	if handoff.EstimateTokens(currentFiles) > maxCodeTokens {
+		currentFiles = handoff.TruncateToTokens(currentFiles, maxCodeTokens)
+		fmt.Println("   ⚠️  Truncated current files to fit context window")
+	}
+	if handoff.EstimateTokens(reviewFeedback) > maxFeedbackTokens {
+		reviewFeedback = handoff.TruncateToTokens(reviewFeedback, maxFeedbackTokens)
+		fmt.Println("   ⚠️  Truncated review feedback to fit context window")
+	}
+
 	prompt := fmt.Sprintf(`## Original Task
 %s
 
@@ -281,7 +338,7 @@ func (e *Executor) Refactor(ctx context.Context, t task.Task, reviewFeedback str
 %s
 
 Please refactor the code to address all the feedback. Provide complete updated files.`,
-		e.buildPrompt(t),
+		taskPrompt,
 		currentFiles,
 		reviewFeedback)
 
@@ -331,8 +388,10 @@ Format your response with complete file contents:
 }
 
 // RefactorWithHandoff uses a structured handoff for refactoring.
+// The handoff is sized to fit within the model's context window using
+// ForTokenBudget, which prioritizes project rules and issues over raw code.
 func (e *Executor) RefactorWithHandoff(ctx context.Context, h *handoff.RefactorHandoff) (*ExecutionResult, *cost.Usage, error) {
-	prompt := h.ToPrompt()
+	prompt := h.ForTokenBudget(handoff.DefaultBudget.User)
 
 	// Build system prompt - emphasize following project rules
 	systemPrompt := `You are refactoring code based on peer review feedback.

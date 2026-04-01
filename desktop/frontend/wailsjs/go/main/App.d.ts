@@ -8,6 +8,7 @@ import {config} from '../models';
 import {project} from '../models';
 import {diff} from '../models';
 import {harnessui} from '../models';
+import {triage} from '../models';
 
 export function AddMCPServer(arg1:mcp.Server):Promise<void>;
 
@@ -31,9 +32,15 @@ export function CreateBoatmanModeSession(arg1:string,arg2:string,arg3:string):Pr
 
 export function CreateFirefighterSession(arg1:string,arg2:string,arg3:string):Promise<main.AgentSessionInfo>;
 
+export function CreateTriageSession(arg1:string):Promise<main.AgentSessionInfo>;
+
 export function DeleteAgentSession(arg1:string):Promise<void>;
 
 export function ExecuteLinearTicketWithBoatmanMode(arg1:string,arg2:string,arg3:string):Promise<void>;
+
+export function ExecuteTriageTicket(arg1:string,arg2:string):Promise<main.AgentSessionInfo>;
+
+export function ExportTriagePDF(arg1:string):Promise<string>;
 
 export function FetchLinearTicketsForBoatmanMode(arg1:string,arg2:string):Promise<Array<Record<string, any>>>;
 
@@ -111,11 +118,15 @@ export function GetSideBySideDiff(arg1:diff.FileDiff):Promise<Array<diff.SideByS
 
 export function GetSignalsByDomain(arg1:string):Promise<Array<services.SignalEntry>>;
 
+export function GetTriageResult(arg1:string):Promise<Record<string, any>>;
+
 export function GetWorkspaceInfo(arg1:string):Promise<project.WorkspaceInfo>;
 
 export function GetWorktreeDiff(arg1:string,arg2:string):Promise<string>;
 
 export function HandleBoatmanModeEvent(arg1:string,arg2:string,arg3:Record<string, any>):Promise<void>;
+
+export function HandleTriageEvent(arg1:string,arg2:string,arg3:Record<string, any>):Promise<void>;
 
 export function InvestigateLinearTicket(arg1:string,arg2:string):Promise<void>;
 
@@ -161,6 +172,8 @@ export function RemoveProject(arg1:string):Promise<void>;
 
 export function RemoveSessionTag(arg1:string,arg2:string):Promise<void>;
 
+export function ResumeBoatmanModeExecution(arg1:string):Promise<void>;
+
 export function RunHarness(arg1:string,arg2:harnessui.RunRequest):Promise<void>;
 
 export function ScaffoldHarness(arg1:harnessui.ScaffoldRequest):Promise<harnessui.ScaffoldResponse>;
@@ -198,6 +211,8 @@ export function StopFirefighterMonitoring(arg1:string):Promise<void>;
 export function StopHarness(arg1:string):Promise<void>;
 
 export function StreamBoatmanModeExecution(arg1:string,arg2:string,arg3:string,arg4:string,arg5:string):Promise<void>;
+
+export function StreamTriageExecution(arg1:string,arg2:triage.TriageOptions,arg3:string,arg4:string):Promise<void>;
 
 export function UpdateMCPServer(arg1:mcp.Server):Promise<void>;
 
