@@ -98,7 +98,14 @@ default. Set `BOATMAN_RUNTIME_STORE_DIR` to write runs somewhere else, or set
 
 ## Routine Reports
 
-Desktop routines write Markdown reports under:
+Desktop routines load optional project definitions from:
+
+```text
+<project>/.boatman/routines.json
+<project>/.boatman/routines/*.json
+```
+
+Routine runs write Markdown reports under:
 
 ```text
 <project>/.boatman/routines/<routine-id>/<run-id>.md

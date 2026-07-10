@@ -181,6 +181,11 @@ the provider run under `.boatman/runs`, and writes a Markdown report under
 request and integration health without calling a model. The built-in schedule is
 `0 8 * * *`, so cron or CI can invoke the same command daily.
 
+Project routines can live in `.boatman/routines.json` or
+`.boatman/routines/*.json`. They can `extends` built-ins and set project
+defaults, so a repo can expose commands like `daily-employer-gql` without
+duplicating the full prompt.
+
 ---
 
 ### 📊 Backlog Triage Pipeline (NEW)

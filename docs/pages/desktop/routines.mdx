@@ -4,6 +4,39 @@ The Desktop Routines tab runs saved, parameterized investigations against the
 active project. Routine runs are recorded in the project runtime store and can
 also write Markdown reports under `.boatman/routines`.
 
+Boatman loads the routine list from the active project every time the project
+changes. Built-in routines are always available, and project routines can be
+added in either:
+
+```text
+<project>/.boatman/routines.json
+<project>/.boatman/routines/*.json
+```
+
+Project routines may define a full routine or `extends` a built-in routine and
+set project-specific defaults:
+
+```json
+{
+  "routines": [
+    {
+      "id": "daily-employer-gql",
+      "extends": "datadog-gql-slow-queries",
+      "name": "Daily Employer GraphQL",
+      "schedule": "0 8 * * *",
+      "defaults": {
+        "graph_area": "employer",
+        "service": "employer-graphql",
+        "top_n": "10"
+      }
+    }
+  ]
+}
+```
+
+The Routines tab renders inputs from the selected routine's `parameters`, so a
+project can add new routines without changing the desktop frontend.
+
 ## Datadog GraphQL Slow Queries
 
 The first built-in routine is `datadog-gql-slow-queries`.

@@ -138,10 +138,38 @@ Routines are saved, parameterized runs with integrations, runtime recording, and
 durable reports. They are designed to be invoked manually, from cron, from CI,
 or by a future Boatman scheduler.
 
+Boatman loads built-in routines plus project routines from the current working
+directory, or from `--workdir` when provided:
+
+```text
+.boatman/routines.json
+.boatman/routines/*.json
+```
+
+Project routines can extend built-ins and set project defaults:
+
+```json
+{
+  "routines": [
+    {
+      "id": "daily-employer-gql",
+      "extends": "datadog-gql-slow-queries",
+      "name": "Daily Employer GraphQL",
+      "defaults": {
+        "graph_area": "employer",
+        "service": "employer-graphql",
+        "top_n": "10"
+      }
+    }
+  ]
+}
+```
+
 ```bash
 boatman routines
 boatman routines show datadog-gql-slow-queries
 boatman routines run datadog-gql-slow-queries --graph-area employer --dry-run
+boatman routines run daily-employer-gql --workdir /path/to/project
 ```
 
 Run the Datadog GraphQL slow-query routine:

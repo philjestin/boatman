@@ -1,6 +1,8 @@
 package routines
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -91,5 +93,116 @@ func TestNewRunID(t *testing.T) {
 	got := NewRunID("datadog", time.Date(2026, 7, 10, 8, 9, 10, 0, time.UTC))
 	if got != "datadog-20260710T080910Z" {
 		t.Fatalf("NewRunID = %q", got)
+	}
+}
+
+func TestProjectLibraryLoadsExtendingRoutineDefaults(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".boatman"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	body := `{
+  "routines": [
+    {
+      "id": "daily-employer-gql",
+      "extends": "datadog-gql-slow-queries",
+      "name": "Daily Employer GraphQL",
+      "schedule": "0 8 * * *",
+      "defaults": {
+        "graph_area": "employer",
+        "service": "employer-graphql",
+        "top_n": "10"
+      }
+    }
+  ]
+}`
+	if err := os.WriteFile(filepath.Join(dir, ".boatman", "routines.json"), []byte(body), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	library, err := ProjectLibrary(dir)
+	if err != nil {
+		t.Fatalf("ProjectLibrary error: %v", err)
+	}
+	routine, ok := library.Get("daily-employer-gql")
+	if !ok {
+		t.Fatal("project routine missing")
+	}
+	if routine.Profile != "routine.daily-employer-gql" || routine.Output.DefaultPath != filepath.Join(".boatman", "routines", "daily-employer-gql") {
+		t.Fatalf("routine defaults not normalized: %#v", routine)
+	}
+	values, err := Values(routine, nil)
+	if err != nil {
+		t.Fatalf("Values error: %v", err)
+	}
+	if values["graph_area"] != "employer" || values["service"] != "employer-graphql" || values["top_n"] != "10" {
+		t.Fatalf("values = %#v, want project defaults", values)
+	}
+	prompt, err := RenderPrompt(routine, nil)
+	if err != nil {
+		t.Fatalf("RenderPrompt error: %v", err)
+	}
+	if !strings.Contains(prompt, "employer-graphql") {
+		t.Fatalf("prompt should contain service default:\n%s", prompt)
+	}
+}
+
+func TestProjectLibraryLoadsSplitRoutineFile(t *testing.T) {
+	dir := t.TempDir()
+	routineDir := filepath.Join(dir, ".boatman", "routines")
+	if err := os.MkdirAll(routineDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	body := `{
+  "id": "custom-check",
+  "name": "Custom Check",
+  "parameters": [
+    {"name": "scope", "type": "string", "required": true}
+  ],
+  "instructions": "Read only.",
+  "promptTemplate": "Inspect {{scope}}."
+}`
+	if err := os.WriteFile(filepath.Join(routineDir, "custom-check.json"), []byte(body), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	library, err := ProjectLibrary(dir)
+	if err != nil {
+		t.Fatalf("ProjectLibrary error: %v", err)
+	}
+	routine, ok := library.Get("custom-check")
+	if !ok {
+		t.Fatal("custom routine missing")
+	}
+	if routine.Role != agentruntime.RoleRoutine || routine.Output.Format != "markdown" {
+		t.Fatalf("routine defaults not applied: %#v", routine)
+	}
+	prompt, err := RenderPrompt(routine, map[string]string{"scope": "deploys"})
+	if err != nil {
+		t.Fatalf("RenderPrompt error: %v", err)
+	}
+	if prompt != "Inspect deploys." {
+		t.Fatalf("prompt = %q", prompt)
+	}
+}
+
+func TestProjectLibraryValidatesProjectDefaults(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".boatman"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	body := `{
+  "id": "bad-default",
+  "extends": "datadog-gql-slow-queries",
+  "defaults": {
+    "top_n": "many"
+  }
+}`
+	if err := os.WriteFile(filepath.Join(dir, ".boatman", "routines.json"), []byte(body), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := ProjectLibrary(dir); err == nil {
+		t.Fatal("ProjectLibrary should reject invalid project defaults")
 	}
 }

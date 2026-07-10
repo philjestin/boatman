@@ -50,6 +50,7 @@ func init() {
 	rootCmd.AddCommand(routinesCmd)
 	routinesCmd.AddCommand(routinesShowCmd)
 	routinesCmd.AddCommand(routinesRunCmd)
+	routinesCmd.PersistentFlags().String("workdir", "", "Workspace directory used for project routines (default: current directory)")
 	routinesCmd.Flags().Bool("json", false, "Print routines as JSON")
 	routinesShowCmd.Flags().Bool("json", false, "Print routine as JSON")
 
@@ -62,7 +63,6 @@ func init() {
 	routinesRunCmd.Flags().String("provider", "", "Runtime provider override")
 	routinesRunCmd.Flags().String("model", "", "Runtime model override")
 	routinesRunCmd.Flags().String("run-id", "", "Runtime run ID")
-	routinesRunCmd.Flags().String("workdir", "", "Workspace directory (default: current directory)")
 	routinesRunCmd.Flags().String("report-out", "", "Report path (default: .boatman/routines/<id>/<run-id>.md, '-' disables file output)")
 	routinesRunCmd.Flags().String("mcp-url", "", "Remote MCP URL override for the routine integration")
 	routinesRunCmd.Flags().Bool("dry-run", false, "Build and print the routine request without calling a model")
@@ -89,7 +89,15 @@ type routineDryRun struct {
 }
 
 func runRoutinesList(cmd *cobra.Command, args []string) error {
-	items := routines.DefaultLibrary().List()
+	workDir, err := routineWorkDir(cmd)
+	if err != nil {
+		return err
+	}
+	library, err := routines.ProjectLibrary(workDir)
+	if err != nil {
+		return err
+	}
+	items := library.List()
 	for _, item := range items {
 		if err := routines.Validate(item); err != nil {
 			return err
@@ -100,7 +108,15 @@ func runRoutinesList(cmd *cobra.Command, args []string) error {
 }
 
 func runRoutinesShow(cmd *cobra.Command, args []string) error {
-	routine, ok := routines.DefaultLibrary().Get(args[0])
+	workDir, err := routineWorkDir(cmd)
+	if err != nil {
+		return err
+	}
+	library, err := routines.ProjectLibrary(workDir)
+	if err != nil {
+		return err
+	}
+	routine, ok := library.Get(args[0])
 	if !ok {
 		return fmt.Errorf("unknown routine %q", args[0])
 	}
@@ -113,7 +129,15 @@ func runRoutinesShow(cmd *cobra.Command, args []string) error {
 
 func runRoutinesRun(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
-	routine, ok := routines.DefaultLibrary().Get(args[0])
+	workDir, err := routineWorkDir(cmd)
+	if err != nil {
+		return err
+	}
+	library, err := routines.ProjectLibrary(workDir)
+	if err != nil {
+		return err
+	}
+	routine, ok := library.Get(args[0])
 	if !ok {
 		return fmt.Errorf("unknown routine %q", args[0])
 	}
@@ -122,10 +146,6 @@ func runRoutinesRun(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	values, err = routines.Values(routine, values)
-	if err != nil {
-		return err
-	}
-	workDir, err := routineWorkDir(cmd)
 	if err != nil {
 		return err
 	}
@@ -351,7 +371,12 @@ func routineHasParameter(routine routines.Routine, name string) bool {
 }
 
 func routineWorkDir(cmd *cobra.Command) (string, error) {
-	workDir, _ := cmd.Flags().GetString("workdir")
+	workDir := ""
+	if flag := cmd.Flags().Lookup("workdir"); flag != nil {
+		workDir = flag.Value.String()
+	} else if flag := cmd.InheritedFlags().Lookup("workdir"); flag != nil {
+		workDir = flag.Value.String()
+	}
 	if strings.TrimSpace(workDir) == "" {
 		return os.Getwd()
 	}

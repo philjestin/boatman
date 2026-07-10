@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import {
   DryRunRoutine,
+  ListProjectRoutines,
   ListRoutines,
   RunRoutine,
 } from '../../../wailsjs/go/main/App';
@@ -38,11 +39,7 @@ const INPUT_CLASS = 'w-full px-3 py-2 text-sm bg-slate-950 border border-slate-7
 export function RoutineView({ projectPath, onOpenSettings }: RoutineViewProps) {
   const [routines, setRoutines] = useState<DesktopRoutine[]>([]);
   const [selectedRoutineId, setSelectedRoutineId] = useState(DEFAULT_ROUTINE_ID);
-  const [graphArea, setGraphArea] = useState('');
-  const [topN, setTopN] = useState('20');
-  const [lookback, setLookback] = useState('24h');
-  const [environment, setEnvironment] = useState('prod');
-  const [service, setService] = useState('');
+  const [values, setValues] = useState<Record<string, string>>({});
   const [model, setModel] = useState('');
   const [dryRun, setDryRun] = useState<RoutineDryRunResult | null>(null);
   const [result, setResult] = useState<RoutineRunResult | null>(null);
@@ -51,13 +48,20 @@ export function RoutineView({ projectPath, onOpenSettings }: RoutineViewProps) {
 
   useEffect(() => {
     let mounted = true;
-    ListRoutines()
+    setDryRun(null);
+    setResult(null);
+    setRunState('idle');
+    const list = projectPath ? ListProjectRoutines(projectPath) : ListRoutines();
+    list
       .then((items) => {
         if (!mounted) return;
         const loaded = (items || []) as unknown as DesktopRoutine[];
         setRoutines(loaded);
-        if (loaded.length > 0 && !loaded.some((routine) => routine.id === selectedRoutineId)) {
-          setSelectedRoutineId(loaded[0].id);
+        if (loaded.length > 0) {
+          const next = loaded.find((routine) => routine.id === selectedRoutineId)
+            || loaded.find((routine) => routine.id === DEFAULT_ROUTINE_ID)
+            || loaded[0];
+          setSelectedRoutineId(next.id);
         }
       })
       .catch((err) => {
@@ -67,28 +71,32 @@ export function RoutineView({ projectPath, onOpenSettings }: RoutineViewProps) {
     return () => {
       mounted = false;
     };
-  }, [selectedRoutineId]);
+  }, [projectPath]);
 
   const selectedRoutine = useMemo(
     () => routines.find((routine) => routine.id === selectedRoutineId) || routines[0] || null,
     [routines, selectedRoutineId]
   );
 
+  useEffect(() => {
+    if (!selectedRoutine) {
+      setValues({});
+      return;
+    }
+    setValues(defaultValuesForRoutine(selectedRoutine));
+  }, [selectedRoutine]);
+
   const selectedStatuses = result?.integrations || dryRun?.integrations || [];
-  const datadogStatus = selectedStatuses.find((status) => status.name === 'datadog');
-  const canRun = Boolean(projectPath && selectedRoutine && graphArea.trim() && runState !== 'checking' && runState !== 'running');
+  const hasMissingRequired = selectedRoutine
+    ? (selectedRoutine.parameters || []).some((param) => param.required && !String(values[param.name] || '').trim())
+    : true;
+  const canRun = Boolean(projectPath && selectedRoutine && !hasMissingRequired && runState !== 'checking' && runState !== 'running');
 
   const buildRequest = (): RoutineRunRequest => ({
     routineId: selectedRoutine?.id || selectedRoutineId,
     projectPath: projectPath || '',
     model: model.trim(),
-    values: {
-      graph_area: graphArea.trim(),
-      top_n: topN.trim(),
-      lookback: lookback.trim(),
-      environment: environment.trim(),
-      service: service.trim(),
-    },
+    values: routineValues(selectedRoutine, values),
   });
 
   const handleDryRun = async () => {
@@ -111,7 +119,7 @@ export function RoutineView({ projectPath, onOpenSettings }: RoutineViewProps) {
 
   const handleRun = async () => {
     if (!canRun) {
-      setError(projectPath ? 'Graph area is required.' : 'Open a project before running a routine.');
+      setError(projectPath ? 'Required routine parameters are missing.' : 'Open a project before running a routine.');
       return;
     }
     setRunState('running');
@@ -174,67 +182,30 @@ export function RoutineView({ projectPath, onOpenSettings }: RoutineViewProps) {
 
             {selectedRoutine && <RoutineSummary routine={selectedRoutine} />}
 
-            <div className="space-y-3">
-              <Field label="Graph Area" required>
-                <input
-                  value={graphArea}
-                  onChange={(event) => setGraphArea(event.target.value)}
-                  placeholder="employer"
-                  className={INPUT_CLASS}
-                />
-              </Field>
+            {selectedRoutine && (
+              <RoutineParameters
+                routine={selectedRoutine}
+                values={values}
+                onChange={(name, value) => setValues((current) => ({ ...current, [name]: value }))}
+              />
+            )}
 
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Top N">
-                  <input
-                    type="number"
-                    min="1"
-                    max="100"
-                    value={topN}
-                    onChange={(event) => setTopN(event.target.value)}
-                    className={INPUT_CLASS}
-                  />
-                </Field>
-                <Field label="Lookback">
-                  <input
-                    value={lookback}
-                    onChange={(event) => setLookback(event.target.value)}
-                    placeholder="24h"
-                    className={INPUT_CLASS}
-                  />
-                </Field>
-              </div>
+            <Field label="Model">
+              <input
+                value={model}
+                onChange={(event) => setModel(event.target.value)}
+                placeholder="default"
+                className={INPUT_CLASS}
+              />
+            </Field>
 
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Environment">
-                  <input
-                    value={environment}
-                    onChange={(event) => setEnvironment(event.target.value)}
-                    placeholder="prod"
-                    className={INPUT_CLASS}
-                  />
-                </Field>
-                <Field label="Service">
-                  <input
-                    value={service}
-                    onChange={(event) => setService(event.target.value)}
-                    placeholder="optional"
-                    className={INPUT_CLASS}
-                  />
-                </Field>
-              </div>
-
-              <Field label="Model">
-                <input
-                  value={model}
-                  onChange={(event) => setModel(event.target.value)}
-                  placeholder="default"
-                  className={INPUT_CLASS}
-                />
-              </Field>
-            </div>
-
-            <IntegrationPanel status={datadogStatus} onOpenSettings={onOpenSettings} />
+            {selectedRoutine && (
+              <IntegrationsPanel
+                routine={selectedRoutine}
+                statuses={selectedStatuses}
+                onOpenSettings={onOpenSettings}
+              />
+            )}
 
             <button
               onClick={handleRun}
@@ -310,24 +281,59 @@ function RoutineSummary({ routine }: { routine: DesktopRoutine }) {
   );
 }
 
-function IntegrationPanel({
-  status,
+function RoutineParameters({
+  routine,
+  values,
+  onChange,
+}: {
+  routine: DesktopRoutine;
+  values: Record<string, string>;
+  onChange: (name: string, value: string) => void;
+}) {
+  const parameters = routine.parameters || [];
+  if (parameters.length === 0) {
+    return (
+      <div className="border border-slate-800 rounded-md p-3 bg-slate-950/40 text-sm text-slate-500">
+        No parameters
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {parameters.map((param) => (
+        <Field key={param.name} label={parameterLabel(param.name)} required={param.required}>
+          <input
+            type={param.type === 'integer' ? 'number' : 'text'}
+            value={values[param.name] || ''}
+            onChange={(event) => onChange(param.name, event.target.value)}
+            placeholder={param.default || param.description || ''}
+            className={INPUT_CLASS}
+          />
+        </Field>
+      ))}
+    </div>
+  );
+}
+
+function IntegrationsPanel({
+  routine,
+  statuses,
   onOpenSettings,
 }: {
-  status?: IntegrationStatus;
+  routine: DesktopRoutine;
+  statuses: IntegrationStatus[];
   onOpenSettings?: () => void;
 }) {
-  const state = status?.state || 'unknown';
-  const isReady = state === 'connected' || state === 'ready';
-  const missingEnv = status?.missingEnv || [];
+  const statusByName = new Map(statuses.map((status) => [status.name, status]));
+  const integrations = routine.integrations || [];
 
   return (
     <div className="border border-slate-800 rounded-md p-3 bg-slate-950/40">
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2 min-w-0">
-          {isReady ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : <AlertCircle className="w-4 h-4 text-amber-400" />}
-          <span className="text-sm font-medium text-slate-200">Datadog</span>
-          <StatusBadge status={state} />
+          <DatabaseZap className="w-4 h-4 text-teal-400" />
+          <span className="text-sm font-medium text-slate-200">Integrations</span>
         </div>
         {onOpenSettings && (
           <button
@@ -339,14 +345,36 @@ function IntegrationPanel({
           </button>
         )}
       </div>
-      {missingEnv.length > 0 && (
-        <div className="mt-2 text-xs text-amber-200">
-          Missing {missingEnv.join(', ')}
-        </div>
-      )}
-      {status?.message && (
-        <div className="mt-2 text-xs text-slate-500">
-          {status.message}
+
+      {integrations.length === 0 ? (
+        <div className="mt-3 text-xs text-slate-500">None</div>
+      ) : (
+        <div className="mt-3 space-y-2">
+          {integrations.map((name) => {
+            const status = statusByName.get(name);
+            const state = status?.state || 'not_checked';
+            const isReady = state === 'connected' || state === 'ready';
+            const missingEnv = status?.missingEnv || [];
+            return (
+              <div key={name} className="border border-slate-800 rounded-md p-2 bg-slate-900/60">
+                <div className="flex items-center gap-2 min-w-0">
+                  {isReady ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : <AlertCircle className="w-4 h-4 text-amber-400" />}
+                  <span className="text-sm text-slate-200">{name}</span>
+                  <StatusBadge status={state} />
+                </div>
+                {missingEnv.length > 0 && (
+                  <div className="mt-2 text-xs text-amber-200">
+                    Missing {missingEnv.join(', ')}
+                  </div>
+                )}
+                {status?.message && (
+                  <div className="mt-2 text-xs text-slate-500">
+                    {status.message}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
@@ -492,4 +520,32 @@ function errorMessage(err: unknown, fallback: string): string {
   if (err instanceof Error && err.message) return err.message;
   if (typeof err === 'string' && err.trim()) return err;
   return fallback;
+}
+
+function defaultValuesForRoutine(routine: DesktopRoutine): Record<string, string> {
+  const defaults: Record<string, string> = {};
+  for (const param of routine.parameters || []) {
+    defaults[param.name] = param.default || '';
+  }
+  return defaults;
+}
+
+function routineValues(routine: DesktopRoutine | null, values: Record<string, string>): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!routine) return out;
+  for (const param of routine.parameters || []) {
+    const value = String(values[param.name] || '').trim();
+    if (value) {
+      out[param.name] = value;
+    }
+  }
+  return out;
+}
+
+function parameterLabel(name: string): string {
+  return name
+    .split(/[_-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
 }

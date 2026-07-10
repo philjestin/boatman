@@ -62,6 +62,7 @@ See [TRIAGE.md](./TRIAGE.md) for full documentation.
 - **Inspectable Memory**: Read `.boatman/memory` Markdown context files with provenance and source run IDs
 
 ### ✨ Routines
+- **Project Routine Library**: Load built-ins plus `.boatman/routines.json` and `.boatman/routines/*.json` from the active project
 - **Datadog GraphQL Slow Queries**: Run the saved slow-query investigation from the desktop app
 - **Dry-Run Checks**: Verify Datadog readiness and prompt shape before model execution
 - **Markdown Reports**: Save daily investigation output under project-local `.boatman/routines`

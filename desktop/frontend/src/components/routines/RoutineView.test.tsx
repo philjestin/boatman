@@ -4,6 +4,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { RoutineView } from './RoutineView';
 import {
   DryRunRoutine,
+  ListProjectRoutines,
   ListRoutines,
   RunRoutine,
 } from '../../../wailsjs/go/main/App';
@@ -17,13 +18,20 @@ const routine = {
   role: 'routine',
   profile: 'routine.datadog-gql-slow-queries',
   integrations: ['datadog'],
-  parameters: [],
+  parameters: [
+    { name: 'graph_area', type: 'string', description: 'Graph area', required: true, default: '' },
+    { name: 'top_n', type: 'integer', description: 'Top N', required: false, default: '20' },
+    { name: 'lookback', type: 'duration', description: 'Lookback', required: false, default: '24h' },
+    { name: 'environment', type: 'string', description: 'Environment', required: false, default: 'prod' },
+    { name: 'service', type: 'string', description: 'Service', required: false, default: '' },
+  ],
   output: { format: 'markdown', defaultPath: '.boatman/routines/datadog-gql-slow-queries' },
   metadata: { cadence: 'daily' },
 };
 
 describe('RoutineView', () => {
   beforeEach(() => {
+    vi.mocked(ListProjectRoutines).mockResolvedValue([routine] as any);
     vi.mocked(ListRoutines).mockResolvedValue([routine] as any);
     vi.mocked(DryRunRoutine).mockResolvedValue({
       routine,
@@ -74,6 +82,9 @@ describe('RoutineView', () => {
     render(<RoutineView projectPath="/repo" />);
 
     await screen.findByRole('heading', { name: 'Datadog GraphQL Slow Queries' });
+    await waitFor(() => {
+      expect(ListProjectRoutines).toHaveBeenCalledWith('/repo');
+    });
     await user.type(screen.getByLabelText(/Graph Area/i), 'employer');
     await user.clear(screen.getByLabelText(/Top N/i));
     await user.type(screen.getByLabelText(/Top N/i), '5');

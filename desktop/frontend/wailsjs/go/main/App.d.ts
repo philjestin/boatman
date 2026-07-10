@@ -160,6 +160,8 @@ export function ListProjects():Promise<Array<project.Project>>;
 
 export function ListMemoryDocuments(arg1:string):Promise<Array<main.MemoryDocumentSummary>>;
 
+export function ListProjectRoutines(arg1:string):Promise<Array<main.DesktopRoutine>>;
+
 export function ListRoutines():Promise<Array<main.DesktopRoutine>>;
 
 export function ListRuntimeRuns(arg1:string):Promise<Array<main.RuntimeRunSummary>>;

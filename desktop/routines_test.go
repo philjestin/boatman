@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"boatman/config"
@@ -39,6 +41,54 @@ func TestDesktopRoutineIntegrationRefsUsesPreferencesAndSanitizesSecrets(t *test
 	}
 	if secretEnv["DD_API_KEY"] != "secret-api" || secretEnv["DD_APP_KEY"] != "secret-app" {
 		t.Fatalf("secretEnv = %#v, want Datadog keys for process env", secretEnv)
+	}
+}
+
+func TestListProjectRoutinesLoadsProjectDefinitions(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".boatman"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	body := `{
+  "routines": [
+    {
+      "id": "daily-employer-gql",
+      "extends": "datadog-gql-slow-queries",
+      "name": "Daily Employer GraphQL",
+      "defaults": {
+        "graph_area": "employer",
+        "service": "employer-graphql"
+      }
+    }
+  ]
+}`
+	if err := os.WriteFile(filepath.Join(dir, ".boatman", "routines.json"), []byte(body), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	app := &App{}
+	items, err := app.ListProjectRoutines(dir)
+	if err != nil {
+		t.Fatalf("ListProjectRoutines error: %v", err)
+	}
+	var found *DesktopRoutine
+	for i := range items {
+		if items[i].ID == "daily-employer-gql" {
+			found = &items[i]
+		}
+	}
+	if found == nil {
+		t.Fatalf("project routine missing from %#v", items)
+	}
+	if found.Output.DefaultPath != filepath.Join(".boatman", "routines", "daily-employer-gql") {
+		t.Fatalf("default output path = %q", found.Output.DefaultPath)
+	}
+	defaults := map[string]string{}
+	for _, param := range found.Parameters {
+		defaults[param.Name] = param.Default
+	}
+	if defaults["graph_area"] != "employer" || defaults["service"] != "employer-graphql" {
+		t.Fatalf("parameter defaults = %#v", defaults)
 	}
 }
 

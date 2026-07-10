@@ -115,6 +115,24 @@ type builtRoutineRun struct {
 // ListRoutines returns Boatman's built-in repeatable routines.
 func (a *App) ListRoutines() ([]DesktopRoutine, error) {
 	items := routines.DefaultLibrary().List()
+	return desktopRoutines(items)
+}
+
+// ListProjectRoutines returns built-in routines plus definitions from the
+// selected project's .boatman routine files.
+func (a *App) ListProjectRoutines(projectPath string) ([]DesktopRoutine, error) {
+	workDir, err := routineWorkDir(projectPath)
+	if err != nil {
+		return nil, err
+	}
+	library, err := routines.ProjectLibrary(workDir)
+	if err != nil {
+		return nil, err
+	}
+	return desktopRoutines(library.List())
+}
+
+func desktopRoutines(items []routines.Routine) ([]DesktopRoutine, error) {
 	out := make([]DesktopRoutine, 0, len(items))
 	for _, item := range items {
 		if err := routines.Validate(item); err != nil {
@@ -175,15 +193,19 @@ func (a *App) RunRoutine(input RoutineRunRequest) (*RoutineRunResult, error) {
 }
 
 func (a *App) buildRoutineRun(ctx context.Context, input RoutineRunRequest, dryRun bool) (*builtRoutineRun, error) {
-	routine, ok := routines.DefaultLibrary().Get(input.RoutineID)
+	workDir, err := routineWorkDir(input.ProjectPath)
+	if err != nil {
+		return nil, err
+	}
+	library, err := routines.ProjectLibrary(workDir)
+	if err != nil {
+		return nil, err
+	}
+	routine, ok := library.Get(input.RoutineID)
 	if !ok {
 		return nil, fmt.Errorf("unknown routine %q", input.RoutineID)
 	}
 	values, err := routines.Values(routine, input.Values)
-	if err != nil {
-		return nil, err
-	}
-	workDir, err := routineWorkDir(input.ProjectPath)
 	if err != nil {
 		return nil, err
 	}
@@ -231,13 +253,20 @@ func (a *App) buildRoutineRun(ctx context.Context, input RoutineRunRequest, dryR
 }
 
 func desktopRoutine(item routines.Routine) DesktopRoutine {
+	item = routines.Normalize(item)
 	params := make([]RoutineParameter, 0, len(item.Parameters))
 	for _, param := range item.Parameters {
+		defaultValue := param.Default
+		if item.Defaults != nil {
+			if value, ok := item.Defaults[param.Name]; ok {
+				defaultValue = value
+			}
+		}
 		params = append(params, RoutineParameter{
 			Name:        param.Name,
 			Type:        string(param.Type),
 			Description: param.Description,
-			Default:     param.Default,
+			Default:     defaultValue,
 			Required:    param.Required,
 		})
 	}

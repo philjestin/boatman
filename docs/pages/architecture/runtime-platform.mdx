@@ -283,11 +283,12 @@ of adding a network service too early:
   such as auth, payments, billing, and migrations. This gives review, CI,
   desktop, and future service workflows one quality-gate shape.
 - `shared/agentruntime/routines` defines saved, repeatable runs with parameters,
-  schedules, integrations, prompts, and output locations. The first built-in
-  routine, `datadog-gql-slow-queries`, connects to Datadog MCP, investigates
-  the top slow GraphQL operations for a graph area, records the runtime run, and
-  writes a Markdown report that the CLI, Desktop Routines tab, cron, or CI can
-  produce daily.
+  schedules, integrations, prompts, output locations, project-local JSON
+  discovery, and `extends`-based defaults. The first built-in routine,
+  `datadog-gql-slow-queries`, connects to Datadog MCP, investigates the top
+  slow GraphQL operations for a graph area, records the runtime run, and writes
+  a Markdown report that the CLI, Desktop Routines tab, cron, or CI can produce
+  daily.
 - `shared/agentruntime/mcpconfig` translates provider-neutral MCP refs into
   provider config shapes. The Claude CLI adapters now pass runtime MCP refs via
   `--mcp-config`, so routines can attach Datadog without requiring global Claude

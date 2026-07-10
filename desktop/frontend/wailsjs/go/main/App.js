@@ -302,6 +302,10 @@ export function ListMemoryDocuments(arg1) {
   return window['go']['main']['App']['ListMemoryDocuments'](arg1);
 }
 
+export function ListProjectRoutines(arg1) {
+  return window['go']['main']['App']['ListProjectRoutines'](arg1);
+}
+
 export function ListRoutines() {
   return window['go']['main']['App']['ListRoutines']();
 }

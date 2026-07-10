@@ -2,7 +2,11 @@
 package routines
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -40,6 +44,7 @@ type Output struct {
 // Routine is a saved, repeatable run definition.
 type Routine struct {
 	ID               string            `json:"id"`
+	Extends          string            `json:"extends,omitempty"`
 	Name             string            `json:"name"`
 	Description      string            `json:"description,omitempty"`
 	Schedule         string            `json:"schedule,omitempty"`
@@ -48,6 +53,7 @@ type Routine struct {
 	Profile          string            `json:"profile"`
 	Integrations     []string          `json:"integrations,omitempty"`
 	Parameters       []Parameter       `json:"parameters,omitempty"`
+	Defaults         map[string]string `json:"defaults,omitempty"`
 	Output           Output            `json:"output"`
 	Instructions     string            `json:"instructions,omitempty"`
 	PromptTemplate   string            `json:"promptTemplate,omitempty"`
@@ -68,6 +74,7 @@ func DefaultLibrary() Library {
 func NewLibrary(items []Routine) Library {
 	values := make(map[string]Routine, len(items))
 	for _, item := range items {
+		item = Normalize(item)
 		values[item.ID] = cloneRoutine(item)
 	}
 	return Library{routines: values}
@@ -159,11 +166,83 @@ Do not invent numbers. If Datadog does not expose a metric, mark it as unavailab
 	}
 }
 
+// ProjectLibrary returns built-in routines plus routines defined under workDir.
+// Project routines override built-ins by ID and may extend any routine loaded
+// before them.
+func ProjectLibrary(workDir string) (Library, error) {
+	library := DefaultLibrary()
+	projectRoutines, err := LoadProjectRoutines(workDir, library)
+	if err != nil {
+		return Library{}, err
+	}
+	for _, routine := range projectRoutines {
+		library.routines[routine.ID] = cloneRoutine(Normalize(routine))
+	}
+	return library, nil
+}
+
+// LoadProjectRoutines loads routine definitions from .boatman/routines.json
+// and .boatman/routines/*.json under workDir.
+func LoadProjectRoutines(workDir string, base Library) ([]Routine, error) {
+	paths, err := projectRoutinePaths(workDir)
+	if err != nil {
+		return nil, err
+	}
+	if len(paths) == 0 {
+		return nil, nil
+	}
+	library := base
+	out := []Routine{}
+	for _, path := range paths {
+		items, err := readRoutineFile(path)
+		if err != nil {
+			return nil, err
+		}
+		for _, item := range items {
+			resolved, err := resolveRoutine(item, library)
+			if err != nil {
+				return nil, fmt.Errorf("%s: %w", path, err)
+			}
+			if err := Validate(resolved); err != nil {
+				return nil, fmt.Errorf("%s: %w", path, err)
+			}
+			library.routines[resolved.ID] = cloneRoutine(resolved)
+			out = append(out, cloneRoutine(resolved))
+		}
+	}
+	return out, nil
+}
+
+// Normalize applies routine defaults that make project routine files concise.
+func Normalize(routine Routine) Routine {
+	routine.ID = strings.TrimSpace(routine.ID)
+	routine.Extends = strings.TrimSpace(routine.Extends)
+	if routine.Role == "" {
+		routine.Role = agentruntime.RoleRoutine
+	}
+	if strings.TrimSpace(routine.Profile) == "" && routine.ID != "" {
+		routine.Profile = "routine." + routine.ID
+	}
+	if strings.TrimSpace(routine.Output.Format) == "" {
+		routine.Output.Format = "markdown"
+	}
+	if strings.TrimSpace(routine.Output.DefaultPath) == "" && routine.ID != "" {
+		routine.Output.DefaultPath = filepath.Join(".boatman", "routines", routine.ID)
+	}
+	return routine
+}
+
 // Values resolves user inputs against defaults and validates required fields.
 func Values(routine Routine, overrides map[string]string) (map[string]string, error) {
+	routine = Normalize(routine)
 	values := make(map[string]string, len(routine.Parameters))
 	for _, param := range routine.Parameters {
 		value := strings.TrimSpace(param.Default)
+		if routine.Defaults != nil {
+			if defaultValue, ok := routine.Defaults[param.Name]; ok {
+				value = strings.TrimSpace(defaultValue)
+			}
+		}
 		if overrides != nil {
 			if override, ok := overrides[param.Name]; ok {
 				value = strings.TrimSpace(override)
@@ -200,6 +279,7 @@ type BuildOptions struct {
 // BuildRequest turns a routine definition and values into a provider-neutral
 // runtime request.
 func BuildRequest(routine Routine, values map[string]string, opts BuildOptions) (agentruntime.RunRequest, error) {
+	routine = Normalize(routine)
 	if err := Validate(routine); err != nil {
 		return agentruntime.RunRequest{}, err
 	}
@@ -234,6 +314,7 @@ func BuildRequest(routine Routine, values map[string]string, opts BuildOptions) 
 
 // RenderPrompt fills a routine prompt with validated values.
 func RenderPrompt(routine Routine, values map[string]string) (string, error) {
+	routine = Normalize(routine)
 	resolved, err := Values(routine, values)
 	if err != nil {
 		return "", err
@@ -252,6 +333,7 @@ func RenderPrompt(routine Routine, values map[string]string) (string, error) {
 
 // Validate checks routine shape.
 func Validate(routine Routine) error {
+	routine = Normalize(routine)
 	if strings.TrimSpace(routine.ID) == "" {
 		return fmt.Errorf("routine ID is required")
 	}
@@ -268,6 +350,7 @@ func Validate(routine Routine) error {
 		return fmt.Errorf("routine %q prompt template is required", routine.ID)
 	}
 	seen := map[string]bool{}
+	parameters := map[string]Parameter{}
 	for _, param := range routine.Parameters {
 		name := strings.TrimSpace(param.Name)
 		if name == "" {
@@ -277,11 +360,23 @@ func Validate(routine Routine) error {
 			return fmt.Errorf("routine %q has duplicate parameter %q", routine.ID, name)
 		}
 		seen[name] = true
+		parameters[name] = param
 		if param.Type == "" {
 			return fmt.Errorf("routine %q parameter %q type is required", routine.ID, name)
 		}
 		if param.Default != "" {
 			if err := validateParameter(param, param.Default); err != nil {
+				return err
+			}
+		}
+	}
+	for name, value := range routine.Defaults {
+		param, ok := parameters[name]
+		if !ok {
+			return fmt.Errorf("routine %q has a default for unknown parameter %q", routine.ID, name)
+		}
+		if strings.TrimSpace(value) != "" {
+			if err := validateParameter(param, value); err != nil {
 				return err
 			}
 		}
@@ -315,6 +410,174 @@ func validateParameter(param Parameter, value string) error {
 	return nil
 }
 
+func projectRoutinePaths(workDir string) ([]string, error) {
+	if strings.TrimSpace(workDir) == "" {
+		var err error
+		workDir, err = os.Getwd()
+		if err != nil {
+			return nil, err
+		}
+	}
+	workDir, err := filepath.Abs(workDir)
+	if err != nil {
+		return nil, err
+	}
+	root := filepath.Join(workDir, ".boatman")
+	if _, err := os.Stat(root); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	seen := map[string]bool{}
+	var paths []string
+	add := func(path string) {
+		if !seen[path] {
+			seen[path] = true
+			paths = append(paths, path)
+		}
+	}
+	file := filepath.Join(root, "routines.json")
+	if info, err := os.Stat(file); err == nil && !info.IsDir() {
+		add(file)
+	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+	matches, err := filepath.Glob(filepath.Join(root, "routines", "*.json"))
+	if err != nil {
+		return nil, err
+	}
+	sort.Strings(matches)
+	for _, path := range matches {
+		if info, err := os.Stat(path); err == nil && !info.IsDir() {
+			add(path)
+		} else if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return nil, err
+		}
+	}
+	return paths, nil
+}
+
+func readRoutineFile(path string) ([]Routine, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var wrapper struct {
+		Routines []Routine `json:"routines"`
+	}
+	if err := json.Unmarshal(raw, &wrapper); err == nil && wrapper.Routines != nil {
+		return wrapper.Routines, nil
+	}
+	var list []Routine
+	if err := json.Unmarshal(raw, &list); err == nil {
+		return list, nil
+	}
+	var item Routine
+	if err := json.Unmarshal(raw, &item); err != nil {
+		return nil, fmt.Errorf("failed to parse routine JSON: %w", err)
+	}
+	return []Routine{item}, nil
+}
+
+func resolveRoutine(item Routine, library Library) (Routine, error) {
+	item = Normalize(item)
+	if item.Extends == "" {
+		return item, nil
+	}
+	base, ok := library.Get(item.Extends)
+	if !ok {
+		return Routine{}, fmt.Errorf("routine %q extends unknown routine %q", item.ID, item.Extends)
+	}
+	return mergeRoutine(base, item), nil
+}
+
+func mergeRoutine(base Routine, override Routine) Routine {
+	base = Normalize(base)
+	override = Normalize(override)
+	out := cloneRoutine(base)
+	out.Extends = override.Extends
+	if override.ID != "" {
+		out.ID = override.ID
+	}
+	if override.Name != "" {
+		out.Name = override.Name
+	}
+	if override.Description != "" {
+		out.Description = override.Description
+	}
+	if override.Schedule != "" {
+		out.Schedule = override.Schedule
+	}
+	if override.WorkflowTemplate != "" {
+		out.WorkflowTemplate = override.WorkflowTemplate
+	}
+	if override.Role != "" {
+		out.Role = override.Role
+	}
+	if override.Profile != "" {
+		out.Profile = override.Profile
+	}
+	if override.Integrations != nil {
+		out.Integrations = append([]string(nil), override.Integrations...)
+	}
+	if override.Parameters != nil {
+		out.Parameters = mergeParameters(out.Parameters, override.Parameters)
+	}
+	out.Defaults = mergeStringMaps(out.Defaults, override.Defaults)
+	if override.Output.Format != "" {
+		out.Output.Format = override.Output.Format
+	}
+	if override.Output.DefaultPath != "" {
+		out.Output.DefaultPath = override.Output.DefaultPath
+	}
+	if override.Instructions != "" {
+		out.Instructions = override.Instructions
+	}
+	if override.PromptTemplate != "" {
+		out.PromptTemplate = override.PromptTemplate
+	}
+	out.Metadata = mergeStringMaps(out.Metadata, override.Metadata)
+	return Normalize(out)
+}
+
+func mergeParameters(base []Parameter, overrides []Parameter) []Parameter {
+	out := append([]Parameter(nil), base...)
+	indexByName := map[string]int{}
+	for i, param := range out {
+		indexByName[param.Name] = i
+	}
+	for _, override := range overrides {
+		if idx, ok := indexByName[override.Name]; ok {
+			out[idx] = mergeParameter(out[idx], override)
+			continue
+		}
+		indexByName[override.Name] = len(out)
+		out = append(out, override)
+	}
+	return out
+}
+
+func mergeParameter(base Parameter, override Parameter) Parameter {
+	if override.Name != "" {
+		base.Name = override.Name
+	}
+	if override.Type != "" {
+		base.Type = override.Type
+	}
+	if override.Description != "" {
+		base.Description = override.Description
+	}
+	if override.Default != "" {
+		base.Default = override.Default
+	}
+	if override.Required {
+		base.Required = true
+	}
+	return base
+}
+
 func parseDuration(value string) (time.Duration, error) {
 	value = strings.TrimSpace(value)
 	if strings.HasSuffix(value, "d") {
@@ -330,13 +593,28 @@ func parseDuration(value string) (time.Duration, error) {
 func cloneRoutine(routine Routine) Routine {
 	routine.Integrations = append([]string(nil), routine.Integrations...)
 	routine.Parameters = append([]Parameter(nil), routine.Parameters...)
+	routine.Defaults = cloneStringMap(routine.Defaults)
 	routine.Metadata = cloneStringMap(routine.Metadata)
 	return routine
 }
 
 func cloneStringMap(values map[string]string) map[string]string {
+	if len(values) == 0 {
+		return nil
+	}
 	out := make(map[string]string, len(values))
 	for key, value := range values {
+		out[key] = value
+	}
+	return out
+}
+
+func mergeStringMaps(base, override map[string]string) map[string]string {
+	out := cloneStringMap(base)
+	if out == nil && len(override) > 0 {
+		out = map[string]string{}
+	}
+	for key, value := range override {
 		out[key] = value
 	}
 	return out
