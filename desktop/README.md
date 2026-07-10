@@ -66,6 +66,7 @@ See [TRIAGE.md](./TRIAGE.md) for full documentation.
 - **Datadog GraphQL Slow Queries**: Run the saved slow-query investigation from the desktop app
 - **Datadog MCP Auth**: Open Claude Code's Datadog MCP auth flow in an interactive terminal from the Routines tab, creating `boatman-datadog-mcp` on Datadog's current `/v1/mcp` endpoint when needed
 - **Dry-Run Checks**: Verify Datadog readiness and prompt shape before model execution
+- **Continuable Sessions**: Every desktop routine run creates a chat session with the same ID as the runtime run
 - **Markdown Reports**: Save daily investigation output under project-local `.boatman/routines`
 
 ### 🔍 Advanced UI Features

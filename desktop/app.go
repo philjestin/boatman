@@ -160,6 +160,30 @@ type AgentSessionInfo struct {
 	Model           string              `json:"model,omitempty"`
 	ReasoningEffort string              `json:"reasoningEffort,omitempty"`
 	Mode            string              `json:"mode,omitempty"`
+	ModeConfig      map[string]any      `json:"modeConfig,omitempty"`
+}
+
+func agentSessionInfo(session *agent.Session) AgentSessionInfo {
+	return AgentSessionInfo{
+		ID:              session.ID,
+		ProjectPath:     session.ProjectPath,
+		Status:          session.Status,
+		CreatedAt:       session.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		Tags:            session.Tags,
+		IsFavorite:      session.IsFavorite,
+		Model:           session.Model,
+		ReasoningEffort: session.ReasoningEffort,
+		Mode:            session.Mode,
+		ModeConfig:      session.ModeConfig,
+	}
+}
+
+func (a *App) emitAgentSession(session *agent.Session) {
+	if a == nil || a.ctx == nil || session == nil {
+		return
+	}
+	info := agentSessionInfo(session)
+	runtime.EventsEmit(a.ctx, "agent:session", info)
 }
 
 // CreateAgentSession creates a new agent session
@@ -169,15 +193,8 @@ func (a *App) CreateAgentSession(projectPath string) (*AgentSessionInfo, error) 
 		return nil, err
 	}
 
-	return &AgentSessionInfo{
-		ID:              session.ID,
-		ProjectPath:     session.ProjectPath,
-		Status:          session.Status,
-		CreatedAt:       session.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
-		Model:           session.Model,
-		ReasoningEffort: session.ReasoningEffort,
-		Mode:            session.Mode,
-	}, nil
+	info := agentSessionInfo(session)
+	return &info, nil
 }
 
 // CreateFirefighterSession creates a new firefighter agent session
@@ -187,16 +204,8 @@ func (a *App) CreateFirefighterSession(projectPath string, scope string, slackCh
 		return nil, err
 	}
 
-	return &AgentSessionInfo{
-		ID:              session.ID,
-		ProjectPath:     session.ProjectPath,
-		Status:          session.Status,
-		CreatedAt:       session.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
-		Tags:            session.Tags,
-		Model:           session.Model,
-		ReasoningEffort: session.ReasoningEffort,
-		Mode:            session.Mode,
-	}, nil
+	info := agentSessionInfo(session)
+	return &info, nil
 }
 
 // CreateBoatmanModeSession creates a new boatmanmode agent session
@@ -207,16 +216,8 @@ func (a *App) CreateBoatmanModeSession(projectPath string, input string, mode st
 		return nil, err
 	}
 
-	return &AgentSessionInfo{
-		ID:              session.ID,
-		ProjectPath:     session.ProjectPath,
-		Status:          session.Status,
-		CreatedAt:       session.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
-		Tags:            session.Tags,
-		Model:           session.Model,
-		ReasoningEffort: session.ReasoningEffort,
-		Mode:            session.Mode,
-	}, nil
+	info := agentSessionInfo(session)
+	return &info, nil
 }
 
 // StartAgentSession starts an agent session
@@ -322,17 +323,7 @@ func (a *App) ListAgentSessions() []AgentSessionInfo {
 	sessions := a.agentManager.ListSessions()
 	infos := make([]AgentSessionInfo, len(sessions))
 	for i, s := range sessions {
-		infos[i] = AgentSessionInfo{
-			ID:              s.ID,
-			ProjectPath:     s.ProjectPath,
-			Status:          s.Status,
-			CreatedAt:       s.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
-			Tags:            s.Tags,
-			IsFavorite:      s.IsFavorite,
-			Model:           s.Model,
-			ReasoningEffort: s.ReasoningEffort,
-			Mode:            s.Mode,
-		}
+		infos[i] = agentSessionInfo(s)
 	}
 	return infos
 }
@@ -1210,14 +1201,8 @@ func (a *App) CreateTriageSession(projectPath string) (*AgentSessionInfo, error)
 		return nil, err
 	}
 
-	return &AgentSessionInfo{
-		ID:          session.ID,
-		ProjectPath: session.ProjectPath,
-		Status:      session.Status,
-		CreatedAt:   session.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
-		Tags:        session.Tags,
-		Mode:        session.Mode,
-	}, nil
+	info := agentSessionInfo(session)
+	return &info, nil
 }
 
 // StreamTriageExecution runs the triage pipeline with streaming output.

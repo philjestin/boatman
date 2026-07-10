@@ -132,3 +132,55 @@ func TestBuildRuntimeRequestFirefighterFullAuto(t *testing.T) {
 		t.Fatalf("args = %v, should not include auto-edit tool allowlist", args)
 	}
 }
+
+func TestBuildRuntimeRequestRoutineKeepsRoutineContext(t *testing.T) {
+	session := NewSession("routine-run-1", "/repo")
+	session.Mode = "routine"
+	session.Model = "claude-sonnet"
+	session.systemPrompt = "Investigate the slow GraphQL operations."
+	session.ModeConfig = map[string]interface{}{
+		"profile":  "datadog-gql-slow-queries",
+		"provider": "claude-cli",
+		"mcpServers": []interface{}{
+			map[string]interface{}{
+				"label":   "datadog",
+				"command": "npx",
+				"args":    []interface{}{"-y", "@datadog/mcp-server"},
+				"env": map[string]interface{}{
+					"DD_SITE": "datadoghq.com",
+				},
+			},
+		},
+	}
+
+	req := session.buildRuntimeRequest("what should we fix first?", AuthConfig{
+		Method:       "anthropic-api",
+		ApprovalMode: "suggest",
+	})
+
+	if req.Role != agentruntime.RoleRoutine {
+		t.Fatalf("Role = %q, want routine", req.Role)
+	}
+	if req.Profile != "datadog-gql-slow-queries" {
+		t.Fatalf("Profile = %q, want routine profile", req.Profile)
+	}
+	if req.Provider != "claude-cli" {
+		t.Fatalf("Provider = %q, want claude-cli", req.Provider)
+	}
+	if req.Instructions != "Investigate the slow GraphQL operations." {
+		t.Fatalf("Instructions = %q, want routine instructions", req.Instructions)
+	}
+	if len(req.MCPServers) != 1 {
+		t.Fatalf("MCPServers = %#v, want one Datadog ref", req.MCPServers)
+	}
+	ref := req.MCPServers[0]
+	if ref.Label != "datadog" || ref.Command != "npx" || len(ref.Args) != 2 || ref.Args[1] != "@datadog/mcp-server" {
+		t.Fatalf("MCP ref = %#v, want parsed Datadog command", ref)
+	}
+	if ref.Env["DD_SITE"] != "datadoghq.com" {
+		t.Fatalf("MCP env = %#v, want DD_SITE", ref.Env)
+	}
+	if req.Metadata["phaseId"] != "datadog-gql-slow-queries" {
+		t.Fatalf("phaseId = %q, want routine profile", req.Metadata["phaseId"])
+	}
+}

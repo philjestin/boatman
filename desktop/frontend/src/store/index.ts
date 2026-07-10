@@ -145,7 +145,11 @@ export const useStore = create<Store>()(
         addSession: (session) =>
           set(
             (state) => ({
-              sessions: [...state.sessions, session],
+              sessions: state.sessions.some((existing) => existing.id === session.id)
+                ? state.sessions.map((existing) =>
+                    existing.id === session.id ? { ...existing, ...session } : existing
+                  )
+                : [...state.sessions, session],
             }),
             false,
             'addSession'

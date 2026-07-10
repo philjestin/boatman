@@ -2,7 +2,10 @@
 
 The Desktop Routines tab runs saved, parameterized investigations against the
 active project. Routine runs are recorded in the project runtime store and can
-also write Markdown reports under `.boatman/routines`.
+also write Markdown reports under `.boatman/routines`. Each execution also
+creates a new chat session, so you can continue from the completed routine,
+ask follow-up questions, or hand the agent the next investigation step with the
+same project and routine context.
 
 Boatman loads the routine list from the active project every time the project
 changes. Built-in routines are always available, and project routines can be
@@ -85,4 +88,5 @@ Routine reports are written to:
 ```
 
 The same run is also visible in the **Runtime** tab because routine executions
-use the provider-neutral runtime recorder.
+use the provider-neutral runtime recorder. The run ID and routine session ID
+match, so the Runtime tab and the chat session point at the same execution.

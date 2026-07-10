@@ -292,6 +292,7 @@ export interface RoutineDryRunResult {
 export interface RoutineRunResult {
   routineId: string;
   runId: string;
+  sessionId?: string;
   provider: string;
   model?: string;
   values?: Record<string, string>;
