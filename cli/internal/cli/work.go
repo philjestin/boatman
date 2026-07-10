@@ -51,6 +51,8 @@ func init() {
 	workCmd.Flags().Bool("dry-run", false, "Run without making changes")
 	workCmd.Flags().Int("timeout", 60, "Timeout in minutes for each Claude agent")
 	workCmd.Flags().String("review-skill", "peer-review", "Claude skill/agent to use for code review")
+	workCmd.Flags().StringArray("extra-review-skill", nil, "Additional Claude review skill/agent to run after the primary review")
+	workCmd.Flags().Bool("keep-draft", false, "Leave the final pull request as a draft after successful review")
 
 	// New input mode flags
 	workCmd.Flags().Bool("prompt", false, "Treat argument as inline prompt text")
@@ -69,13 +71,15 @@ func init() {
 	viper.BindPFlag("auto_pr", workCmd.Flags().Lookup("auto-pr"))
 	viper.BindPFlag("timeout", workCmd.Flags().Lookup("timeout"))
 	viper.BindPFlag("review_skill", workCmd.Flags().Lookup("review-skill"))
+	viper.BindPFlag("extra_review_skills", workCmd.Flags().Lookup("extra-review-skill"))
+	viper.BindPFlag("keep_draft_pr", workCmd.Flags().Lookup("keep-draft"))
 }
 
 // runWork executes the main workflow for a given task.
 func runWork(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 
-	cfg, err := config.Load()
+	cfg, err := config.LoadRuntime()
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
@@ -187,6 +191,9 @@ func parseTaskInput(cmd *cobra.Command, args []string, cfg *config.Config) (task
 
 	// Default: Linear mode
 	fmt.Println("🎫 Linear mode")
+	if strings.TrimSpace(cfg.LinearKey) == "" {
+		return nil, fmt.Errorf("linear API key is required for Linear mode (set LINEAR_API_KEY or use --prompt/--file)")
+	}
 	linearClient := linear.New(cfg.LinearKey)
 	return task.CreateFromLinear(ctx, linearClient, input)
 }

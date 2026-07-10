@@ -52,15 +52,17 @@ operations for a graph area, and returns a Markdown report with:
 - top slow operations table
 - clustered likely causes
 - remediation plan and validation checks
-- worktree, branch, changed-file, and test summary when Boatman finds a credible fix
-- `/peer-review` and `/lydia-code-review` feedback and the actions Boatman took
+- a machine-readable `boatman_remediation_candidates` block
+- automatic remediation summary with branch and draft PR links when Boatman finds credible fixes
 - follow-up questions or missing telemetry
 
-When telemetry points to a high-confidence code or schema remediation, the
-routine asks Claude Code to use `/plan`, create a fresh git worktree from latest
-main, implement the smallest safe fix, run targeted validation, request both
-review passes, and address actionable feedback. If the evidence is too weak, it
-stops after the investigation report and explains what is missing.
+When telemetry points to a high-confidence code or schema remediation, Desktop
+does the routing automatically after discovery. It selects up to
+`max_remediations` candidates, starts a BoatmanMode child run for each one,
+creates a fresh worktree from the configured base branch, runs planning,
+implementation, targeted validation, `peer-review`, `lydia-code-review`,
+feedback refactors, and leaves the resulting PR as a draft. If the evidence is
+too weak, it stops after the investigation report and explains what is missing.
 
 ## Setup
 
@@ -68,7 +70,7 @@ stops after the investigation report and explains what is missing.
 2. Open the **Routines** tab.
 3. Click **Check**. If Datadog is not authenticated, click **Authenticate**.
 4. Complete the Datadog MCP auth flow in the terminal window opened by Boatman.
-5. Enter graph area, top N, lookback, environment, and optional service.
+5. Enter graph area, top N, lookback, environment, optional service, and maximum remediations.
 6. Click **Run Routine**.
 
 Desktop auth keeps Datadog OAuth credentials in Claude Code's MCP auth store.

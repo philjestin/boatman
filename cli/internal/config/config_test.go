@@ -113,6 +113,12 @@ func TestConfigDefaultValues(t *testing.T) {
 	if cfg.BaseBranch != "main" {
 		t.Errorf("Expected BaseBranch 'main', got %s", cfg.BaseBranch)
 	}
+	if cfg.KeepDraftPR {
+		t.Error("Expected KeepDraftPR false by default")
+	}
+	if len(cfg.ExtraReviewSkills) != 0 {
+		t.Errorf("Expected no extra review skills by default, got %#v", cfg.ExtraReviewSkills)
+	}
 
 	// Review defaults
 	if cfg.Review.MaxCriticalIssues != 1 {
@@ -161,6 +167,20 @@ func TestConfigDefaultValues(t *testing.T) {
 	// Token budget defaults
 	if cfg.TokenBudget.Context != 8000 {
 		t.Errorf("Expected TokenBudget.Context 8000, got %d", cfg.TokenBudget.Context)
+	}
+}
+
+func TestConfigExtraReviewSkillsFromEnv(t *testing.T) {
+	viper.Reset()
+	t.Setenv("LINEAR_API_KEY", "test-api-key")
+	t.Setenv("BOATMAN_EXTRA_REVIEW_SKILLS", "lydia-code-review,peer-review,lydia-code-review")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if len(cfg.ExtraReviewSkills) != 2 || cfg.ExtraReviewSkills[0] != "lydia-code-review" || cfg.ExtraReviewSkills[1] != "peer-review" {
+		t.Fatalf("ExtraReviewSkills = %#v", cfg.ExtraReviewSkills)
 	}
 }
 

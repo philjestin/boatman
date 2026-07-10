@@ -306,6 +306,17 @@ export interface RoutineRunResult {
     totalCostUsd?: number;
   };
   report?: string;
+  remediations?: RoutineRemediationResult[];
+}
+
+export interface RoutineRemediationResult {
+  id?: string;
+  title: string;
+  status: string;
+  prUrl?: string;
+  branchName?: string;
+  message?: string;
+  error?: string;
 }
 
 export interface DatadogMCPAuthResult {

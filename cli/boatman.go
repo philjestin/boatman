@@ -27,7 +27,11 @@ type Config struct {
 	// Workflow configuration
 	MaxIterations int    // Maximum review/refactor iterations (default: 3)
 	ReviewSkill   string // Claude skill for code review (default: "peer-review")
-	EnableTools   bool   // Enable Claude tools (default: true)
+	// ExtraReviewSkills are additional Claude skills to run after ReviewSkill.
+	ExtraReviewSkills []string
+	// KeepDraftPR leaves successful PRs as draft for human review.
+	KeepDraftPR bool
+	EnableTools bool // Enable Claude tools (default: true)
 
 	// Claude configuration
 	Claude ClaudeConfig
@@ -87,11 +91,13 @@ const (
 func NewAgent(cfg *Config) (*Agent, error) {
 	// Convert public config to internal config
 	internalCfg := &config.Config{
-		LinearKey:     cfg.LinearKey,
-		BaseBranch:    cfg.BaseBranch,
-		MaxIterations: cfg.MaxIterations,
-		ReviewSkill:   cfg.ReviewSkill,
-		EnableTools:   cfg.EnableTools,
+		LinearKey:         cfg.LinearKey,
+		BaseBranch:        cfg.BaseBranch,
+		MaxIterations:     cfg.MaxIterations,
+		ReviewSkill:       cfg.ReviewSkill,
+		ExtraReviewSkills: cfg.ExtraReviewSkills,
+		KeepDraftPR:       cfg.KeepDraftPR,
+		EnableTools:       cfg.EnableTools,
 		Claude: config.ClaudeConfig{
 			EnablePromptCaching: cfg.Claude.EnablePromptCaching,
 		},
@@ -163,11 +169,11 @@ func NewPromptTask(prompt string, title string, branchName string) (*PromptTask,
 	return &PromptTask{internal: t}, nil
 }
 
-func (t *PromptTask) GetID() string              { return t.internal.GetID() }
-func (t *PromptTask) GetTitle() string           { return t.internal.GetTitle() }
-func (t *PromptTask) GetDescription() string     { return t.internal.GetDescription() }
-func (t *PromptTask) GetBranchName() string      { return t.internal.GetBranchName() }
-func (t *PromptTask) GetLabels() []string        { return t.internal.GetLabels() }
+func (t *PromptTask) GetID() string          { return t.internal.GetID() }
+func (t *PromptTask) GetTitle() string       { return t.internal.GetTitle() }
+func (t *PromptTask) GetDescription() string { return t.internal.GetDescription() }
+func (t *PromptTask) GetBranchName() string  { return t.internal.GetBranchName() }
+func (t *PromptTask) GetLabels() []string    { return t.internal.GetLabels() }
 func (t *PromptTask) GetMetadata() TaskMetadata {
 	m := t.internal.GetMetadata()
 	return TaskMetadata{
@@ -191,11 +197,11 @@ func NewFileTask(filePath string, title string, branchName string) (*FileTask, e
 	return &FileTask{internal: t}, nil
 }
 
-func (t *FileTask) GetID() string              { return t.internal.GetID() }
-func (t *FileTask) GetTitle() string           { return t.internal.GetTitle() }
-func (t *FileTask) GetDescription() string     { return t.internal.GetDescription() }
-func (t *FileTask) GetBranchName() string      { return t.internal.GetBranchName() }
-func (t *FileTask) GetLabels() []string        { return t.internal.GetLabels() }
+func (t *FileTask) GetID() string          { return t.internal.GetID() }
+func (t *FileTask) GetTitle() string       { return t.internal.GetTitle() }
+func (t *FileTask) GetDescription() string { return t.internal.GetDescription() }
+func (t *FileTask) GetBranchName() string  { return t.internal.GetBranchName() }
+func (t *FileTask) GetLabels() []string    { return t.internal.GetLabels() }
 func (t *FileTask) GetMetadata() TaskMetadata {
 	m := t.internal.GetMetadata()
 	return TaskMetadata{
@@ -220,11 +226,11 @@ func NewLinearTask(ctx context.Context, linearAPIKey string, ticketID string) (*
 	return &LinearTask{internal: t}, nil
 }
 
-func (t *LinearTask) GetID() string              { return t.internal.GetID() }
-func (t *LinearTask) GetTitle() string           { return t.internal.GetTitle() }
-func (t *LinearTask) GetDescription() string     { return t.internal.GetDescription() }
-func (t *LinearTask) GetBranchName() string      { return t.internal.GetBranchName() }
-func (t *LinearTask) GetLabels() []string        { return t.internal.GetLabels() }
+func (t *LinearTask) GetID() string          { return t.internal.GetID() }
+func (t *LinearTask) GetTitle() string       { return t.internal.GetTitle() }
+func (t *LinearTask) GetDescription() string { return t.internal.GetDescription() }
+func (t *LinearTask) GetBranchName() string  { return t.internal.GetBranchName() }
+func (t *LinearTask) GetLabels() []string    { return t.internal.GetLabels() }
 func (t *LinearTask) GetMetadata() TaskMetadata {
 	m := t.internal.GetMetadata()
 	return TaskMetadata{

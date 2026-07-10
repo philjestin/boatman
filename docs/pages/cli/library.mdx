@@ -32,6 +32,8 @@ func main() {
         BaseBranch:     "main",
         MaxIterations:  3,
         ReviewSkill:    "peer-review",
+        ExtraReviewSkills: []string{"lydia-code-review"},
+        KeepDraftPR:    true,
         EnableTools:    true,
     }
 
@@ -131,6 +133,8 @@ type Config struct {
     BaseBranch    string       // Base branch for worktrees (default: "main")
     MaxIterations int          // Max review/refactor iterations (default: 3)
     ReviewSkill   string       // Claude skill for review (default: "peer-review")
+    ExtraReviewSkills []string // Additional review skills
+    KeepDraftPR   bool         // Leave successful PRs as draft
     EnableTools   bool         // Enable Claude tools (default: true)
     Claude        ClaudeConfig // Claude-specific settings
 }

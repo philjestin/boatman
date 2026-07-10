@@ -7,9 +7,10 @@ The review system controls how BoatmanMode evaluates code quality during the pee
 1. The **reviewer agent** analyzes the code diff using a Claude skill (default: `peer-review`)
 2. It produces a verdict: **Pass** or **Fail** with a list of issues
 3. Issues are categorized by severity: Critical, Major, Minor
-4. The pass/fail decision uses configurable thresholds
-5. If review fails, the **refactor agent** addresses the issues
-6. The **diff verifier** confirms issues were actually addressed
+4. Optional extra review skills run after the primary review, and their blocking feedback is merged
+5. The pass/fail decision uses configurable thresholds
+6. If review fails, the **refactor agent** addresses the issues
+7. The **diff verifier** confirms issues were actually addressed
 
 ---
 
@@ -21,6 +22,10 @@ review:
   max_major_issues: 3              # Max major issues to still pass
   min_verification_confidence: 50  # Min confidence % for diff verification
   strict_parsing: false            # Strict keyword parsing for reviews
+
+extra_review_skills:
+  - lydia-code-review
+keep_draft_pr: true
 ```
 
 ---

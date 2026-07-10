@@ -52,6 +52,8 @@ type Config struct {
     BaseBranch     string        // Base branch (default: "main")
     MaxIterations  int           // Max review/refactor cycles (default: 5)
     ReviewSkill    string        // Claude skill for review (default: "peer-review")
+    ExtraReviewSkills []string    // Additional review skills
+    KeepDraftPR    bool          // Leave successful PRs as draft
     EnableTools    bool          // Enable Claude tools (default: true)
     AutoPR         bool          // Auto-create PR (default: true)
 
@@ -272,6 +274,7 @@ boatman routines --json
 boatman routines show <routine-id>
 boatman routines show <routine-id> --json
 boatman routines run datadog-gql-slow-queries --graph-area <area>
+boatman routines run datadog-gql-slow-queries --graph-area <area> --max-remediations 3
 boatman routines run datadog-gql-slow-queries --graph-area <area> --dry-run
 ```
 
@@ -289,6 +292,7 @@ Important flags:
 | `--lookback` | Datadog lookback window such as `24h` or `7d` |
 | `--environment` | Datadog environment tag |
 | `--service` | Optional Datadog service tag |
+| `--max-remediations` | Maximum high-confidence findings Desktop should route into remediation |
 | `--report-out` | Override Markdown report path, or `-` to skip file output |
 | `--provider` / `--model` | Override runtime provider or model |
 | `--mcp-url` | Use a remote MCP URL instead of the local descriptor command |

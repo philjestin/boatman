@@ -127,16 +127,17 @@ type RoutineDryRunResult struct {
 
 // RoutineRunResult is returned after a routine run completes.
 type RoutineRunResult struct {
-	RoutineID    string                  `json:"routineId"`
-	RunID        string                  `json:"runId"`
-	SessionID    string                  `json:"sessionId,omitempty"`
-	Provider     string                  `json:"provider"`
-	Model        string                  `json:"model,omitempty"`
-	Values       map[string]string       `json:"values,omitempty"`
-	ReportPath   string                  `json:"reportPath,omitempty"`
-	Integrations []mcp.IntegrationStatus `json:"integrations,omitempty"`
-	Usage        *agentruntime.Usage     `json:"usage,omitempty"`
-	Report       string                  `json:"report,omitempty"`
+	RoutineID    string                     `json:"routineId"`
+	RunID        string                     `json:"runId"`
+	SessionID    string                     `json:"sessionId,omitempty"`
+	Provider     string                     `json:"provider"`
+	Model        string                     `json:"model,omitempty"`
+	Values       map[string]string          `json:"values,omitempty"`
+	ReportPath   string                     `json:"reportPath,omitempty"`
+	Integrations []mcp.IntegrationStatus    `json:"integrations,omitempty"`
+	Usage        *agentruntime.Usage        `json:"usage,omitempty"`
+	Report       string                     `json:"report,omitempty"`
+	Remediations []RoutineRemediationResult `json:"remediations,omitempty"`
 }
 
 // DatadogMCPAuthResult describes a Claude-managed Datadog MCP auth attempt.
@@ -278,6 +279,7 @@ func (a *App) RunRoutine(input RoutineRunRequest) (*RoutineRunResult, error) {
 		}
 		return nil, err
 	}
+	remediations, report := a.maybeRunRoutineRemediations(routineContext(a.ctx), built, session, report)
 	if strings.TrimSpace(built.reportPath) != "" && built.reportPath != "-" {
 		if err := writeRoutineReport(built.reportPath, report); err != nil {
 			if started {
@@ -300,7 +302,15 @@ func (a *App) RunRoutine(input RoutineRunRequest) (*RoutineRunResult, error) {
 		Integrations: built.statuses,
 		Usage:        usage,
 		Report:       strings.TrimSpace(report),
+		Remediations: remediations,
 	}, nil
+}
+
+func routineContext(ctx context.Context) context.Context {
+	if ctx != nil {
+		return ctx
+	}
+	return context.Background()
 }
 
 func lastAssistantMessage(messages []agent.Message) string {
@@ -960,6 +970,9 @@ func routineCommandPreview(routineID string, values map[string]string) string {
 	}
 	if value := strings.TrimSpace(values["service"]); value != "" {
 		args = append(args, "--service", value)
+	}
+	if value := strings.TrimSpace(values["max_remediations"]); value != "" {
+		args = append(args, "--max-remediations", value)
 	}
 	return strings.Join(args, " ")
 }

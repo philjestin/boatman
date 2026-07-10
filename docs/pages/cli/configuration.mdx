@@ -18,6 +18,9 @@ max_iterations: 5
 base_branch: main
 auto_pr: true
 review_skill: peer-review
+extra_review_skills:
+  - lydia-code-review
+keep_draft_pr: false
 
 # Review pass criteria
 review:
@@ -92,6 +95,7 @@ memory_dir: ~/.boatman/memory
 | `ANTHROPIC_API_KEY` | Anthropic API key | If using direct API |
 | `BOATMAN_DEBUG` | Set to `1` for debug output | No |
 | `BOATMAN_PROVIDER` | Default runtime provider override | No |
+| `BOATMAN_EXTRA_REVIEW_SKILLS` | Comma-separated additional review skills, such as `lydia-code-review` | No |
 | `BOATMAN_RUNTIME_EVENTS` | Set to `1` to emit normalized runtime events alongside legacy events | No |
 | `BOATMAN_RUNTIME_STORE` | Set to `0` to disable default project-local recording, or `1` to force recording in older paths | No |
 | `BOATMAN_RUNTIME_STORE_DIR` | Custom runtime run store directory | No |

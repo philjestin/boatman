@@ -22,6 +22,12 @@ type Config struct {
 	BaseBranch    string
 	AutoPR        bool
 	ReviewSkill   string
+	// ExtraReviewSkills are additional Claude reviewer skills run after the
+	// primary review skill; all blocking feedback is merged into the refactor loop.
+	ExtraReviewSkills []string
+	// KeepDraftPR leaves the final pull request in draft state after successful
+	// validation/review. The draft checkpoint is still created either way.
+	KeepDraftPR bool
 
 	// Review pass criteria
 	Review ReviewConfig
@@ -242,8 +248,12 @@ func loadValues() *Config {
 		BaseBranch:    getStringOrDefault("base_branch", "main"),
 		AutoPR:        viper.GetBool("auto_pr"),
 		ReviewSkill:   getStringOrDefault("review_skill", "peer-review"),
-		Debug:         os.Getenv("BOATMAN_DEBUG") == "1",
-		EnableTools:   getBoolOrDefault("enable_tools", true),
+		ExtraReviewSkills: sanitizeStringSlice(
+			append(viper.GetStringSlice("extra_review_skills"), splitCSV(os.Getenv("BOATMAN_EXTRA_REVIEW_SKILLS"))...),
+		),
+		KeepDraftPR: getBoolOrDefault("keep_draft_pr", false),
+		Debug:       os.Getenv("BOATMAN_DEBUG") == "1",
+		EnableTools: getBoolOrDefault("enable_tools", true),
 
 		Review: ReviewConfig{
 			MaxCriticalIssues:         getIntOrDefault("review.max_critical_issues", 1),          // Allow 1 critical (was 0)
@@ -352,6 +362,27 @@ func normalizeProviderMap(values map[string]string) map[string]string {
 		return nil
 	}
 	return out
+}
+
+func sanitizeStringSlice(values []string) []string {
+	seen := map[string]bool{}
+	out := []string{}
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		out = append(out, value)
+	}
+	return out
+}
+
+func splitCSV(value string) []string {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	return strings.Split(value, ",")
 }
 
 // getEnvOrViper returns the value from environment variable or viper config.

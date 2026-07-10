@@ -499,6 +499,7 @@ function RoutineOutputPane({
           icon={<FileText className="w-4 h-4 text-teal-400" />}
         />
         <RunMetrics result={result} />
+        {(result.remediations || []).length > 0 && <RemediationSummary result={result} />}
         <pre className="whitespace-pre-wrap text-sm leading-6 text-slate-200 bg-slate-950 border border-slate-800 rounded-md p-4 overflow-x-auto">
           {result.report || 'No report text returned.'}
         </pre>
@@ -555,6 +556,40 @@ function RunMetrics({ result }: { result: RoutineRunResult }) {
   );
 }
 
+function RemediationSummary({ result }: { result: RoutineRunResult }) {
+  return (
+    <div className="border border-slate-800 rounded-md bg-slate-950/40 overflow-hidden">
+      <div className="px-3 py-2 border-b border-slate-800 text-xs uppercase text-slate-500">Remediation</div>
+      <div className="divide-y divide-slate-800">
+        {(result.remediations || []).map((item, index) => (
+          <div key={item.id || `${item.title}-${index}`} className="p-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-sm font-medium text-slate-100 truncate">{item.title}</div>
+                <div className="mt-1 text-xs text-slate-500 truncate">{item.branchName || item.id || '-'}</div>
+              </div>
+              <StatusBadge status={item.status} />
+            </div>
+            {(item.prUrl || item.error || item.message) && (
+              <div className="mt-2 text-xs text-slate-400 break-words">
+                {item.prUrl ? (
+                  <a className="text-teal-300 hover:text-teal-200" href={item.prUrl} target="_blank" rel="noreferrer">
+                    {item.prUrl}
+                  </a>
+                ) : item.error ? (
+                  <span className="text-red-300">{item.error}</span>
+                ) : (
+                  item.message
+                )}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function Field({ label, required, children }: { label: string; required?: boolean; children: ReactNode }) {
   return (
     <label className="block">
@@ -591,13 +626,16 @@ function EmptyState({ title, body, loading }: { title: string; body: string; loa
 }
 
 function StatusBadge({ status }: { status: string }) {
-  const classes = status === 'connected' || status === 'ready'
-    ? 'bg-emerald-950 text-emerald-300 border-emerald-900'
-    : status === 'needs_configuration'
-      ? 'bg-amber-950 text-amber-300 border-amber-900'
-      : status === 'failed'
-        ? 'bg-red-950 text-red-300 border-red-900'
-        : 'bg-slate-800 text-slate-400 border-slate-700';
+  let classes = 'bg-slate-800 text-slate-400 border-slate-700';
+  if (status === 'connected' || status === 'ready' || status === 'completed') {
+    classes = 'bg-emerald-950 text-emerald-300 border-emerald-900';
+  } else if (status === 'running') {
+    classes = 'bg-cyan-950 text-cyan-300 border-cyan-900';
+  } else if (status === 'needs_configuration') {
+    classes = 'bg-amber-950 text-amber-300 border-amber-900';
+  } else if (status === 'failed') {
+    classes = 'bg-red-950 text-red-300 border-red-900';
+  }
 
   return (
     <span className={`px-1.5 py-0.5 text-xs rounded border ${classes}`}>
