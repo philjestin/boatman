@@ -178,7 +178,7 @@ export function useAgent() {
     };
 
     console.log('[FRONTEND] Subscribing to agent events...');
-    EventsOn('agent:session', sessionHandler);
+    const unsubscribeSession = EventsOn('agent:session', sessionHandler);
     EventsOn('agent:message', messageHandler);
     EventsOn('agent:task', taskHandler);
     EventsOn('agent:status', statusHandler);
@@ -192,7 +192,11 @@ export function useAgent() {
 
     return () => {
       console.log('[FRONTEND] Unsubscribing from agent events...');
-      EventsOff('agent:session');
+      if (typeof unsubscribeSession === 'function') {
+        unsubscribeSession();
+      } else {
+        EventsOff('agent:session');
+      }
       EventsOff('agent:message');
       EventsOff('agent:task');
       EventsOff('agent:status');

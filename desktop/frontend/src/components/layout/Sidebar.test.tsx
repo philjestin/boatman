@@ -216,6 +216,38 @@ describe('Sidebar', () => {
       expect(screen.getByText('project2')).toBeInTheDocument();
     });
 
+    it('should render routine sessions with their routine name', () => {
+      render(
+        <Sidebar
+          projects={mockProjects}
+          sessions={[
+            {
+              id: 'routine-run-1',
+              projectPath: '/path/to/project1',
+              status: 'running',
+              createdAt: '2024-01-15T12:00:00Z',
+              messages: [],
+              tasks: [],
+              mode: 'routine',
+              modeConfig: {
+                routineName: 'Daily GraphQL Slow Queries',
+                routineId: 'datadog-gql-slow-queries',
+              },
+            },
+          ]}
+          activeSessionId={null}
+          activeProjectId={null}
+          onSessionSelect={mockOnSessionSelect}
+          onProjectSelect={mockOnProjectSelect}
+          onDeleteSession={mockOnDeleteSession}
+          isOpen={true}
+        />
+      );
+
+      expect(screen.getByText('Daily GraphQL Slow Queries')).toBeInTheDocument();
+      expect(screen.getByText('Routine')).toBeInTheDocument();
+    });
+
     it('should call onSessionSelect when session is clicked', () => {
       render(
         <Sidebar

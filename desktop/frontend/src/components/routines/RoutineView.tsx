@@ -32,6 +32,7 @@ import type {
 interface RoutineViewProps {
   projectPath?: string;
   onOpenSettings?: () => void;
+  onRoutineSessionOpen?: (sessionId: string) => void | Promise<void>;
 }
 
 type RunState = 'idle' | 'checking' | 'running' | 'complete' | 'error';
@@ -42,7 +43,7 @@ const INPUT_CLASS = 'w-full px-3 py-2 text-sm bg-slate-950 border border-slate-7
 const DATADOG_AUTH_POLL_ATTEMPTS = 40;
 const DATADOG_AUTH_POLL_DELAY_MS = 3000;
 
-export function RoutineView({ projectPath, onOpenSettings }: RoutineViewProps) {
+export function RoutineView({ projectPath, onOpenSettings, onRoutineSessionOpen }: RoutineViewProps) {
   const [routines, setRoutines] = useState<DesktopRoutine[]>([]);
   const [selectedRoutineId, setSelectedRoutineId] = useState(DEFAULT_ROUTINE_ID);
   const [values, setValues] = useState<Record<string, string>>({});
@@ -146,6 +147,9 @@ export function RoutineView({ projectPath, onOpenSettings }: RoutineViewProps) {
       const response = await RunRoutine(buildRequest());
       setResult(response as unknown as RoutineRunResult);
       setDryRun(null);
+      if (response?.sessionId) {
+        await onRoutineSessionOpen?.(response.sessionId);
+      }
       setRunState('complete');
     } catch (err) {
       setError(errorMessage(err, 'Routine run failed'));

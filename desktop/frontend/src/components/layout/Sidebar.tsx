@@ -13,6 +13,7 @@ import {
   StopCircle,
   MoreVertical,
   Tag,
+  Sparkles,
 } from 'lucide-react';
 import type { Project, AgentSession, SessionStatus } from '../../types';
 import { FirefighterBadge } from '../firefighter/FirefighterBadge';
@@ -60,6 +61,21 @@ function getStatusIcon(status: SessionStatus) {
     default:
       return <Circle className="w-3 h-3" />;
   }
+}
+
+function getSessionTitle(session: AgentSession): string {
+  if (session.mode === 'routine') {
+    const routineName = session.modeConfig?.routineName;
+    if (typeof routineName === 'string' && routineName.trim()) {
+      return routineName;
+    }
+    const routineId = session.modeConfig?.routineId;
+    if (typeof routineId === 'string' && routineId.trim()) {
+      return routineId;
+    }
+    return 'Routine run';
+  }
+  return session.projectPath.split('/').pop() || 'Session';
 }
 
 export function Sidebar({
@@ -181,7 +197,7 @@ export function Sidebar({
                               : 'text-slate-300'
                           }`}
                         >
-                          {session.projectPath.split('/').pop() || 'Session'}
+                          {getSessionTitle(session)}
                         </p>
                         {session.isFavorite && onToggleFavorite && (
                           <button
@@ -224,6 +240,15 @@ export function Sidebar({
                         )}
                         {session.mode === 'triage' && (
                           <TriageBadge className="flex-shrink-0" />
+                        )}
+                        {session.mode === 'routine' && (
+                          <span
+                            className="inline-flex items-center gap-1 text-[10px] text-teal-300 bg-teal-950/60 border border-teal-800/60 rounded px-1.5 py-0.5"
+                            title="Routine session"
+                          >
+                            <Sparkles className="w-3 h-3" />
+                            Routine
+                          </span>
                         )}
                       </div>
                       {session.tags && session.tags.length > 0 && (
