@@ -34,13 +34,14 @@ Boatman Desktop is a native desktop application built with Wails (Go + React) th
 ### Routines
 - **Project Routine Library**: Load built-ins plus `.boatman/routines.json` and `.boatman/routines/*.json` from the active project
 - **Datadog GraphQL Slow Queries**: Run a saved Datadog MCP investigation from the desktop app
+- **Datadog MCP Auth**: Open Claude Code's Datadog MCP browser auth flow from the Routines tab
 - **Dry-Run Preview**: Check integration readiness and request shape before invoking a model
 - **Markdown Reports**: Save routine output under project-local `.boatman/routines`
 
 ### MCP Integration
 - **Extensible**: Connect to any MCP-compatible tool or service
 - **Built-in Servers**: GitHub, Datadog, Bugsnag, Linear, Slack
-- **OAuth Support**: Authenticate via Okta SSO for enterprise integrations
+- **OAuth Support**: Authenticate Datadog through Claude Code MCP auth and Okta SSO for enterprise integrations
 - **Custom Servers**: Build your own MCP servers
 
 ---
