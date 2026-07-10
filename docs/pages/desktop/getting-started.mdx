@@ -138,13 +138,16 @@ The Runtime tab reads files from the active project:
 Each recorded runtime run includes:
 
 - Provider, model, role, profile, status, and timestamps
-- Original provider-neutral request
-- Normalized event stream
+- Original provider-neutral request, including prompt previews, tools, MCP refs, and approval mode
+- Searchable and filterable normalized event stream
 - Artifact manifest for files, diffs, PRs, or other durable outputs
 
 ### Memory
 
-Memory documents are Markdown files with frontmatter. Boatman can load them as prompt context for future sessions, and users can inspect them directly in the Runtime tab before trusting the context.
+Memory documents are Markdown files with frontmatter. Boatman loads non-expired
+documents as prompt context for future sessions, records a `memory.loaded`
+event, and users can inspect the exact context directly in the Runtime tab
+before trusting it.
 
 ---
 

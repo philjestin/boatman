@@ -140,6 +140,37 @@ func TestRunTextRecordsRuntimeStoreWhenConfigured(t *testing.T) {
 	}
 }
 
+func TestRunTextDefaultsRuntimeStoreForWorkDir(t *testing.T) {
+	workDir := t.TempDir()
+	message := agentruntime.NewEvent(agentruntime.EventMessageCompleted)
+	message.Message = "stored by default"
+	completed := agentruntime.NewEvent(agentruntime.EventRunCompleted)
+	completed.Status = agentruntime.StatusSucceeded
+
+	response, _, err := RunText(context.Background(), streamProvider{
+		events: []agentruntime.Event{message, completed},
+	}, agentruntime.RunRequest{
+		RunID:    "default-store-run",
+		Role:     agentruntime.RolePlanner,
+		Provider: "stream",
+		WorkDir:  workDir,
+	})
+	if err != nil {
+		t.Fatalf("RunText error: %v", err)
+	}
+	if response != "stored by default" {
+		t.Fatalf("response = %q, want stored by default", response)
+	}
+
+	metadata, events, err := runstore.NewFileStore(workDir+"/.boatman/runs").LoadRun(context.Background(), "default-store-run")
+	if err != nil {
+		t.Fatalf("LoadRun error: %v", err)
+	}
+	if metadata.Status != agentruntime.StatusSucceeded || len(events) != 2 {
+		t.Fatalf("metadata/events = %#v/%#v, want recorded default store", metadata, events)
+	}
+}
+
 func TestRunTextRecordsProviderStartFailure(t *testing.T) {
 	storeDir := t.TempDir()
 

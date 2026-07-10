@@ -91,7 +91,7 @@ memory_dir: ~/.boatman/memory
 | `BOATMAN_DEBUG` | Set to `1` for debug output | No |
 | `BOATMAN_PROVIDER` | Default runtime provider override | No |
 | `BOATMAN_RUNTIME_EVENTS` | Set to `1` to emit normalized runtime events alongside legacy events | No |
-| `BOATMAN_RUNTIME_STORE` | Set to `1` to record runs under `.boatman/runs` | No |
+| `BOATMAN_RUNTIME_STORE` | Set to `0` to disable default project-local recording, or `1` to force recording in older paths | No |
 | `BOATMAN_RUNTIME_STORE_DIR` | Custom runtime run store directory | No |
 | `BOATMAN_CHECKPOINT_DIR` | Custom checkpoint directory | No |
 | `BOATMAN_MEMORY_DIR` | Custom memory directory | No |
@@ -211,10 +211,10 @@ Recorded runtime runs are plain files:
   artifacts.json
 ```
 
-Enable recording per project:
+Project-scoped provider runs record per project by default:
 
 ```bash
-BOATMAN_RUNTIME_STORE=1 boatman work --prompt "Update documentation"
+boatman work --prompt "Update documentation"
 ```
 
 Or write to a fixed location:
@@ -226,6 +226,10 @@ export BOATMAN_RUNTIME_STORE_DIR=/tmp/boatman-runs
 Memory documents are Markdown files under `.boatman/memory` or
 `BOATMAN_MEMORY_DIR`. They include frontmatter for scope, provenance, source
 run, generated time, updated time, and optional expiration.
+
+Provider calls load non-expired memory documents automatically unless
+`BOATMAN_MEMORY=0` is set. Loaded documents are prepended to the provider
+instructions and recorded as `memory.loaded` events.
 
 ---
 

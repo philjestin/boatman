@@ -11,6 +11,7 @@ import (
 
 	runtimeproviders "boatman/agent/providers"
 	agentruntime "github.com/philjestin/boatman-ecosystem/shared/agentruntime"
+	"github.com/philjestin/boatman-ecosystem/shared/agentruntime/runprep"
 	"github.com/philjestin/boatman-ecosystem/shared/agentruntime/runstore"
 )
 
@@ -452,11 +453,18 @@ func (s *Session) handleSlashCommand(cmd string, authConfig AuthConfig) error {
 // runClaudeCommand executes the configured provider command with the given prompt.
 func (s *Session) runClaudeCommand(prompt string, authConfig AuthConfig) {
 	req := s.buildRuntimeRequest(prompt, authConfig)
+	preparedReq, initialEvents, err := runprep.Prepare(s.ctx, req, runprep.DefaultOptions())
+	if err != nil {
+		s.handleError(fmt.Errorf("prepare runtime request: %w", err))
+		return
+	}
+	req = preparedReq
 	provider, err := runtimeproviders.NewDefaultRegistry().ForRequest(req)
 	if err != nil {
 		s.handleError(err)
 		return
 	}
+	provider = runprep.NewInitialEventsProvider(provider, initialEvents)
 	store, storeEnabled, err := runstore.ForRequest(req)
 	if err != nil {
 		s.handleError(fmt.Errorf("runtime run store: %w", err))
@@ -486,13 +494,28 @@ func (s *Session) runClaudeCommand(prompt string, authConfig AuthConfig) {
 				}
 			}
 
+		case agentruntime.EventMessageDelta:
+			s.handleRuntimeMessageDelta(event, &responseBuilder, &currentMessageID)
+
 		case agentruntime.EventMessageCompleted:
-			if event.Message != "" {
-				if currentMessageID == "" {
-					currentMessageID = s.createStreamingMessage()
-				}
-				responseBuilder.WriteString(event.Message)
-			}
+			s.handleRuntimeMessageCompleted(event, &responseBuilder, &currentMessageID)
+
+		case agentruntime.EventToolCall:
+			s.handleRuntimeToolCall(event)
+
+		case agentruntime.EventToolResult:
+			s.handleRuntimeToolResult(event)
+
+		case agentruntime.EventTaskCreated, agentruntime.EventTaskUpdated:
+			s.handleRuntimeTaskEvent(event)
+
+		case agentruntime.EventApprovalRequest:
+			s.mu.Lock()
+			s.setStatus(SessionStatusWaiting)
+			s.mu.Unlock()
+
+		case agentruntime.EventMemoryLoaded:
+			s.handleRuntimeMemoryLoaded(event)
 
 		case agentruntime.EventLogMessage:
 			line := strings.TrimSpace(event.Message)
@@ -531,6 +554,115 @@ func (s *Session) runClaudeCommand(prompt string, authConfig AuthConfig) {
 	if err := SaveSession(s); err != nil {
 		fmt.Printf("Warning: failed to save session %s after command: %v\n", s.ID, err)
 	}
+}
+
+func (s *Session) handleRuntimeMessageDelta(event agentruntime.Event, responseBuilder *strings.Builder, currentMessageID *string) {
+	if strings.TrimSpace(event.Message) == "" {
+		return
+	}
+	responseBuilder.WriteString(event.Message)
+	if *currentMessageID == "" {
+		*currentMessageID = s.createStreamingMessage()
+	}
+	s.updateStreamingMessage(*currentMessageID, responseBuilder.String())
+}
+
+func (s *Session) handleRuntimeMessageCompleted(event agentruntime.Event, responseBuilder *strings.Builder, currentMessageID *string) {
+	message := strings.TrimSpace(event.Message)
+	if *currentMessageID != "" && responseBuilder.Len() > 0 {
+		current := responseBuilder.String()
+		s.finalizeMessage(*currentMessageID, current)
+		responseBuilder.Reset()
+		*currentMessageID = ""
+		if message == "" || message == strings.TrimSpace(current) {
+			return
+		}
+	}
+	if message != "" {
+		s.addAssistantMessage(event.Message)
+	}
+}
+
+func (s *Session) handleRuntimeToolCall(event agentruntime.Event) {
+	if event.Tool == nil {
+		return
+	}
+	input := any(nil)
+	if len(event.Tool.Input) > 0 {
+		_ = json.Unmarshal(event.Tool.Input, &input)
+	}
+	s.handleToolUse(map[string]any{
+		"name":  event.Tool.Name,
+		"id":    event.Tool.ID,
+		"input": input,
+	})
+}
+
+func (s *Session) handleRuntimeToolResult(event agentruntime.Event) {
+	if event.Tool == nil {
+		return
+	}
+	content := string(event.Tool.Output)
+	var decoded any
+	if len(event.Tool.Output) > 0 && json.Unmarshal(event.Tool.Output, &decoded) == nil {
+		if text, ok := decoded.(string); ok {
+			content = text
+		}
+	}
+	s.handleToolResult(map[string]any{
+		"tool_use_id": event.Tool.ID,
+		"content":     content,
+		"is_error":    event.Tool.IsError,
+	})
+}
+
+func (s *Session) handleRuntimeTaskEvent(event agentruntime.Event) {
+	id := strings.TrimSpace(event.TaskID)
+	if id == "" {
+		id = strings.TrimSpace(event.PhaseID)
+	}
+	if id == "" {
+		id = fmt.Sprintf("task-%d", time.Now().UnixNano())
+	}
+	subject := firstNonEmpty(event.Name, event.Message, event.Description, id)
+	s.AddOrUpdateTask(id, subject, event.Description, runtimeTaskStatus(event.Status, event.Type))
+}
+
+func (s *Session) handleRuntimeMemoryLoaded(event agentruntime.Event) {
+	count := 0
+	if rawDocs, ok := event.Data["documents"].([]map[string]any); ok {
+		count = len(rawDocs)
+	} else if rawDocs, ok := event.Data["documents"].([]any); ok {
+		count = len(rawDocs)
+	}
+	if count == 0 {
+		return
+	}
+	s.addSystemMessage(fmt.Sprintf("Loaded %d memory document(s) for this run.", count))
+}
+
+func runtimeTaskStatus(status agentruntime.Status, eventType agentruntime.EventType) string {
+	switch status {
+	case agentruntime.StatusCompleted, agentruntime.StatusSucceeded:
+		return "completed"
+	case agentruntime.StatusStarted, agentruntime.StatusRunning, agentruntime.StatusInProgress:
+		return "in_progress"
+	case agentruntime.StatusFailed, agentruntime.StatusCanceled, agentruntime.StatusSkipped:
+		return string(status)
+	}
+	if eventType == agentruntime.EventTaskCreated {
+		return "pending"
+	}
+	return "in_progress"
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
 }
 
 // parseStreamLine parses a single line of stream-json output

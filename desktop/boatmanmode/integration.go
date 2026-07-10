@@ -145,7 +145,7 @@ func (i *Integration) StreamExecution(ctx context.Context, sessionID string, inp
 	if i.claudeAPIKey != "" {
 		cmd.Env = append(cmd.Env, "ANTHROPIC_API_KEY="+i.claudeAPIKey)
 	}
-	cmd.Env = append(cmd.Env, "BOATMAN_RUNTIME_EVENTS=1")
+	cmd.Env = append(cmd.Env, i.runtimeEnv()...)
 
 	// Bypass tmux so Claude streams directly, allowing EventForwarder to
 	// forward real-time events to the desktop UI.
@@ -268,6 +268,31 @@ func (i *Integration) StreamExecution(ctx context.Context, sessionID string, inp
 	return map[string]interface{}{
 		"success": true,
 	}, nil
+}
+
+func (i *Integration) runtimeEnv() []string {
+	env := []string{"BOATMAN_RUNTIME_EVENTS=1"}
+	if !falseyEnv(os.Getenv("BOATMAN_RUNTIME_STORE")) {
+		env = append(env, "BOATMAN_RUNTIME_STORE_DIR="+envOrDefault("BOATMAN_RUNTIME_STORE_DIR", filepath.Join(i.repoPath, ".boatman", "runs")))
+	}
+	env = append(env, "BOATMAN_MEMORY_DIR="+envOrDefault("BOATMAN_MEMORY_DIR", filepath.Join(i.repoPath, ".boatman", "memory")))
+	return env
+}
+
+func envOrDefault(key, fallback string) string {
+	if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+		return value
+	}
+	return fallback
+}
+
+func falseyEnv(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "0", "false", "no", "off", "disabled":
+		return true
+	default:
+		return false
+	}
 }
 
 func runtimeRawPayload(event BoatmanEvent) string {

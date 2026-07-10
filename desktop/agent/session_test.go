@@ -8,6 +8,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	agentruntime "github.com/philjestin/boatman-ecosystem/shared/agentruntime"
 )
 
 // TestNewSession tests session initialization
@@ -151,6 +153,90 @@ func TestSessionStart(t *testing.T) {
 				t.Error("cancel should be set")
 			}
 		})
+	}
+}
+
+func TestHandleRuntimeMessageEvents(t *testing.T) {
+	session := NewSession("runtime-session", "/repo")
+	var builder strings.Builder
+	currentID := ""
+
+	delta := agentruntime.NewEvent(agentruntime.EventMessageDelta)
+	delta.Message = "hello"
+	session.handleRuntimeMessageDelta(delta, &builder, &currentID)
+
+	if currentID == "" {
+		t.Fatal("currentID should be set after message delta")
+	}
+	if messages := session.GetMessages(); len(messages) != 1 || messages[0].Content != "hello" {
+		t.Fatalf("messages = %#v, want streaming hello", messages)
+	}
+
+	completed := agentruntime.NewEvent(agentruntime.EventMessageCompleted)
+	completed.Message = "hello"
+	session.handleRuntimeMessageCompleted(completed, &builder, &currentID)
+
+	if currentID != "" || builder.Len() != 0 {
+		t.Fatalf("currentID/builder = %q/%d, want finalized", currentID, builder.Len())
+	}
+	if messages := session.GetMessages(); len(messages) != 1 || messages[0].Content != "hello" {
+		t.Fatalf("messages = %#v, want one finalized message", messages)
+	}
+}
+
+func TestHandleRuntimeToolCallAndResult(t *testing.T) {
+	session := NewSession("runtime-tools", "/repo")
+
+	call := agentruntime.NewEvent(agentruntime.EventToolCall)
+	call.Tool = &agentruntime.ToolEvent{
+		ID:    "tool-1",
+		Name:  "Read",
+		Input: json.RawMessage(`{"file_path":"README.md"}`),
+	}
+	session.handleRuntimeToolCall(call)
+
+	result := agentruntime.NewEvent(agentruntime.EventToolResult)
+	result.Tool = &agentruntime.ToolEvent{
+		ID:     "tool-1",
+		Name:   "Read",
+		Output: json.RawMessage(`"contents"`),
+	}
+	session.handleRuntimeToolResult(result)
+
+	messages := session.GetMessages()
+	if len(messages) != 2 {
+		t.Fatalf("messages = %#v, want tool use and result", messages)
+	}
+	if messages[0].Metadata == nil || messages[0].Metadata.ToolUse == nil || messages[0].Metadata.ToolUse.ToolName != "Read" {
+		t.Fatalf("first message metadata = %#v, want runtime tool use", messages[0].Metadata)
+	}
+	if messages[1].Metadata == nil || messages[1].Metadata.ToolResult == nil || messages[1].Metadata.ToolResult.Content != "contents" {
+		t.Fatalf("second message metadata = %#v, want runtime tool result", messages[1].Metadata)
+	}
+}
+
+func TestHandleRuntimeTaskAndMemoryEvents(t *testing.T) {
+	session := NewSession("runtime-task", "/repo")
+
+	taskEvent := agentruntime.NewEvent(agentruntime.EventTaskCreated)
+	taskEvent.TaskID = "task-1"
+	taskEvent.Name = "Inspect runtime"
+	session.handleRuntimeTaskEvent(taskEvent)
+
+	tasks := session.GetTasks()
+	if len(tasks) != 1 || tasks[0].ID != "task-1" || tasks[0].Status != "pending" {
+		t.Fatalf("tasks = %#v, want pending runtime task", tasks)
+	}
+
+	memoryEvent := agentruntime.NewEvent(agentruntime.EventMemoryLoaded)
+	memoryEvent.Data = map[string]any{
+		"documents": []any{map[string]any{"id": "project"}},
+	}
+	session.handleRuntimeMemoryLoaded(memoryEvent)
+
+	messages := session.GetMessages()
+	if len(messages) != 1 || !strings.Contains(messages[0].Content, "Loaded 1 memory") {
+		t.Fatalf("messages = %#v, want memory loaded system message", messages)
 	}
 }
 
@@ -739,8 +825,8 @@ func TestHandleToolUse(t *testing.T) {
 			"name": "Task",
 			"id":   "tool-456",
 			"input": map[string]any{
-				"description":    "Analyze codebase",
-				"subagent_type":  "explore",
+				"description":   "Analyze codebase",
+				"subagent_type": "explore",
 			},
 		}
 

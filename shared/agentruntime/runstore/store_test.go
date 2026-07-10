@@ -204,6 +204,22 @@ func TestForRequestUsesMetadataDir(t *testing.T) {
 	}
 }
 
+func TestForRequestHonorsMetadataOptOut(t *testing.T) {
+	store, enabled, err := ForRequest(agentruntime.RunRequest{
+		WorkDir: t.TempDir(),
+		Metadata: map[string]string{
+			"runStore":    "false",
+			"runStoreDir": t.TempDir(),
+		},
+	})
+	if err != nil {
+		t.Fatalf("ForRequest error: %v", err)
+	}
+	if enabled || store != nil {
+		t.Fatalf("enabled/store = %v/%#v, want disabled", enabled, store)
+	}
+}
+
 func TestForRequestUsesEnvDir(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("BOATMAN_RUNTIME_STORE_DIR", dir)

@@ -136,10 +136,10 @@ environment variables are set, those events are also recorded.
 
 ## Recorded Runtime Runs
 
-Enable run recording:
+Project-scoped provider runs record by default:
 
 ```bash
-BOATMAN_RUNTIME_STORE=1 boatman work --prompt "Add a health check endpoint"
+boatman work --prompt "Add a health check endpoint"
 ```
 
 Inspect recorded runs:
@@ -162,6 +162,11 @@ boatman runs request <run-id> --json
 
 The run store writes `metadata.json`, `request.json`, `events.ndjson`, and
 `artifacts.json` for each run.
+
+Use `BOATMAN_RUNTIME_STORE_DIR=/tmp/boatman-runs` for a fixed store, or
+`BOATMAN_RUNTIME_STORE=0` to disable default recording. Memory documents under
+`.boatman/memory` are loaded into provider instructions by default and recorded
+as `memory.loaded` events.
 
 ---
 

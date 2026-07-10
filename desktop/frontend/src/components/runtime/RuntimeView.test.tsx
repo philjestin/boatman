@@ -38,12 +38,28 @@ describe('RuntimeView', () => {
         eventCount: 2,
         artifactCount: 1,
       },
+      request: {
+        provider: 'claude-cli',
+        role: 'planner',
+        approvalPolicy: 'full_auto',
+        reasoningEffort: 'high',
+        messageCount: 1,
+        toolNames: ['Read'],
+        instructionsPreview: 'Plan carefully',
+        firstMessagePreview: 'Build a runtime inspector',
+      },
       events: [
         {
           type: 'run.completed',
           status: 'succeeded',
           message: 'done',
           timestamp: '2026-07-10T12:00:00Z',
+        },
+        {
+          type: 'memory.loaded',
+          status: 'completed',
+          message: 'loaded memory',
+          timestamp: '2026-07-10T12:00:01Z',
         },
       ],
       artifacts: [
@@ -63,7 +79,13 @@ describe('RuntimeView', () => {
 
     await waitFor(() => expect(GetRuntimeRun).toHaveBeenCalledWith('/repo', 'run-1'));
     expect(await screen.findByText('plan.md')).toBeInTheDocument();
-    expect(screen.getByText('run.completed')).toBeInTheDocument();
+    expect(screen.getAllByText('run.completed').length).toBeGreaterThan(0);
+    expect(screen.getByText('Plan carefully')).toBeInTheDocument();
+    expect(screen.getByText('Read')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Filter event type'), { target: { value: 'memory.loaded' } });
+    expect(screen.getByText('loaded memory')).toBeInTheDocument();
+    expect(screen.queryByText('done')).not.toBeInTheDocument();
   });
 
   it('loads memory documents and renders selected document body', async () => {

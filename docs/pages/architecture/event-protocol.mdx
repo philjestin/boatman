@@ -108,10 +108,11 @@ Use `boatman memory list`, `boatman memory show <id>`, and
 `boatman memory context --emit-event --run-id <run-id>` to inspect the same
 Markdown memory documents and event shape locally.
 
-Runtime events can also be persisted by `shared/agentruntime/runstore`. For CLI
-provider runs, set `BOATMAN_RUNTIME_STORE=1` to write under
-`.boatman/runs` in the run workdir, or set `BOATMAN_RUNTIME_STORE_DIR` to an
-explicit directory. Each run directory contains:
+Runtime events can also be persisted by `shared/agentruntime/runstore`.
+Project-scoped provider runs now record under `.boatman/runs` by default. Set
+`BOATMAN_RUNTIME_STORE_DIR` to an explicit directory, or set
+`BOATMAN_RUNTIME_STORE=0` to disable default recording. Each run directory
+contains:
 
 ```text
 metadata.json

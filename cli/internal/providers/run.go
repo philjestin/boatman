@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	agentruntime "github.com/philjestin/boatman-ecosystem/shared/agentruntime"
+	"github.com/philjestin/boatman-ecosystem/shared/agentruntime/runprep"
 	"github.com/philjestin/boatman-ecosystem/shared/agentruntime/runstore"
 	"github.com/philjestin/boatmanmode/internal/cost"
 )
@@ -25,6 +26,13 @@ func RunTextWithEvents(
 	req agentruntime.RunRequest,
 	onEvent func(agentruntime.Event),
 ) (string, *cost.Usage, error) {
+	preparedReq, initialEvents, err := runprep.Prepare(ctx, req, runprep.DefaultOptions())
+	if err != nil {
+		return "", nil, err
+	}
+	req = preparedReq
+	provider = runprep.NewInitialEventsProvider(provider, initialEvents)
+
 	store, storeEnabled, err := runstore.ForRequest(req)
 	if err != nil {
 		return "", nil, err

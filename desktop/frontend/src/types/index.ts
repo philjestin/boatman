@@ -312,8 +312,27 @@ export interface RuntimeEventSummary {
   rawPreview?: string;
 }
 
+export interface RuntimeRequestSummary {
+  provider?: string;
+  model?: string;
+  role?: string;
+  profile?: string;
+  workDir?: string;
+  approvalPolicy?: string;
+  reasoningEffort?: string;
+  background?: boolean;
+  messageCount: number;
+  toolNames?: string[];
+  mcpServerLabels?: string[];
+  outputSchema?: string;
+  instructionsPreview?: string;
+  firstMessagePreview?: string;
+  metadata?: Record<string, string>;
+}
+
 export interface RuntimeRunDetail {
   metadata: RuntimeRunSummary;
+  request?: RuntimeRequestSummary;
   events: RuntimeEventSummary[];
   artifacts: RuntimeArtifactSummary[];
 }

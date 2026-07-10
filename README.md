@@ -81,7 +81,7 @@ go build -o boatman ./cmd/boatman
 ./boatman providers check
 
 # Inspect recorded runs and memory documents
-BOATMAN_RUNTIME_STORE=1 ./boatman work --prompt "Update docs"
+./boatman work --prompt "Update docs"
 ./boatman runs list
 ./boatman memory list
 ```
@@ -208,7 +208,7 @@ Events are emitted by the CLI to stdout and captured by the desktop app for real
 
 The desktop app routes these events through the session message system with proper agent attribution, so each workflow phase gets its own tab in the Agent Logs panel.
 
-Boatman also has a provider-neutral runtime event contract in `shared/agentruntime`. Set `BOATMAN_RUNTIME_EVENTS=1` to emit normalized runtime events alongside legacy stdout events during migration. Set `BOATMAN_RUNTIME_STORE=1` or `BOATMAN_RUNTIME_STORE_DIR=/path/to/runs` to persist normalized run metadata, original requests, events, and artifacts under `.boatman/runs`.
+Boatman also has a provider-neutral runtime event contract in `shared/agentruntime`. Set `BOATMAN_RUNTIME_EVENTS=1` to emit normalized runtime events alongside legacy stdout events during migration. Project-scoped provider calls now persist normalized run metadata, original requests, events, and artifacts under `.boatman/runs` by default. Set `BOATMAN_RUNTIME_STORE_DIR=/path/to/runs` to use a fixed store, or `BOATMAN_RUNTIME_STORE=0` to disable default recording.
 
 Runtime inspection commands:
 ```bash
@@ -242,9 +242,9 @@ The CLI and desktop are tightly coupled:
 - ✅ **Provider adapters** for Claude CLI and OpenAI Responses, with role/profile routing
 - ✅ **Tool broker** for local Read, Write, Edit, Bash, Grep, and Glob tools with approval policy enforcement
 - ✅ **Run store** for `metadata.json`, `request.json`, `events.ndjson`, and `artifacts.json`
-- ✅ **Inspectable memory docs** as Markdown under `.boatman/memory`
+- ✅ **Inspectable memory docs** as Markdown under `.boatman/memory`, loaded into provider runs with `memory.loaded` events
 - ✅ **Integration catalog and health checks** for Datadog, Bugsnag, Linear, and Slack
-- ✅ **Desktop Runtime tab** for browsing runs, event summaries, artifacts, and memory documents
+- ✅ **Desktop Runtime tab** for browsing run requests, event summaries, artifacts, filtered event streams, and memory documents
 
 ### Monorepo Architecture (February 2026)
 The project has been restructured into a unified monorepo with shared types and utilities:

@@ -22,6 +22,7 @@ import type {
   MemoryDocumentSummary,
   RuntimeArtifactSummary,
   RuntimeEventSummary,
+  RuntimeRequestSummary,
   RuntimeRunDetail,
   RuntimeRunSummary,
 } from '../../types';
@@ -271,6 +272,36 @@ function RunListItem({ run, selected, onClick }: { run: RuntimeRunSummary; selec
 }
 
 function RunDetail({ run }: { run: RuntimeRunDetail }) {
+  const [eventQuery, setEventQuery] = useState('');
+  const [eventType, setEventType] = useState('all');
+  const [eventStatus, setEventStatus] = useState('all');
+
+  const eventTypes = useMemo(() => uniqueValues(run.events.map((event) => event.type)), [run.events]);
+  const eventStatuses = useMemo(() => uniqueValues(run.events.map((event) => event.status).filter(Boolean) as string[]), [run.events]);
+  const filteredEvents = useMemo(() => {
+    const q = eventQuery.trim().toLowerCase();
+    return run.events.filter((event) => {
+      if (eventType !== 'all' && event.type !== eventType) return false;
+      if (eventStatus !== 'all' && event.status !== eventStatus) return false;
+      if (!q) return true;
+      return [
+        event.type,
+        event.status,
+        event.role,
+        event.provider,
+        event.model,
+        event.phaseId,
+        event.taskId,
+        event.name,
+        event.message,
+        event.toolName,
+        event.artifactPath,
+        event.artifactUrl,
+        event.rawPreview,
+      ].some((value) => value?.toLowerCase().includes(q));
+    });
+  }, [run.events, eventQuery, eventType, eventStatus]);
+
   return (
     <div className="p-4 space-y-4">
       <section>
@@ -289,6 +320,8 @@ function RunDetail({ run }: { run: RuntimeRunDetail }) {
         </div>
       </section>
 
+      {run.request && <RequestSummary request={run.request} />}
+
       {run.artifacts.length > 0 && (
         <section>
           <h4 className="text-xs font-semibold text-slate-300 mb-2">Artifacts</h4>
@@ -301,13 +334,100 @@ function RunDetail({ run }: { run: RuntimeRunDetail }) {
       )}
 
       <section>
-        <h4 className="text-xs font-semibold text-slate-300 mb-2">Event Stream</h4>
+        <div className="flex flex-col gap-2 mb-2">
+          <div className="flex items-center justify-between gap-2">
+            <h4 className="text-xs font-semibold text-slate-300">Event Stream</h4>
+            <span className="text-xs text-slate-500">{filteredEvents.length} / {run.events.length}</span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-[1fr_160px_160px] gap-2">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
+              <input
+                type="text"
+                value={eventQuery}
+                onChange={(event) => setEventQuery(event.target.value)}
+                placeholder="Search events..."
+                className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-800 border border-slate-700 rounded text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-500"
+              />
+            </div>
+            <select
+              value={eventType}
+              onChange={(event) => setEventType(event.target.value)}
+              className="px-2 py-1.5 text-xs bg-slate-800 border border-slate-700 rounded text-slate-200 focus:outline-none focus:border-cyan-500"
+              aria-label="Filter event type"
+            >
+              <option value="all">All types</option>
+              {eventTypes.map((type) => (
+                <option key={type} value={type}>{type}</option>
+              ))}
+            </select>
+            <select
+              value={eventStatus}
+              onChange={(event) => setEventStatus(event.target.value)}
+              className="px-2 py-1.5 text-xs bg-slate-800 border border-slate-700 rounded text-slate-200 focus:outline-none focus:border-cyan-500"
+              aria-label="Filter event status"
+            >
+              <option value="all">All statuses</option>
+              {eventStatuses.map((status) => (
+                <option key={status} value={status}>{status}</option>
+              ))}
+            </select>
+          </div>
+        </div>
         <div className="divide-y divide-slate-800 border border-slate-800 rounded">
-          {run.events.map((event, index) => (
+          {filteredEvents.length === 0 ? (
+            <div className="px-3 py-6 text-xs text-center text-slate-500">No events match the current filters.</div>
+          ) : filteredEvents.map((event, index) => (
             <RuntimeEventRow key={`${event.timestamp}:${event.type}:${index}`} event={event} />
           ))}
         </div>
       </section>
+    </div>
+  );
+}
+
+function RequestSummary({ request }: { request: RuntimeRequestSummary }) {
+  const tools = request.toolNames?.join(', ') || '-';
+  const mcpServers = request.mcpServerLabels?.join(', ') || '-';
+  const metadataEntries = Object.entries(request.metadata || {}).filter(([key]) => !key.toLowerCase().includes('key'));
+
+  return (
+    <section>
+      <h4 className="text-xs font-semibold text-slate-300 mb-2">Request</h4>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+        <Metric label="Approval" value={request.approvalPolicy || '-'} icon={<CheckCircle2 className="w-3.5 h-3.5" />} />
+        <Metric label="Reasoning" value={request.reasoningEffort || '-'} icon={<Bot className="w-3.5 h-3.5" />} />
+        <Metric label="Messages" value={String(request.messageCount)} icon={<FileText className="w-3.5 h-3.5" />} />
+        <Metric label="Schema" value={request.outputSchema || '-'} icon={<Braces className="w-3.5 h-3.5" />} />
+      </div>
+      <div className="mt-3 grid grid-cols-1 lg:grid-cols-2 gap-2">
+        <DetailBlock label="Tools" value={tools} />
+        <DetailBlock label="MCP" value={mcpServers} />
+      </div>
+      {(request.instructionsPreview || request.firstMessagePreview || metadataEntries.length > 0) && (
+        <div className="mt-3 space-y-2">
+          {request.instructionsPreview && <DetailBlock label="Instructions" value={request.instructionsPreview} multiline />}
+          {request.firstMessagePreview && <DetailBlock label="First Message" value={request.firstMessagePreview} multiline />}
+          {metadataEntries.length > 0 && (
+            <DetailBlock
+              label="Metadata"
+              value={metadataEntries.map(([key, value]) => `${key}: ${value}`).join('\n')}
+              multiline
+            />
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function DetailBlock({ label, value, multiline = false }: { label: string; value: string; multiline?: boolean }) {
+  return (
+    <div className="border border-slate-800 rounded px-3 py-2 min-w-0">
+      <div className="text-xs text-slate-500 mb-1">{label}</div>
+      <div className={`text-xs text-slate-300 ${multiline ? 'whitespace-pre-wrap break-words max-h-48 overflow-y-auto' : 'truncate'}`}>
+        {value || '-'}
+      </div>
     </div>
   );
 }
@@ -528,4 +648,8 @@ function formatDate(value?: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString();
+}
+
+function uniqueValues(values: string[]) {
+  return Array.from(new Set(values.filter(Boolean))).sort((a, b) => a.localeCompare(b));
 }

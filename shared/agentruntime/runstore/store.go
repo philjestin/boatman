@@ -66,6 +66,9 @@ type Store interface {
 // is set, or BOATMAN_RUNTIME_STORE=1. With BOATMAN_RUNTIME_STORE=1 and no
 // explicit directory, the store lives at <workdir>/.boatman/runs.
 func ForRequest(req agentruntime.RunRequest) (*FileStore, bool, error) {
+	if isFalsey(req.Metadata["runStore"]) {
+		return nil, false, nil
+	}
 	dir := strings.TrimSpace(req.Metadata["runStoreDir"])
 	if dir == "" {
 		dir = strings.TrimSpace(os.Getenv("BOATMAN_RUNTIME_STORE_DIR"))
@@ -81,6 +84,15 @@ func ForRequest(req agentruntime.RunRequest) (*FileStore, bool, error) {
 		dir = defaultDir
 	}
 	return NewFileStore(dir), true, nil
+}
+
+func isFalsey(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "0", "false", "no", "off", "disabled":
+		return true
+	default:
+		return false
+	}
 }
 
 // DefaultDir returns the default runtime store directory for a workdir.

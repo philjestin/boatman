@@ -16,12 +16,20 @@ func TestRuntimeInspectionListsAndLoadsRuns(t *testing.T) {
 	store := runstore.NewFileStore(filepath.Join(projectDir, ".boatman", "runs"))
 
 	req := agentruntime.RunRequest{
-		RunID:    "run-123",
-		Provider: "claude-cli",
-		Model:    "sonnet",
-		Role:     agentruntime.RolePlanner,
-		Profile:  "work-planner",
-		WorkDir:  projectDir,
+		RunID:        "run-123",
+		Provider:     "claude-cli",
+		Model:        "sonnet",
+		Role:         agentruntime.RolePlanner,
+		Profile:      "work-planner",
+		WorkDir:      projectDir,
+		Instructions: "Plan carefully",
+		Messages: []agentruntime.Message{
+			{Role: "user", Content: "Build a runtime inspector"},
+		},
+		Tools: []agentruntime.ToolRef{{Name: "Read"}},
+		Reasoning: &agentruntime.ReasoningOptions{
+			Effort: "high",
+		},
 	}
 	if err := store.StartRun(context.Background(), req); err != nil {
 		t.Fatalf("StartRun() error = %v", err)
@@ -70,6 +78,12 @@ func TestRuntimeInspectionListsAndLoadsRuns(t *testing.T) {
 	}
 	if len(detail.Artifacts) != 1 || detail.Artifacts[0].Path != "plan.md" {
 		t.Fatalf("detail artifacts = %+v", detail.Artifacts)
+	}
+	if detail.Request == nil || detail.Request.MessageCount != 1 || detail.Request.ToolNames[0] != "Read" || detail.Request.ReasoningEffort != "high" {
+		t.Fatalf("detail request = %+v", detail.Request)
+	}
+	if detail.Request.InstructionsPreview != "Plan carefully" || detail.Request.FirstMessagePreview != "Build a runtime inspector" {
+		t.Fatalf("detail request previews = %+v", detail.Request)
 	}
 }
 

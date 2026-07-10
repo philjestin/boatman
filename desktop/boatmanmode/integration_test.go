@@ -47,3 +47,49 @@ func TestRuntimeRawPayloadFallsBackToMessage(t *testing.T) {
 		t.Fatalf("runtimeRawPayload = %q, want message", got)
 	}
 }
+
+func TestRuntimeEnvUsesProjectBoatmanDirs(t *testing.T) {
+	t.Setenv("BOATMAN_RUNTIME_STORE", "")
+	t.Setenv("BOATMAN_RUNTIME_STORE_DIR", "")
+	t.Setenv("BOATMAN_MEMORY_DIR", "")
+	integration := &Integration{repoPath: "/repo"}
+
+	got := integration.runtimeEnv()
+	want := []string{
+		"BOATMAN_RUNTIME_EVENTS=1",
+		"BOATMAN_RUNTIME_STORE_DIR=/repo/.boatman/runs",
+		"BOATMAN_MEMORY_DIR=/repo/.boatman/memory",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("runtimeEnv = %#v, want %#v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("runtimeEnv = %#v, want %#v", got, want)
+		}
+	}
+}
+
+func TestRuntimeEnvHonorsOverridesAndOptOut(t *testing.T) {
+	t.Setenv("BOATMAN_RUNTIME_STORE_DIR", "/tmp/runs")
+	t.Setenv("BOATMAN_MEMORY_DIR", "/tmp/memory")
+	integration := &Integration{repoPath: "/repo"}
+
+	got := integration.runtimeEnv()
+	want := []string{
+		"BOATMAN_RUNTIME_EVENTS=1",
+		"BOATMAN_RUNTIME_STORE_DIR=/tmp/runs",
+		"BOATMAN_MEMORY_DIR=/tmp/memory",
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("runtimeEnv = %#v, want %#v", got, want)
+		}
+	}
+
+	t.Setenv("BOATMAN_RUNTIME_STORE", "0")
+	got = integration.runtimeEnv()
+	if len(got) != 2 || got[1] != "BOATMAN_MEMORY_DIR=/tmp/memory" {
+		t.Fatalf("runtimeEnv with opt out = %#v, want no runtime store dir", got)
+	}
+}

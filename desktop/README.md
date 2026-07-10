@@ -240,7 +240,8 @@ Open the **Runtime** tab after selecting a project. It reads:
 Use it to answer:
 
 - Which provider, model, role, and profile handled a run?
-- What tool calls, schema checks, usage events, integration states, and artifacts were recorded?
+- What prompt/request shape, tools, MCP refs, schema, and approval mode were used?
+- What tool calls, schema checks, usage events, integration states, memory loads, and artifacts were recorded?
 - What memory documents might future sessions load?
 - Which run generated a memory document?
 - ✅ Task metadata includes diffs, plans, feedback, and issues

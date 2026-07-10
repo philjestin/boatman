@@ -75,13 +75,14 @@ settings are missing before Boatman can hand that integration to a provider run.
 
 | Variable | Description |
 |----------|-------------|
-| `BOATMAN_RUNTIME_STORE=1` | Record runtime runs under the active workdir at `.boatman/runs` |
+| `BOATMAN_RUNTIME_STORE=0` | Disable default project-local runtime recording |
 | `BOATMAN_RUNTIME_STORE_DIR` | Override the runtime run store directory |
 | `BOATMAN_MEMORY_DIR` | Override the runtime memory document directory |
 | `BOATMAN_RUNTIME_EVENTS=1` | Emit normalized runtime events alongside legacy CLI events |
 
 The Desktop Runtime tab reads the same run store and memory directories as the
-CLI inspection commands.
+CLI inspection commands. Desktop sessions and BoatmanMode write to the active
+project's `.boatman/runs` and load `.boatman/memory` by default.
 
 ### Build Configuration
 

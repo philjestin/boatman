@@ -91,8 +91,9 @@ boatman runs request <run-id>
 boatman runs artifacts <run-id>
 ```
 
-Enable project-local recording with `BOATMAN_RUNTIME_STORE=1`, or set
-`BOATMAN_RUNTIME_STORE_DIR` to write runs somewhere else.
+Project-local recording is enabled for Desktop and provider-backed CLI runs by
+default. Set `BOATMAN_RUNTIME_STORE_DIR` to write runs somewhere else, or set
+`BOATMAN_RUNTIME_STORE=0` to disable default recording.
 
 ---
 
@@ -106,9 +107,10 @@ Runtime memory documents are Markdown files with frontmatter:
   domains/payments.md
 ```
 
-They are intended to be human-inspectable. Boatman can load them as context for
-future sessions, and the Runtime tab shows their scope, provenance, source run,
-expiration, path, and full body.
+They are intended to be human-inspectable. Boatman loads non-expired documents
+as context for future provider runs, records a `memory.loaded` event, and the
+Runtime tab shows their scope, provenance, source run, expiration, path, and
+full body.
 
 ---
 

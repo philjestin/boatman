@@ -800,8 +800,49 @@ export namespace main {
 	        this.artifactCount = source["artifactCount"];
 	    }
 	}
+	export class RuntimeRequestSummary {
+	    provider?: string;
+	    model?: string;
+	    role?: string;
+	    profile?: string;
+	    workDir?: string;
+	    approvalPolicy?: string;
+	    reasoningEffort?: string;
+	    background?: boolean;
+	    messageCount: number;
+	    toolNames?: string[];
+	    mcpServerLabels?: string[];
+	    outputSchema?: string;
+	    instructionsPreview?: string;
+	    firstMessagePreview?: string;
+	    metadata?: Record<string, string>;
+
+	    static createFrom(source: any = {}) {
+	        return new RuntimeRequestSummary(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.provider = source["provider"];
+	        this.model = source["model"];
+	        this.role = source["role"];
+	        this.profile = source["profile"];
+	        this.workDir = source["workDir"];
+	        this.approvalPolicy = source["approvalPolicy"];
+	        this.reasoningEffort = source["reasoningEffort"];
+	        this.background = source["background"];
+	        this.messageCount = source["messageCount"];
+	        this.toolNames = source["toolNames"];
+	        this.mcpServerLabels = source["mcpServerLabels"];
+	        this.outputSchema = source["outputSchema"];
+	        this.instructionsPreview = source["instructionsPreview"];
+	        this.firstMessagePreview = source["firstMessagePreview"];
+	        this.metadata = source["metadata"];
+	    }
+	}
 	export class RuntimeRunDetail {
 	    metadata: RuntimeRunSummary;
+	    request?: RuntimeRequestSummary;
 	    events: RuntimeEventSummary[];
 	    artifacts: RuntimeArtifactSummary[];
 
@@ -812,6 +853,7 @@ export namespace main {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.metadata = this.convertValues(source["metadata"], RuntimeRunSummary);
+	        this.request = this.convertValues(source["request"], RuntimeRequestSummary);
 	        this.events = this.convertValues(source["events"], RuntimeEventSummary);
 	        this.artifacts = this.convertValues(source["artifacts"], RuntimeArtifactSummary);
 	    }

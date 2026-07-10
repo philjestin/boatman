@@ -63,9 +63,29 @@ type RuntimeEventSummary struct {
 	RawPreview   string `json:"rawPreview,omitempty"`
 }
 
+// RuntimeRequestSummary is a compact, safe-to-render view of the original request.
+type RuntimeRequestSummary struct {
+	Provider            string            `json:"provider,omitempty"`
+	Model               string            `json:"model,omitempty"`
+	Role                string            `json:"role,omitempty"`
+	Profile             string            `json:"profile,omitempty"`
+	WorkDir             string            `json:"workDir,omitempty"`
+	ApprovalPolicy      string            `json:"approvalPolicy,omitempty"`
+	ReasoningEffort     string            `json:"reasoningEffort,omitempty"`
+	Background          bool              `json:"background,omitempty"`
+	MessageCount        int               `json:"messageCount"`
+	ToolNames           []string          `json:"toolNames,omitempty"`
+	MCPServerLabels     []string          `json:"mcpServerLabels,omitempty"`
+	OutputSchema        string            `json:"outputSchema,omitempty"`
+	InstructionsPreview string            `json:"instructionsPreview,omitempty"`
+	FirstMessagePreview string            `json:"firstMessagePreview,omitempty"`
+	Metadata            map[string]string `json:"metadata,omitempty"`
+}
+
 // RuntimeRunDetail contains the run index, event stream summary, and artifacts.
 type RuntimeRunDetail struct {
 	Metadata  RuntimeRunSummary        `json:"metadata"`
+	Request   *RuntimeRequestSummary   `json:"request,omitempty"`
 	Events    []RuntimeEventSummary    `json:"events"`
 	Artifacts []RuntimeArtifactSummary `json:"artifacts"`
 }
@@ -127,6 +147,9 @@ func (a *App) GetRuntimeRun(projectPath, runID string) (*RuntimeRunDetail, error
 		Metadata:  runtimeRunSummary(metadata),
 		Events:    make([]RuntimeEventSummary, 0, len(events)),
 		Artifacts: make([]RuntimeArtifactSummary, 0, len(artifacts)),
+	}
+	if req, err := store.LoadRequest(context.Background(), runID); err == nil {
+		detail.Request = runtimeRequestSummary(req)
 	}
 	for _, event := range events {
 		detail.Events = append(detail.Events, runtimeEventSummary(event))
@@ -247,6 +270,41 @@ func runtimeEventSummary(event agentruntime.Event) RuntimeEventSummary {
 	}
 	if len(event.Raw) > 0 {
 		summary.RawPreview = truncateRuntimeString(string(event.Raw), 240)
+	}
+	return summary
+}
+
+func runtimeRequestSummary(req agentruntime.RunRequest) *RuntimeRequestSummary {
+	summary := &RuntimeRequestSummary{
+		Provider:            req.Provider,
+		Model:               req.Model,
+		Role:                string(req.Role),
+		Profile:             req.Profile,
+		WorkDir:             req.WorkDir,
+		ApprovalPolicy:      string(req.ApprovalPolicy),
+		Background:          req.Background,
+		MessageCount:        len(req.Messages),
+		InstructionsPreview: truncateRuntimeString(req.Instructions, 1000),
+		Metadata:            req.Metadata,
+	}
+	if req.Reasoning != nil {
+		summary.ReasoningEffort = req.Reasoning.Effort
+	}
+	if len(req.Messages) > 0 {
+		summary.FirstMessagePreview = truncateRuntimeString(req.Messages[0].Content, 1000)
+	}
+	for _, tool := range req.Tools {
+		if tool.Name != "" {
+			summary.ToolNames = append(summary.ToolNames, tool.Name)
+		}
+	}
+	for _, server := range req.MCPServers {
+		if server.Label != "" {
+			summary.MCPServerLabels = append(summary.MCPServerLabels, server.Label)
+		}
+	}
+	if req.OutputSchema != nil {
+		summary.OutputSchema = req.OutputSchema.Name
 	}
 	return summary
 }

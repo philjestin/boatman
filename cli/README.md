@@ -134,7 +134,7 @@ boatman providers check
 boatman integrations
 boatman integrations check --emit-events
 
-BOATMAN_RUNTIME_STORE=1 boatman work --prompt "Update docs"
+boatman work --prompt "Update docs"
 boatman runs list
 boatman runs show <run-id>
 boatman runs request <run-id>
@@ -824,7 +824,7 @@ boatmanmode/
 | `BOATMAN_DEBUG` | Set to `1` for debug output (structured logs) | No |
 | `BOATMAN_PROVIDER` | Default runtime provider override | No |
 | `BOATMAN_RUNTIME_EVENTS` | Set to `1` to emit normalized runtime events alongside legacy events | No |
-| `BOATMAN_RUNTIME_STORE` | Set to `1` to record runs under `.boatman/runs` | No |
+| `BOATMAN_RUNTIME_STORE` | Set to `0` to disable default project-local run recording, or `1` to force default recording in older paths | No |
 | `BOATMAN_RUNTIME_STORE_DIR` | Custom runtime run store directory | No |
 | `BOATMAN_CHECKPOINT_DIR` | Custom checkpoint directory | No |
 | `BOATMAN_MEMORY_DIR` | Custom memory directory | No |

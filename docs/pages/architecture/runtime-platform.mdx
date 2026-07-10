@@ -65,10 +65,10 @@ making raw provider logs, normalized tool calls, usage updates, terminal status,
 completed messages, original run requests, and durable outputs inspectable
 without a database. Runtime callers wrap providers with
 `runstore.NewRecordingProvider`, so CLI, desktop, Claude CLI, OpenAI Responses,
-and future adapters share the same recording path. Recording is enabled when either
-`BOATMAN_RUNTIME_STORE=1`, `BOATMAN_RUNTIME_STORE_DIR=/path/to/runs`, or
-request metadata `runStoreDir` is set. With only `BOATMAN_RUNTIME_STORE=1`,
-events are written under the run workdir at `.boatman/runs`.
+and future adapters share the same recording path. Project-scoped provider calls
+now set request metadata `runStoreDir` by default, which writes events under the
+run workdir at `.boatman/runs`. Set `BOATMAN_RUNTIME_STORE_DIR=/path/to/runs`
+for a fixed location, or `BOATMAN_RUNTIME_STORE=0` to disable default recording.
 
 The CLI registry lives in `cli/internal/providers`. It currently registers
 `claude-cli`, preserves the existing configured Claude command, and routes
@@ -249,11 +249,11 @@ through `boatman runs list`, `boatman runs show`, `boatman runs request`, and
 `boatman runs artifacts`.
 
 The desktop Runtime tab reads the same project-local `.boatman/runs` directory
-and renders run metadata, event stream summaries, and artifacts without requiring
-users to open a terminal. This keeps the Glass-inspired inspection loop close to
-the main workflow: a user can run an agent, inspect what provider/tool/memory
-events were recorded, and use the same UI to move back into chat, tasks, or
-diff review.
+and renders run metadata, request summaries, event stream summaries, filters,
+search, and artifacts without requiring users to open a terminal. This keeps the
+Glass-inspired inspection loop close to the main workflow: a user can run an
+agent, inspect what provider/tool/memory events were recorded, and use the same
+UI to move back into chat, tasks, or diff review.
 
 ### Inspectable Memory
 
@@ -295,8 +295,9 @@ boatman memory context --emit-event --run-id <run-id>
 
 `boatman memory context --emit-event` prints a normalized `memory.loaded` event
 using the same runtime event contract as provider, tool, integration, and run
-store events. Future desktop sessions should call the same shared store before
-starting a provider run and append that event to the recorded run.
+store events. Provider runs now call the same shared store before starting a
+model run, prepend the rendered memory context to instructions, and append
+`memory.loaded` to the recorded stream.
 
 The desktop Runtime tab also reads project-local `.boatman/memory` documents,
 showing document scope, provenance, source run, expiration, path, and full body
