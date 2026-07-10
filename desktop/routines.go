@@ -21,6 +21,7 @@ import (
 	"github.com/philjestin/boatman-ecosystem/shared/agentruntime/routines"
 	"github.com/philjestin/boatman-ecosystem/shared/agentruntime/runprep"
 	"github.com/philjestin/boatman-ecosystem/shared/agentruntime/runstore"
+	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 const (
@@ -236,14 +237,29 @@ func (a *App) RunRoutine(input RoutineRunRequest) (*RoutineRunResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	report, usage, err := runRoutineText(context.Background(), provider, built.request)
+	started := false
+	startedReq := built.request
+	report, usage, err := runRoutineText(context.Background(), provider, built.request, func(req agentruntime.RunRequest) {
+		started = true
+		startedReq = req
+		a.emitRoutineRuntimeUpdate(req, "started", built.routine.ID)
+	})
 	if err != nil {
+		if started {
+			a.emitRoutineRuntimeUpdate(startedReq, "failed", built.routine.ID)
+		}
 		return nil, err
 	}
 	if strings.TrimSpace(built.reportPath) != "" && built.reportPath != "-" {
 		if err := writeRoutineReport(built.reportPath, report); err != nil {
+			if started {
+				a.emitRoutineRuntimeUpdate(startedReq, "failed", built.routine.ID)
+			}
 			return nil, err
 		}
+	}
+	if started {
+		a.emitRoutineRuntimeUpdate(startedReq, "completed", built.routine.ID)
 	}
 	return &RoutineRunResult{
 		RoutineID:    built.routine.ID,
@@ -256,6 +272,19 @@ func (a *App) RunRoutine(input RoutineRunRequest) (*RoutineRunResult, error) {
 		Usage:        usage,
 		Report:       strings.TrimSpace(report),
 	}, nil
+}
+
+func (a *App) emitRoutineRuntimeUpdate(req agentruntime.RunRequest, status, routineID string) {
+	if a == nil || a.ctx == nil {
+		return
+	}
+	wailsruntime.EventsEmit(a.ctx, "runtime:run-updated", map[string]any{
+		"source":      "routine",
+		"projectPath": req.WorkDir,
+		"runId":       req.RunID,
+		"routineId":   routineID,
+		"status":      status,
+	})
 }
 
 func (a *App) buildRoutineRun(ctx context.Context, input RoutineRunRequest, dryRun bool) (*builtRoutineRun, error) {
@@ -739,7 +768,7 @@ func routineProvider(name string, extraEnv map[string]string) (agentruntime.Prov
 	return runtimeproviders.NewDefaultRegistry().ForRequest(req)
 }
 
-func runRoutineText(ctx context.Context, provider agentruntime.Provider, req agentruntime.RunRequest) (string, *agentruntime.Usage, error) {
+func runRoutineText(ctx context.Context, provider agentruntime.Provider, req agentruntime.RunRequest, onStarted func(agentruntime.RunRequest)) (string, *agentruntime.Usage, error) {
 	preparedReq, initialEvents, err := runprep.Prepare(ctx, req, runprep.DefaultOptions())
 	if err != nil {
 		return "", nil, err
@@ -756,6 +785,9 @@ func runRoutineText(ctx context.Context, provider agentruntime.Provider, req age
 	stream, err := provider.StartRun(ctx, req)
 	if err != nil {
 		return "", nil, err
+	}
+	if onStarted != nil {
+		onStarted(req)
 	}
 
 	collector := routineStreamCollector{}
