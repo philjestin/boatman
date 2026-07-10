@@ -13,6 +13,7 @@ Boatman Desktop stores all data locally on your machine. No cloud sync is used u
 | `~/.claude/claude_mcp_config.json` | MCP server configurations |
 | `<project>/.boatman/runs/` | Provider-neutral runtime run records |
 | `<project>/.boatman/memory/` | Inspectable runtime memory Markdown documents |
+| `<project>/.boatman/routines/` | Markdown reports from repeatable routines |
 
 ---
 
@@ -94,6 +95,24 @@ boatman runs artifacts <run-id>
 Project-local recording is enabled for Desktop and provider-backed CLI runs by
 default. Set `BOATMAN_RUNTIME_STORE_DIR` to write runs somewhere else, or set
 `BOATMAN_RUNTIME_STORE=0` to disable default recording.
+
+## Routine Reports
+
+Desktop routines load optional project definitions from:
+
+```text
+<project>/.boatman/routines.json
+<project>/.boatman/routines/*.json
+```
+
+Routine runs write Markdown reports under:
+
+```text
+<project>/.boatman/routines/<routine-id>/<run-id>.md
+```
+
+The Datadog GraphQL slow-query routine uses the same provider-neutral runtime
+recorder, so each report also has a corresponding run in `.boatman/runs`.
 
 ---
 

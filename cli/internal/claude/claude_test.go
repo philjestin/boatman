@@ -55,3 +55,26 @@ func TestNewWithTmux_BackwardCompat(t *testing.T) {
 		t.Error("NewWithTmux should have nil AllowedTools")
 	}
 }
+
+func TestStreamingArgsIncludesMCPConfig(t *testing.T) {
+	client := NewWithWorkDir("/tmp")
+	client.EnableTools = true
+	client.MCPConfigs = []string{`{"mcpServers":{"datadog":{"command":"npx"}}}`}
+
+	args := client.streamingArgs()
+	if !containsArg(args, "--mcp-config") || !containsArg(args, client.MCPConfigs[0]) {
+		t.Fatalf("args = %#v, want MCP config", args)
+	}
+	if containsArg(args, "--tools") {
+		t.Fatalf("args = %#v, should not disable tools when MCP config is present", args)
+	}
+}
+
+func containsArg(args []string, want string) bool {
+	for _, arg := range args {
+		if arg == want {
+			return true
+		}
+	}
+	return false
+}

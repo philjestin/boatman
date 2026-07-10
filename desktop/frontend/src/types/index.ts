@@ -221,6 +221,92 @@ export interface IntegrationStatus {
   metadata?: Record<string, string>;
 }
 
+// =============================================================================
+// Routine Types
+// =============================================================================
+
+export type RoutineParameterType = 'string' | 'integer' | 'duration';
+
+export interface RoutineParameter {
+  name: string;
+  type: RoutineParameterType;
+  description?: string;
+  default?: string;
+  required?: boolean;
+}
+
+export interface RoutineOutput {
+  format: string;
+  defaultPath?: string;
+}
+
+export interface DesktopRoutine {
+  id: string;
+  name: string;
+  description?: string;
+  schedule?: string;
+  workflowTemplate?: string;
+  role: string;
+  profile: string;
+  integrations?: string[];
+  parameters?: RoutineParameter[];
+  output: RoutineOutput;
+  metadata?: Record<string, string>;
+}
+
+export interface RoutineRunRequest {
+  routineId: string;
+  projectPath: string;
+  values?: Record<string, string>;
+  provider?: string;
+  model?: string;
+  runId?: string;
+  reportOut?: string;
+}
+
+export interface RoutineRequestPreview {
+  runId: string;
+  provider: string;
+  model?: string;
+  role: string;
+  profile?: string;
+  workDir?: string;
+  approvalPolicy?: string;
+  reasoningEffort?: string;
+  mcpServerLabels?: string[];
+  metadata?: Record<string, string>;
+  instructionsPreview?: string;
+  firstMessagePreview?: string;
+  firstMessageCharacterCount?: number;
+}
+
+export interface RoutineDryRunResult {
+  routine: DesktopRoutine;
+  values: Record<string, string>;
+  request: RoutineRequestPreview;
+  integrations?: IntegrationStatus[];
+  reportPath?: string;
+  command?: string;
+}
+
+export interface RoutineRunResult {
+  routineId: string;
+  runId: string;
+  provider: string;
+  model?: string;
+  values?: Record<string, string>;
+  reportPath?: string;
+  integrations?: IntegrationStatus[];
+  usage?: {
+    inputTokens?: number;
+    outputTokens?: number;
+    cacheReadTokens?: number;
+    cacheWriteTokens?: number;
+    totalCostUsd?: number;
+  };
+  report?: string;
+}
+
 export interface UserPreferences {
   apiKey: string;
   authMethod: AuthMethod;

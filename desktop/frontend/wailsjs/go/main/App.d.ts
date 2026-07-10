@@ -36,6 +36,8 @@ export function CreateTriageSession(arg1:string):Promise<main.AgentSessionInfo>;
 
 export function DeleteAgentSession(arg1:string):Promise<void>;
 
+export function DryRunRoutine(arg1:main.RoutineRunRequest):Promise<main.RoutineDryRunResult>;
+
 export function ExecuteLinearTicketWithBoatmanMode(arg1:string,arg2:string,arg3:string):Promise<void>;
 
 export function ExecuteTriageTicket(arg1:string,arg2:string):Promise<main.AgentSessionInfo>;
@@ -158,6 +160,10 @@ export function ListProjects():Promise<Array<project.Project>>;
 
 export function ListMemoryDocuments(arg1:string):Promise<Array<main.MemoryDocumentSummary>>;
 
+export function ListProjectRoutines(arg1:string):Promise<Array<main.DesktopRoutine>>;
+
+export function ListRoutines():Promise<Array<main.DesktopRoutine>>;
+
 export function ListRuntimeRuns(arg1:string):Promise<Array<main.RuntimeRunSummary>>;
 
 export function ListSignals():Promise<Array<services.SignalEntry>>;
@@ -183,6 +189,8 @@ export function RemoveProject(arg1:string):Promise<void>;
 export function RemoveSessionTag(arg1:string,arg2:string):Promise<void>;
 
 export function ResumeBoatmanModeExecution(arg1:string):Promise<void>;
+
+export function RunRoutine(arg1:main.RoutineRunRequest):Promise<main.RoutineRunResult>;
 
 export function RunHarness(arg1:string,arg2:harnessui.RunRequest):Promise<void>;
 

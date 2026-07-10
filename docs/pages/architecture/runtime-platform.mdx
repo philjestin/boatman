@@ -282,6 +282,17 @@ of adding a network service too early:
   on secret-like or destructive database diffs and warns on sensitive domains
   such as auth, payments, billing, and migrations. This gives review, CI,
   desktop, and future service workflows one quality-gate shape.
+- `shared/agentruntime/routines` defines saved, repeatable runs with parameters,
+  schedules, integrations, prompts, output locations, project-local JSON
+  discovery, and `extends`-based defaults. The first built-in routine,
+  `datadog-gql-slow-queries`, connects to Datadog MCP, investigates the top
+  slow GraphQL operations for a graph area, records the runtime run, and writes
+  a Markdown report that the CLI, Desktop Routines tab, cron, or CI can produce
+  daily.
+- `shared/agentruntime/mcpconfig` translates provider-neutral MCP refs into
+  provider config shapes. The Claude CLI adapters now pass runtime MCP refs via
+  `--mcp-config`, so routines can attach Datadog without requiring global Claude
+  MCP setup.
 
 This keeps Goose, Slack, GitHub Actions, IDEs, Boatman CLI, and Boatman Desktop
 compatible with one shared event/workflow/approval/verifier contract later,
@@ -379,6 +390,8 @@ This keeps the codebase teachable for both humans and agents.
 15. Add shared workflow template library plus CLI inspection commands. ✅
 16. Add deterministic approval PDP and durable approval request types. ✅
 17. Add independent verifier contract and first local policy verifier. ✅
+18. Add repeatable routines with Datadog GraphQL slow-query investigation,
+    MCP config bridging, desktop dry-run previews, and Markdown reports. ✅
 
 The design principle is simple: Boatman owns workflow, tools, memory, approvals,
 artifacts, and quality gates. Providers own model inference. Everything else is

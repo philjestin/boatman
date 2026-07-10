@@ -1,10 +1,10 @@
 # Boatman
 
-> A desktop application that brings AI agents to your codebase with specialized **Firefighter Mode** for production incident investigation and a Runtime inspector for recorded agent runs.
+> A desktop application that brings AI agents to your codebase with specialized **Firefighter Mode** for production incident investigation, repeatable Routines, and a Runtime inspector for recorded agent runs.
 
 ## About
 
-Boatman is a native desktop application built with Wails (Go + React) that provides a powerful interface for AI-assisted development. It includes a provider-neutral runtime layer, a specialized **Firefighter Mode** that integrates Linear, Bugsnag, and Datadog, and an inspectable Runtime tab for recorded runs, artifacts, events, and memory.
+Boatman is a native desktop application built with Wails (Go + React) that provides a powerful interface for AI-assisted development. It includes a provider-neutral runtime layer, repeatable Routines, a specialized **Firefighter Mode** that integrates Linear, Bugsnag, and Datadog, and an inspectable Runtime tab for recorded runs, artifacts, events, and memory.
 
 ## Features
 
@@ -61,6 +61,12 @@ See [TRIAGE.md](./TRIAGE.md) for full documentation.
 - **Artifact Manifest**: See files, diffs, PRs, or other durable outputs recorded by each run
 - **Inspectable Memory**: Read `.boatman/memory` Markdown context files with provenance and source run IDs
 
+### ✨ Routines
+- **Project Routine Library**: Load built-ins plus `.boatman/routines.json` and `.boatman/routines/*.json` from the active project
+- **Datadog GraphQL Slow Queries**: Run the saved slow-query investigation from the desktop app
+- **Dry-Run Checks**: Verify Datadog readiness and prompt shape before model execution
+- **Markdown Reports**: Save daily investigation output under project-local `.boatman/routines`
+
 ### 🔍 Advanced UI Features
 - **Smart Search**: Full-text search across sessions with filters (tags, dates, favorites, projects)
 - **Favorites & Tags**: Organize sessions with favorites and custom tags for easy retrieval
@@ -71,6 +77,7 @@ See [TRIAGE.md](./TRIAGE.md) for full documentation.
 - **Model Selection**: Choose between Claude Opus 4.6, Sonnet 4.5, Haiku 4, and Claude 3.5 Sonnet
 - **Session Modes**: Visual badges to distinguish standard, firefighter, and boatmanmode sessions
 - **Runtime Tab**: Browse recorded runs and memory without leaving the app
+- **Routines Tab**: Run repeatable Datadog investigations without dropping to the CLI
 
 ## Quick Start
 

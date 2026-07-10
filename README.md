@@ -2,7 +2,7 @@
 
 A monorepo containing the Boatman CLI tool and desktop application for AI-powered autonomous software development.
 
-> 🆕 **Runtime platform update** - Boatman now has a provider-neutral runtime layer, OpenAI Responses adapter, inspectable run store, workflow templates, approval policy rules, verifier contracts, file-backed memory docs, integration health checks, and a desktop Runtime tab for inspecting recorded events and memory.
+> 🆕 **Runtime platform update** - Boatman now has a provider-neutral runtime layer, OpenAI Responses adapter, inspectable run store, workflow templates, repeatable routines, approval policy rules, verifier contracts, file-backed memory docs, integration health checks, and a desktop Runtime tab for inspecting recorded events and memory.
 
 ## Repository Structure
 
@@ -37,6 +37,7 @@ Boatman is an AI-powered autonomous development system that:
 - **Supports resume** — pick up a failed execution from the review/refactor stage without re-doing the work
 - **Routes model calls through provider adapters** so Claude CLI, OpenAI Responses, and future providers can be adopted per workflow role
 - **Models workflows as provider-neutral templates** with explicit stages, gates, previews, skips, and validation loops
+- **Runs repeatable project routines** from `.boatman/routines.json` or `.boatman/routines/*.json`, including the built-in Datadog GraphQL slow-query investigation
 - **Evaluates side-effecting actions through approval policy rules** before humans, chat clients, or future services render durable approvals
 - **Runs independent verifier checks** so code review, runtime recordings, and future central-plane quality gates share one contract
 - **Records inspectable runtime runs** with normalized events, original requests, artifacts, usage, raw provider payloads, integration status, and memory-load events
@@ -57,6 +58,7 @@ The command-line interface and core autonomous agent.
 - Provider-neutral runtime requests with Claude CLI and OpenAI Responses adapters
 - Runtime provider routing by default, role, and workflow profile
 - Built-in workflow template inspection with `boatman workflows`
+- Repeatable routine inspection and execution with `boatman routines`
 - Deterministic approval policy and independent verifier packages for future service/client reuse
 - Inspectable run store and memory document commands
 - Integration descriptor checks for Linear, Slack, Datadog, and Bugsnag
@@ -86,6 +88,9 @@ go build -o boatman ./cmd/boatman
 ./boatman providers check
 ./boatman workflows
 
+# Dry-run a repeatable Datadog MCP routine
+./boatman routines run datadog-gql-slow-queries --graph-area employer --dry-run
+
 # Inspect recorded runs and memory documents
 ./boatman work --prompt "Update docs"
 ./boatman runs list
@@ -114,6 +119,7 @@ A cross-platform desktop application built with Wails that provides a GUI for th
 - **Firefighter mode** for production incident investigation
 - **Agent logs panel** for real-time visibility into AI actions
 - **Runtime tab** for inspecting `.boatman/runs` events, artifacts, and `.boatman/memory` documents
+- **Routines tab** for running built-in and project-local routines from the desktop app
 - **Integration health** for MCP-backed services before starting incident or autonomous workflows
 - **Onboarding wizard** for first-time setup
 - **MCP server management** via UI dialog

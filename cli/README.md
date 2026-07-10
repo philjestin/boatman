@@ -66,6 +66,7 @@ An AI-powered development agent that automates ticket execution with peer review
 - Normalized runtime events can be emitted and recorded alongside legacy events
 - Local tools flow through a shared broker with workspace and approval policy checks
 - Built-in workflow templates describe stages, gates, preview points, skips, and validation loops before a service runtime exists
+- Repeatable routines package saved prompts, parameters, integrations, runtime recording, and durable reports
 
 ### 🌲 Git Worktree Isolation
 - Each ticket works in an isolated worktree
@@ -135,6 +136,9 @@ boatman providers check
 boatman workflows
 boatman workflows show feature
 
+boatman routines
+boatman routines run datadog-gql-slow-queries --graph-area employer --dry-run
+
 boatman integrations
 boatman integrations check --emit-events
 
@@ -152,6 +156,35 @@ boatman memory context project domains/payments
 Recorded runs are written as `metadata.json`, `request.json`, `events.ndjson`,
 and `artifacts.json`. Memory documents are Markdown files with provenance,
 scope, optional source run, and optional expiration.
+
+---
+
+### 📈 Repeatable Datadog Routine (NEW)
+
+Run a saved GraphQL performance investigation through Datadog MCP:
+
+```bash
+export DD_API_KEY=...
+export DD_APP_KEY=...
+
+boatman routines run datadog-gql-slow-queries \
+  --graph-area employer \
+  --top-n 20 \
+  --lookback 24h \
+  --environment prod \
+  --service employer-graphql
+```
+
+The routine attaches the Datadog MCP integration to the runtime request, records
+the provider run under `.boatman/runs`, and writes a Markdown report under
+`.boatman/routines/datadog-gql-slow-queries/`. Use `--dry-run` to preview the
+request and integration health without calling a model. The built-in schedule is
+`0 8 * * *`, so cron or CI can invoke the same command daily.
+
+Project routines can live in `.boatman/routines.json` or
+`.boatman/routines/*.json`. They can `extends` built-ins and set project
+defaults, so a repo can expose commands like `daily-employer-gql` without
+duplicating the full prompt.
 
 ---
 

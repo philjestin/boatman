@@ -54,6 +54,10 @@ export function DeleteAgentSession(arg1) {
   return window['go']['main']['App']['DeleteAgentSession'](arg1);
 }
 
+export function DryRunRoutine(arg1) {
+  return window['go']['main']['App']['DryRunRoutine'](arg1);
+}
+
 export function ExecuteLinearTicketWithBoatmanMode(arg1, arg2, arg3) {
   return window['go']['main']['App']['ExecuteLinearTicketWithBoatmanMode'](arg1, arg2, arg3);
 }
@@ -298,6 +302,14 @@ export function ListMemoryDocuments(arg1) {
   return window['go']['main']['App']['ListMemoryDocuments'](arg1);
 }
 
+export function ListProjectRoutines(arg1) {
+  return window['go']['main']['App']['ListProjectRoutines'](arg1);
+}
+
+export function ListRoutines() {
+  return window['go']['main']['App']['ListRoutines']();
+}
+
 export function ListRuntimeRuns(arg1) {
   return window['go']['main']['App']['ListRuntimeRuns'](arg1);
 }
@@ -348,6 +360,10 @@ export function RemoveSessionTag(arg1, arg2) {
 
 export function ResumeBoatmanModeExecution(arg1) {
   return window['go']['main']['App']['ResumeBoatmanModeExecution'](arg1);
+}
+
+export function RunRoutine(arg1) {
+  return window['go']['main']['App']['RunRoutine'](arg1);
 }
 
 export function RunHarness(arg1, arg2) {

@@ -62,7 +62,7 @@ func (m *Manager) CreateSession(name, workDir string) (*Session, error) {
 	} else {
 		cmd = exec.Command("tmux", "new-session", "-d", "-s", sessionName)
 	}
-	
+
 	if err := cmd.Run(); err != nil {
 		return nil, fmt.Errorf("failed to create tmux session: %w", err)
 	}
@@ -167,6 +167,7 @@ parse_claude_output() {
 type ClaudeOptions struct {
 	Model               string
 	EnablePromptCaching bool
+	MCPConfigs          []string
 }
 
 func (m *Manager) RunClaudeStreaming(ctx context.Context, sess *Session, systemPrompt, userPrompt string) (string, *cost.Usage, error) {
@@ -180,7 +181,7 @@ func (m *Manager) RunClaudeStreamingWithOptions(ctx context.Context, sess *Sessi
 		return "", nil, fmt.Errorf("failed to write prompt file: %w", err)
 	}
 	// Don't delete prompt file until after completion - tmux needs it
-	
+
 	// Result file stores Claude's JSON result for later parsing
 	resultFile := filepath.Join(m.outputDir, fmt.Sprintf("%s-result.json", sess.Name))
 	os.Remove(resultFile) // Clear any old result
@@ -192,6 +193,11 @@ func (m *Manager) RunClaudeStreamingWithOptions(ctx context.Context, sess *Sessi
 	claudeFlags := "-p --dangerously-skip-permissions --verbose --output-format stream-json"
 	if opts.Model != "" {
 		claudeFlags += fmt.Sprintf(" --model %s", opts.Model)
+	}
+	for _, config := range opts.MCPConfigs {
+		if strings.TrimSpace(config) != "" {
+			claudeFlags += fmt.Sprintf(" --mcp-config %s", shellQuote(config))
+		}
 	}
 	// Note: Prompt caching happens automatically at the API level, no flag needed
 
@@ -307,6 +313,10 @@ rm -f '%s' '%s'
 	return m.waitAndCapture(ctx, sess)
 }
 
+func shellQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
+}
+
 // waitAndCapture waits for Claude to finish and captures the output.
 func (m *Manager) waitAndCapture(ctx context.Context, sess *Session) (string, *cost.Usage, error) {
 	fmt.Println("   ┌─────────────────────────────────────────────────────────────")
@@ -322,7 +332,7 @@ func (m *Manager) waitAndCapture(ctx context.Context, sess *Session) (string, *c
 	timeout := time.After(60 * time.Minute) // 60 min timeout for complex tasks
 	startTime := time.Now()
 	lastDot := time.Now()
-	
+
 	// Result file where the stream-json result is saved
 	resultFile := filepath.Join(m.outputDir, fmt.Sprintf("%s-result.json", sess.Name))
 	rawOutputFile := filepath.Join(m.outputDir, fmt.Sprintf("%s-raw.txt", sess.Name))
@@ -627,28 +637,28 @@ func (m *Manager) capturePane(sess *Session, lines int) (string, error) {
 // Now handles the parsed stream-json activity output.
 func extractClaudeOutput(paneContent string) string {
 	lines := strings.Split(paneContent, "\n")
-	
+
 	var output strings.Builder
 	inOutput := false
-	
+
 	for _, line := range lines {
 		// Start capturing after "Activity will stream" or "Claude is working"
 		if strings.Contains(line, "Activity will stream") || strings.Contains(line, "Claude is working") {
 			inOutput = true
 			continue
 		}
-		
+
 		// Stop at the completion marker
 		if strings.Contains(line, "━━━━━━━━━━") && inOutput {
 			break
 		}
-		
+
 		if inOutput {
 			output.WriteString(line)
 			output.WriteString("\n")
 		}
 	}
-	
+
 	return strings.TrimSpace(output.String())
 }
 

@@ -264,6 +264,36 @@ boatman providers --json
 boatman providers check
 ```
 
+### Routines
+
+```bash
+boatman routines
+boatman routines --json
+boatman routines show <routine-id>
+boatman routines show <routine-id> --json
+boatman routines run datadog-gql-slow-queries --graph-area <area>
+boatman routines run datadog-gql-slow-queries --graph-area <area> --dry-run
+```
+
+The built-in routines live in
+`github.com/philjestin/boatman-ecosystem/shared/agentruntime/routines`.
+`datadog-gql-slow-queries` uses the Datadog integration, attaches a runtime MCP
+config, records the provider run, and writes a Markdown report.
+
+Important flags:
+
+| Flag | Purpose |
+|------|---------|
+| `--graph-area` | Required graph/product area to inspect |
+| `--top-n` | Number of slow GraphQL operations to inspect |
+| `--lookback` | Datadog lookback window such as `24h` or `7d` |
+| `--environment` | Datadog environment tag |
+| `--service` | Optional Datadog service tag |
+| `--report-out` | Override Markdown report path, or `-` to skip file output |
+| `--provider` / `--model` | Override runtime provider or model |
+| `--mcp-url` | Use a remote MCP URL instead of the local descriptor command |
+| `--param key=value` | Pass additional routine parameters |
+
 ### Integrations
 
 ```bash
@@ -412,6 +442,8 @@ type HealthReport struct {
 | `boatman checkpoint rollback --step <step>` | Rollback to step |
 | `boatman workflows` | List built-in workflow templates |
 | `boatman workflows show <id>` | Show workflow template stages and gates |
+| `boatman routines` | List repeatable routine definitions |
+| `boatman routines run datadog-gql-slow-queries --graph-area <area>` | Run the Datadog GraphQL performance routine |
 | `boatman providers` | Inspect registered model providers |
 | `boatman runs list` | List recorded runtime runs |
 | `boatman version [--verbose]` | Show version information |

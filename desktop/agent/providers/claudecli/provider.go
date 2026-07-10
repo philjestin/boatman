@@ -12,6 +12,7 @@ import (
 	"time"
 
 	agentruntime "github.com/philjestin/boatman-ecosystem/shared/agentruntime"
+	"github.com/philjestin/boatman-ecosystem/shared/agentruntime/mcpconfig"
 )
 
 const providerName = "claude-cli"
@@ -21,6 +22,7 @@ type runFunc func(context.Context, agentruntime.RunRequest, func(agentruntime.Ev
 // Provider streams Claude CLI output as normalized runtime events.
 type Provider struct {
 	command string
+	env     map[string]string
 	run     runFunc
 }
 
@@ -31,6 +33,15 @@ type Option func(*Provider)
 func WithCommand(command string) Option {
 	return func(p *Provider) {
 		p.command = command
+	}
+}
+
+// WithExtraEnv appends process environment variables when invoking Claude.
+// These values are intentionally provider-local so callers can pass secrets to
+// local MCP subprocesses without serializing them into RunRequest metadata.
+func WithExtraEnv(env map[string]string) Option {
+	return func(p *Provider) {
+		p.env = cloneStringMap(env)
 	}
 }
 
@@ -156,7 +167,7 @@ func (p *Provider) CancelRun(context.Context, string) error {
 func (p *Provider) runClaude(ctx context.Context, req agentruntime.RunRequest, emit func(agentruntime.Event) bool) error {
 	cmd := exec.CommandContext(ctx, p.command, BuildArgs(req)...)
 	cmd.Dir = req.WorkDir
-	cmd.Env = commandEnv(cmd.Environ(), req.Metadata)
+	cmd.Env = commandEnv(cmd.Environ(), req.Metadata, p.env)
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -208,6 +219,13 @@ func (p *Provider) runClaude(ctx context.Context, req agentruntime.RunRequest, e
 			if !emit(event) {
 				return
 			}
+			if truthy(req.Metadata["normalizeClaudeResult"]) {
+				for _, normalized := range normalizedClaudeEvents(line) {
+					if !emit(normalized) {
+						return
+					}
+				}
+			}
 		}
 	}()
 
@@ -242,6 +260,11 @@ func BuildArgs(req agentruntime.RunRequest) []string {
 	if req.Reasoning != nil && req.Reasoning.Effort != "" {
 		args = append(args, "--effort", req.Reasoning.Effort)
 	}
+	if len(req.MCPServers) > 0 {
+		if config, err := mcpconfig.ClaudeJSON(req.MCPServers); err == nil && config != "" {
+			args = append(args, "--mcp-config", config)
+		}
+	}
 
 	switch req.ApprovalPolicy {
 	case agentruntime.ApprovalAutoEdit:
@@ -255,7 +278,7 @@ func BuildArgs(req agentruntime.RunRequest) []string {
 	return args
 }
 
-func commandEnv(base []string, metadata map[string]string) []string {
+func commandEnv(base []string, metadata map[string]string, extra map[string]string) []string {
 	env := append([]string{}, base...)
 	if metadata["authMethod"] == "google-cloud" {
 		if project := metadata["gcpProjectId"]; project != "" {
@@ -264,12 +287,79 @@ func commandEnv(base []string, metadata map[string]string) []string {
 		if region := metadata["gcpRegion"]; region != "" {
 			env = append(env, "CLOUD_ML_REGION="+region)
 		}
-		return env
-	}
-	if key := metadata["anthropicApiKey"]; key != "" {
+	} else if key := metadata["anthropicApiKey"]; key != "" {
 		env = append(env, "ANTHROPIC_API_KEY="+key)
 	}
+	for key, value := range extra {
+		if strings.TrimSpace(key) != "" && strings.TrimSpace(value) != "" {
+			env = append(env, key+"="+value)
+		}
+	}
 	return env
+}
+
+func normalizedClaudeEvents(line string) []agentruntime.Event {
+	var payload struct {
+		Type         string  `json:"type"`
+		Result       any     `json:"result"`
+		TotalCostUSD float64 `json:"total_cost_usd"`
+		CostUSD      float64 `json:"cost_usd"`
+		Usage        struct {
+			InputTokens        int `json:"input_tokens"`
+			OutputTokens       int `json:"output_tokens"`
+			CacheReadTokens    int `json:"cache_read_input_tokens"`
+			CacheCreatedTokens int `json:"cache_creation_input_tokens"`
+		} `json:"usage"`
+	}
+	if err := json.Unmarshal([]byte(line), &payload); err != nil {
+		return nil
+	}
+	var events []agentruntime.Event
+	if payload.Type == "result" {
+		if text, ok := payload.Result.(string); ok && strings.TrimSpace(text) != "" {
+			event := agentruntime.NewEvent(agentruntime.EventMessageCompleted)
+			event.Status = agentruntime.StatusCompleted
+			event.Message = text
+			events = append(events, event)
+		}
+	}
+	usage := agentruntime.Usage{
+		InputTokens:      payload.Usage.InputTokens,
+		OutputTokens:     payload.Usage.OutputTokens,
+		CacheReadTokens:  payload.Usage.CacheReadTokens,
+		CacheWriteTokens: payload.Usage.CacheCreatedTokens,
+		TotalCostUSD:     payload.TotalCostUSD,
+	}
+	if usage.TotalCostUSD == 0 {
+		usage.TotalCostUSD = payload.CostUSD
+	}
+	if usage.InputTokens != 0 || usage.OutputTokens != 0 || usage.CacheReadTokens != 0 || usage.CacheWriteTokens != 0 || usage.TotalCostUSD != 0 {
+		event := agentruntime.NewEvent(agentruntime.EventUsageUpdated)
+		event.Status = agentruntime.StatusCompleted
+		event.Usage = &usage
+		events = append(events, event)
+	}
+	return events
+}
+
+func truthy(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
+func cloneStringMap(values map[string]string) map[string]string {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(values))
+	for key, value := range values {
+		out[key] = value
+	}
+	return out
 }
 
 func phaseID(req agentruntime.RunRequest) string {
