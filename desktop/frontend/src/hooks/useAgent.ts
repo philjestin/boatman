@@ -33,6 +33,36 @@ import {
 } from '../../wailsjs/go/main/App';
 import { EventsOn, EventsOff } from '../../wailsjs/runtime/runtime';
 
+type AgentSessionInfoPayload = {
+  id: string;
+  projectPath: string;
+  status: SessionStatus;
+  createdAt: string;
+  tags?: string[];
+  isFavorite?: boolean;
+  model?: string;
+  reasoningEffort?: string;
+  mode?: string;
+  modeConfig?: Record<string, any>;
+};
+
+function sessionFromInfo(info: AgentSessionInfoPayload): AgentSession {
+  return {
+    id: info.id,
+    projectPath: info.projectPath,
+    status: info.status as SessionStatus,
+    createdAt: info.createdAt,
+    messages: [],
+    tasks: [],
+    tags: info.tags || [],
+    isFavorite: info.isFavorite || false,
+    model: info.model || 'sonnet',
+    reasoningEffort: info.reasoningEffort || 'medium',
+    mode: info.mode || '',
+    modeConfig: info.modeConfig || {},
+  };
+}
+
 export function useAgent() {
   const {
     sessions,
@@ -54,6 +84,13 @@ export function useAgent() {
 
   // Subscribe to agent events
   useEffect(() => {
+    const sessionHandler = (info: AgentSessionInfoPayload) => {
+      console.log('[FRONTEND] Received session event:', info);
+      const session = sessionFromInfo(info);
+      addSession(session);
+      setActiveSession(session.id);
+    };
+
     const messageHandler = (data: { sessionId: string; message: Message }) => {
       console.log('[FRONTEND] Received message event:', data);
       addMessage(data.sessionId, data.message);
@@ -141,6 +178,7 @@ export function useAgent() {
     };
 
     console.log('[FRONTEND] Subscribing to agent events...');
+    EventsOn('agent:session', sessionHandler);
     EventsOn('agent:message', messageHandler);
     EventsOn('agent:task', taskHandler);
     EventsOn('agent:status', statusHandler);
@@ -154,6 +192,7 @@ export function useAgent() {
 
     return () => {
       console.log('[FRONTEND] Unsubscribing from agent events...');
+      EventsOff('agent:session');
       EventsOff('agent:message');
       EventsOff('agent:task');
       EventsOff('agent:status');
@@ -165,7 +204,7 @@ export function useAgent() {
       EventsOff('triage:error');
       EventsOff('triage:complete');
     };
-  }, [addMessage, updateTask, updateSessionStatus]);
+  }, [addSession, setActiveSession, addMessage, updateTask, updateSessionStatus]);
 
   // Load existing sessions on mount
   useEffect(() => {
@@ -181,19 +220,7 @@ export function useAgent() {
         const sessionInfos = await ListAgentSessions();
         // Convert to full sessions (messages/tasks will be loaded on select)
         sessionInfos.forEach((info) => {
-          addSession({
-            id: info.id,
-            projectPath: info.projectPath,
-            status: info.status as SessionStatus,
-            createdAt: info.createdAt,
-            messages: [],
-            tasks: [],
-            tags: info.tags || [],
-            isFavorite: info.isFavorite || false,
-            model: info.model || 'sonnet',
-            reasoningEffort: info.reasoningEffort || 'medium',
-            mode: info.mode || '',
-          });
+          addSession(sessionFromInfo(info as unknown as AgentSessionInfoPayload));
         });
       } catch (err) {
         console.error('Failed to load sessions:', err);

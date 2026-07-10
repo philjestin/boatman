@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { RuntimeView } from './RuntimeView';
 import {
   GetMemoryDocument,
@@ -7,10 +7,16 @@ import {
   ListMemoryDocuments,
   ListRuntimeRuns,
 } from '../../../wailsjs/go/main/App';
+import { EventsOn } from '../../../wailsjs/runtime/runtime';
 
 describe('RuntimeView', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(EventsOn).mockReturnValue(vi.fn());
+    vi.mocked(ListRuntimeRuns).mockResolvedValue([]);
+    vi.mocked(GetRuntimeRun).mockResolvedValue(null as any);
+    vi.mocked(ListMemoryDocuments).mockResolvedValue([]);
+    vi.mocked(GetMemoryDocument).mockResolvedValue(null as any);
   });
 
   it('loads runtime runs and renders selected run details', async () => {
@@ -74,9 +80,7 @@ describe('RuntimeView', () => {
 
     render(<RuntimeView projectPath="/repo" />);
 
-    expect(await screen.findByText('run-1')).toBeInTheDocument();
-    fireEvent.click(screen.getByText('run-1'));
-
+    expect((await screen.findAllByText('run-1')).length).toBeGreaterThan(0);
     await waitFor(() => expect(GetRuntimeRun).toHaveBeenCalledWith('/repo', 'run-1'));
     expect(await screen.findByText('plan.md')).toBeInTheDocument();
     expect(screen.getAllByText('run.completed').length).toBeGreaterThan(0);
@@ -116,5 +120,80 @@ describe('RuntimeView', () => {
 
     await waitFor(() => expect(GetMemoryDocument).toHaveBeenCalledWith('/repo', 'domains/payments'));
     expect(await screen.findByText('Use gateway helpers before adding new mocks.')).toBeInTheDocument();
+  });
+
+  it('refreshes and selects a routine runtime run when the backend emits an update', async () => {
+    let runtimeHandler: ((event: any) => void | Promise<void>) | undefined;
+    vi.mocked(EventsOn).mockImplementation((eventName, handler) => {
+      if (eventName === 'runtime:run-updated') {
+        runtimeHandler = handler;
+      }
+      return vi.fn();
+    });
+    vi.mocked(ListRuntimeRuns)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          runId: 'routine-run-1',
+          provider: 'claude-cli',
+          model: 'sonnet',
+          role: 'routine',
+          profile: 'routine.datadog-gql-slow-queries',
+          status: 'succeeded',
+          workDir: '/repo',
+          updatedAt: '2026-07-10T12:00:00Z',
+          eventCount: 4,
+          artifactCount: 0,
+        },
+      ]);
+    vi.mocked(GetRuntimeRun).mockResolvedValue({
+      metadata: {
+        runId: 'routine-run-1',
+        provider: 'claude-cli',
+        model: 'sonnet',
+        role: 'routine',
+        profile: 'routine.datadog-gql-slow-queries',
+        status: 'succeeded',
+        workDir: '/repo',
+        eventCount: 4,
+        artifactCount: 0,
+      },
+      request: {
+        provider: 'claude-cli',
+        role: 'routine',
+        profile: 'routine.datadog-gql-slow-queries',
+        approvalPolicy: 'suggest',
+        reasoningEffort: 'high',
+        messageCount: 1,
+        toolNames: [],
+        instructionsPreview: 'Investigate slow queries',
+        firstMessagePreview: 'Find the slowest GraphQL queries',
+      },
+      events: [
+        {
+          type: 'run.completed',
+          status: 'succeeded',
+          message: 'done',
+          timestamp: '2026-07-10T12:00:00Z',
+        },
+      ],
+      artifacts: [],
+    } as any);
+
+    render(<RuntimeView projectPath="/repo" />);
+
+    await waitFor(() => expect(runtimeHandler).toBeDefined());
+    await act(async () => {
+      await runtimeHandler?.({
+        source: 'routine',
+        projectPath: '/repo',
+        runId: 'routine-run-1',
+        status: 'completed',
+      });
+    });
+
+    await waitFor(() => expect(GetRuntimeRun).toHaveBeenCalledWith('/repo', 'routine-run-1'));
+    expect((await screen.findAllByText('routine-run-1')).length).toBeGreaterThan(0);
+    expect(screen.getByText('Find the slowest GraphQL queries')).toBeInTheDocument();
   });
 });

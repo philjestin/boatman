@@ -41,6 +41,11 @@ func (s *Session) buildRuntimeRequest(prompt string, authConfig AuthConfig) agen
 			actualPrompt = GetFirefighterPrompt(scope, mcpNames...) + "\n\n" + prompt
 		}
 	}
+	if mode == "routine" {
+		role = agentruntime.RoleRoutine
+		profile = stringFromModeConfig(modeConfig, "profile", "desktop-routine")
+		mcpServers = mcpRefsFromModeConfig(modeConfig)
+	}
 
 	metadata := map[string]string{
 		"outputFormat": "stream-json",
@@ -133,4 +138,124 @@ func mcpNamesFromModeConfig(modeConfig map[string]interface{}) []string {
 		return names
 	}
 	return nil
+}
+
+func stringFromModeConfig(modeConfig map[string]interface{}, key, fallback string) string {
+	if modeConfig != nil {
+		if value, ok := modeConfig[key].(string); ok {
+			if value = strings.TrimSpace(value); value != "" {
+				return value
+			}
+		}
+	}
+	return fallback
+}
+
+func mcpRefsFromModeConfig(modeConfig map[string]interface{}) []agentruntime.MCPServerRef {
+	if modeConfig == nil {
+		return nil
+	}
+	raw, ok := modeConfig["mcpServers"]
+	if !ok {
+		return nil
+	}
+	switch refs := raw.(type) {
+	case []agentruntime.MCPServerRef:
+		return refs
+	case []interface{}:
+		out := make([]agentruntime.MCPServerRef, 0, len(refs))
+		for _, value := range refs {
+			if ref, ok := mcpRefFromAny(value); ok {
+				out = append(out, ref)
+			}
+		}
+		return out
+	case []map[string]interface{}:
+		out := make([]agentruntime.MCPServerRef, 0, len(refs))
+		for _, value := range refs {
+			if ref, ok := mcpRefFromMap(value); ok {
+				out = append(out, ref)
+			}
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+func mcpRefFromAny(value interface{}) (agentruntime.MCPServerRef, bool) {
+	switch typed := value.(type) {
+	case agentruntime.MCPServerRef:
+		return typed, strings.TrimSpace(typed.Label) != ""
+	case map[string]interface{}:
+		return mcpRefFromMap(typed)
+	default:
+		return agentruntime.MCPServerRef{}, false
+	}
+}
+
+func mcpRefFromMap(value map[string]interface{}) (agentruntime.MCPServerRef, bool) {
+	ref := agentruntime.MCPServerRef{
+		Label:       stringMapValue(value, "label"),
+		Command:     stringMapValue(value, "command"),
+		URL:         stringMapValue(value, "url"),
+		Description: stringMapValue(value, "description"),
+		Args:        stringSliceMapValue(value, "args"),
+		Env:         stringMapMapValue(value, "env"),
+	}
+	return ref, strings.TrimSpace(ref.Label) != ""
+}
+
+func stringMapValue(value map[string]interface{}, key string) string {
+	raw, ok := value[key]
+	if !ok {
+		return ""
+	}
+	text, _ := raw.(string)
+	return text
+}
+
+func stringSliceMapValue(value map[string]interface{}, key string) []string {
+	raw, ok := value[key]
+	if !ok {
+		return nil
+	}
+	if items, ok := raw.([]string); ok {
+		return items
+	}
+	items, ok := raw.([]interface{})
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		if text, ok := item.(string); ok {
+			out = append(out, text)
+		}
+	}
+	return out
+}
+
+func stringMapMapValue(value map[string]interface{}, key string) map[string]string {
+	raw, ok := value[key]
+	if !ok {
+		return nil
+	}
+	if items, ok := raw.(map[string]string); ok {
+		return items
+	}
+	items, ok := raw.(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	out := make(map[string]string, len(items))
+	for itemKey, itemValue := range items {
+		if text, ok := itemValue.(string); ok {
+			out[itemKey] = text
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }

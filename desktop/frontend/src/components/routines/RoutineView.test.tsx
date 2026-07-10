@@ -148,4 +148,23 @@ describe('RoutineView', () => {
     expect(await screen.findByText(/auth opened in an interactive terminal/i)).toBeInTheDocument();
     expect(DryRunRoutine).not.toHaveBeenCalled();
   });
+
+  it('polls routine readiness after interactive Datadog authentication when parameters are complete', async () => {
+    const user = userEvent.setup();
+    render(<RoutineView projectPath="/repo" />);
+
+    await screen.findByRole('heading', { name: 'Datadog GraphQL Slow Queries' });
+    await user.type(screen.getByLabelText(/Graph Area/i), 'employer');
+    await user.click(screen.getByRole('button', { name: /Authenticate/i }));
+
+    await waitFor(() => {
+      expect(AuthenticateDatadogMCP).toHaveBeenCalled();
+      expect(DryRunRoutine).toHaveBeenCalledWith(expect.objectContaining({
+        routineId: 'datadog-gql-slow-queries',
+        projectPath: '/repo',
+        values: expect.objectContaining({ graph_area: 'employer' }),
+      }));
+    });
+    expect(await screen.findByText(/Datadog MCP is authenticated and ready/i)).toBeInTheDocument();
+  });
 });

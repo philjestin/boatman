@@ -544,6 +544,7 @@ export namespace main {
 	    model?: string;
 	    reasoningEffort?: string;
 	    mode?: string;
+	    modeConfig?: Record<string, any>;
 	
 	    static createFrom(source: any = {}) {
 	        return new AgentSessionInfo(source);
@@ -560,6 +561,7 @@ export namespace main {
 	        this.model = source["model"];
 	        this.reasoningEffort = source["reasoningEffort"];
 	        this.mode = source["mode"];
+	        this.modeConfig = source["modeConfig"];
 	    }
 	}
 	export class GitStatus {
@@ -793,6 +795,7 @@ export namespace main {
 	export class RoutineRunResult {
 	    routineId: string;
 	    runId: string;
+	    sessionId?: string;
 	    provider: string;
 	    model?: string;
 	    values?: Record<string, string>;
@@ -809,6 +812,7 @@ export namespace main {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.routineId = source["routineId"];
 	        this.runId = source["runId"];
+	        this.sessionId = source["sessionId"];
 	        this.provider = source["provider"];
 	        this.model = source["model"];
 	        this.values = source["values"];

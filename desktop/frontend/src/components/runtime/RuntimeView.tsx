@@ -16,6 +16,7 @@ import {
   Server,
   Wrench,
 } from 'lucide-react';
+import { EventsOn, EventsOff } from '../../../wailsjs/runtime/runtime';
 import { useRuntimeInspector } from '../../hooks/useRuntimeInspector';
 import type {
   MemoryDocumentDetail,
@@ -31,6 +32,14 @@ type RuntimeTab = 'runs' | 'memory';
 
 interface RuntimeViewProps {
   projectPath?: string;
+}
+
+interface RuntimeRunUpdatedEvent {
+  source?: string;
+  projectPath?: string;
+  runId?: string;
+  routineId?: string;
+  status?: string;
 }
 
 export function RuntimeView({ projectPath }: RuntimeViewProps) {
@@ -52,9 +61,36 @@ export function RuntimeView({ projectPath }: RuntimeViewProps) {
   const [query, setQuery] = useState('');
 
   useEffect(() => {
-    loadRuns();
+    let cancelled = false;
+    const loadInitialRuns = async () => {
+      const loadedRuns = await loadRuns();
+      if (!cancelled && loadedRuns.length > 0) {
+        await loadRun(loadedRuns[0].runId);
+      }
+    };
+    loadInitialRuns();
     loadMemoryDocuments();
-  }, [loadRuns, loadMemoryDocuments]);
+    return () => {
+      cancelled = true;
+    };
+  }, [loadRuns, loadRun, loadMemoryDocuments]);
+
+  useEffect(() => {
+    const handleRunUpdated = async (event: RuntimeRunUpdatedEvent) => {
+      if (!event?.runId) return;
+      if (event.projectPath && projectPath && event.projectPath !== projectPath) return;
+      await loadRuns();
+      await loadRun(event.runId);
+    };
+    const unsubscribe = EventsOn('runtime:run-updated', handleRunUpdated);
+    return () => {
+      if (typeof unsubscribe === 'function') {
+        unsubscribe();
+      } else {
+        EventsOff('runtime:run-updated');
+      }
+    };
+  }, [projectPath, loadRuns, loadRun]);
 
   const filteredRuns = useMemo(() => {
     const q = query.trim().toLowerCase();

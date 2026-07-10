@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"boatman/agent"
 	runtimeproviders "boatman/agent/providers"
 	"boatman/agent/providers/claudecli"
 	"boatman/config"
@@ -21,6 +22,7 @@ import (
 	"github.com/philjestin/boatman-ecosystem/shared/agentruntime/routines"
 	"github.com/philjestin/boatman-ecosystem/shared/agentruntime/runprep"
 	"github.com/philjestin/boatman-ecosystem/shared/agentruntime/runstore"
+	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 const (
@@ -127,6 +129,7 @@ type RoutineDryRunResult struct {
 type RoutineRunResult struct {
 	RoutineID    string                  `json:"routineId"`
 	RunID        string                  `json:"runId"`
+	SessionID    string                  `json:"sessionId,omitempty"`
 	Provider     string                  `json:"provider"`
 	Model        string                  `json:"model,omitempty"`
 	Values       map[string]string       `json:"values,omitempty"`
@@ -236,18 +239,60 @@ func (a *App) RunRoutine(input RoutineRunRequest) (*RoutineRunResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	report, usage, err := runRoutineText(context.Background(), provider, built.request)
+	prompt := ""
+	if len(built.request.Messages) > 0 {
+		prompt = built.request.Messages[0].Content
+	}
+	effort := ""
+	if built.request.Reasoning != nil {
+		effort = built.request.Reasoning.Effort
+	}
+	session, err := a.agentManager.CreateRoutineSession(built.request.WorkDir, built.request.RunID, agent.RoutineSessionOptions{
+		RoutineID:       built.routine.ID,
+		RoutineName:     built.routine.Name,
+		Profile:         built.request.Profile,
+		Provider:        built.request.Provider,
+		Model:           built.request.Model,
+		ReasoningEffort: effort,
+		Instructions:    built.request.Instructions,
+		Values:          built.values,
+		MCPServers:      built.request.MCPServers,
+	})
 	if err != nil {
+		return nil, err
+	}
+	a.emitAgentSession(session)
+	started := false
+	startedReq := built.request
+	report, usage, err := session.RunRuntimeRequest(prompt, built.request, provider, func(req agentruntime.RunRequest) {
+		started = true
+		startedReq = req
+		a.emitRoutineRuntimeUpdate(req, "started", built.routine.ID)
+	})
+	if strings.TrimSpace(report) == "" {
+		report = lastAssistantMessage(session.GetMessages())
+	}
+	if err != nil {
+		if started {
+			a.emitRoutineRuntimeUpdate(startedReq, "failed", built.routine.ID)
+		}
 		return nil, err
 	}
 	if strings.TrimSpace(built.reportPath) != "" && built.reportPath != "-" {
 		if err := writeRoutineReport(built.reportPath, report); err != nil {
+			if started {
+				a.emitRoutineRuntimeUpdate(startedReq, "failed", built.routine.ID)
+			}
 			return nil, err
 		}
+	}
+	if started {
+		a.emitRoutineRuntimeUpdate(startedReq, "completed", built.routine.ID)
 	}
 	return &RoutineRunResult{
 		RoutineID:    built.routine.ID,
 		RunID:        built.request.RunID,
+		SessionID:    session.ID,
 		Provider:     built.providerName,
 		Model:        built.request.Model,
 		Values:       cloneStringMap(built.values),
@@ -256,6 +301,28 @@ func (a *App) RunRoutine(input RoutineRunRequest) (*RoutineRunResult, error) {
 		Usage:        usage,
 		Report:       strings.TrimSpace(report),
 	}, nil
+}
+
+func lastAssistantMessage(messages []agent.Message) string {
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role == "assistant" {
+			return strings.TrimSpace(messages[i].Content)
+		}
+	}
+	return ""
+}
+
+func (a *App) emitRoutineRuntimeUpdate(req agentruntime.RunRequest, status, routineID string) {
+	if a == nil || a.ctx == nil {
+		return
+	}
+	wailsruntime.EventsEmit(a.ctx, "runtime:run-updated", map[string]any{
+		"source":      "routine",
+		"projectPath": req.WorkDir,
+		"runId":       req.RunID,
+		"routineId":   routineID,
+		"status":      status,
+	})
 }
 
 func (a *App) buildRoutineRun(ctx context.Context, input RoutineRunRequest, dryRun bool) (*builtRoutineRun, error) {
@@ -502,6 +569,7 @@ func claudeMCPStatus(ctx context.Context, name string) (mcp.IntegrationStatus, b
 		return status, true
 	}
 	if strings.Contains(lower, "failed to connect") {
+		status.Message = "Claude Code reports Datadog MCP failed to connect; finish auth in the browser, then click Check"
 		return status, true
 	}
 	if err != nil {
@@ -738,7 +806,7 @@ func routineProvider(name string, extraEnv map[string]string) (agentruntime.Prov
 	return runtimeproviders.NewDefaultRegistry().ForRequest(req)
 }
 
-func runRoutineText(ctx context.Context, provider agentruntime.Provider, req agentruntime.RunRequest) (string, *agentruntime.Usage, error) {
+func runRoutineText(ctx context.Context, provider agentruntime.Provider, req agentruntime.RunRequest, onStarted func(agentruntime.RunRequest)) (string, *agentruntime.Usage, error) {
 	preparedReq, initialEvents, err := runprep.Prepare(ctx, req, runprep.DefaultOptions())
 	if err != nil {
 		return "", nil, err
@@ -755,6 +823,9 @@ func runRoutineText(ctx context.Context, provider agentruntime.Provider, req age
 	stream, err := provider.StartRun(ctx, req)
 	if err != nil {
 		return "", nil, err
+	}
+	if onStarted != nil {
+		onStarted(req)
 	}
 
 	collector := routineStreamCollector{}

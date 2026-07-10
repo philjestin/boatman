@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   GetMemoryDocument as GetMemoryDocumentBinding,
   GetRuntimeRun as GetRuntimeRunBinding,
@@ -22,6 +22,14 @@ export function useRuntimeInspector(projectPath?: string) {
   const [error, setError] = useState<string | null>(null);
 
   const path = projectPath || '';
+
+  useEffect(() => {
+    setRuns([]);
+    setSelectedRun(null);
+    setMemoryDocuments([]);
+    setSelectedMemoryDocument(null);
+    setError(null);
+  }, [path]);
 
   const loadRuns = useCallback(async () => {
     try {

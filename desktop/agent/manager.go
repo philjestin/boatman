@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/google/uuid"
+	agentruntime "github.com/philjestin/boatman-ecosystem/shared/agentruntime"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -39,6 +40,20 @@ type Manager struct {
 	defaultModel     string
 	authConfigGetter func() AuthConfig
 	configGetter     ConfigGetter
+}
+
+// RoutineSessionOptions describes a routine-backed chat session. Routine
+// executions use ordinary sessions so users can continue the same runtime agent.
+type RoutineSessionOptions struct {
+	RoutineID       string
+	RoutineName     string
+	Profile         string
+	Provider        string
+	Model           string
+	ReasoningEffort string
+	Instructions    string
+	Values          map[string]string
+	MCPServers      []agentruntime.MCPServerRef
 }
 
 // NewManager creates a new agent manager
@@ -234,6 +249,76 @@ func (m *Manager) CreateTriageSession(projectPath string) (*Session, error) {
 
 	m.sessions[sessionID] = session
 	return session, nil
+}
+
+// CreateRoutineSession creates a new session tied to a routine execution.
+func (m *Manager) CreateRoutineSession(projectPath string, sessionID string, opts RoutineSessionOptions) (*Session, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if sessionID == "" {
+		sessionID = uuid.New().String()
+	}
+	if _, exists := m.sessions[sessionID]; exists {
+		return nil, fmt.Errorf("session already exists: %s", sessionID)
+	}
+
+	model := opts.Model
+	if model == "" {
+		model = m.defaultModel
+	}
+	effort := opts.ReasoningEffort
+	if effort == "" {
+		effort = "medium"
+	}
+	profile := opts.Profile
+	if profile == "" {
+		profile = "desktop-routine"
+	}
+
+	session := NewSession(sessionID, projectPath)
+	session.Model = model
+	session.ReasoningEffort = effort
+	session.Mode = "routine"
+	session.ModeConfig = map[string]interface{}{
+		"routineId":   opts.RoutineID,
+		"routineName": opts.RoutineName,
+		"profile":     profile,
+		"provider":    opts.Provider,
+		"mcpServers":  opts.MCPServers,
+		"values":      cloneStringMap(opts.Values),
+	}
+	session.systemPrompt = opts.Instructions
+	session.Tags = append(session.Tags, "routine", opts.RoutineID)
+
+	m.setupSessionHandlers(session, sessionID)
+
+	if m.configGetter != nil {
+		maxMessages := m.configGetter.GetMaxMessagesPerSession()
+		if maxMessages < 1000 {
+			maxMessages = 1000
+		}
+		archive := m.configGetter.GetArchiveOldMessages()
+		session.SetTrimSettings(maxMessages, archive)
+
+		maxAgents := m.configGetter.GetMaxAgentsPerSession()
+		keepCompleted := m.configGetter.GetKeepCompletedAgents()
+		session.SetAgentCleanupSettings(maxAgents, keepCompleted)
+	}
+
+	m.sessions[sessionID] = session
+	return session, nil
+}
+
+func cloneStringMap(values map[string]string) map[string]string {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(values))
+	for key, value := range values {
+		out[key] = value
+	}
+	return out
 }
 
 // setupSessionHandlers sets up event handlers for a session

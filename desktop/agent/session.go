@@ -478,12 +478,110 @@ func (s *Session) runClaudeCommand(prompt string, authConfig AuthConfig) {
 		s.handleError(fmt.Errorf("failed to start model provider: %w", err))
 		return
 	}
+	if _, _, err := s.consumeRuntimeStream(stream); err != nil {
+		s.handleError(err)
+		_ = SaveSession(s)
+	}
+}
 
+// RunRuntimeRequest executes a prepared runtime request inside this session.
+// It is used by routine runs so the initial execution appears as a normal chat
+// session that can be continued by the user.
+func (s *Session) RunRuntimeRequest(prompt string, req agentruntime.RunRequest, provider agentruntime.Provider, onStarted func(agentruntime.RunRequest)) (string, *agentruntime.Usage, error) {
+	if provider == nil {
+		return "", nil, fmt.Errorf("runtime provider is required")
+	}
+
+	s.mu.Lock()
+	if s.Status == SessionStatusStopped || s.Status == SessionStatusError {
+		s.mu.Unlock()
+		return "", nil, fmt.Errorf("session not available")
+	}
+	if s.ctx == nil {
+		s.ctx, s.cancel = context.WithCancel(context.Background())
+	}
+	if s.Model == "" {
+		s.Model = req.Model
+	}
+	if s.ReasoningEffort == "" && req.Reasoning != nil {
+		s.ReasoningEffort = req.Reasoning.Effort
+	}
+	if s.ReasoningEffort == "" {
+		s.ReasoningEffort = "medium"
+	}
+	req.RunID = s.ID
+	req.WorkDir = s.ProjectPath
+
+	msg := Message{
+		ID:        fmt.Sprintf("msg-%d", time.Now().UnixNano()),
+		Role:      "user",
+		Content:   prompt,
+		Timestamp: time.Now(),
+	}
+	s.Messages = append(s.Messages, msg)
+	s.UpdatedAt = time.Now()
+	_ = s.TrimMessagesIfNeeded(s.maxMessages, s.archive)
+
+	messageHandler := s.onMessage
+	statusHandler := s.onStatus
+	s.Status = SessionStatusRunning
+	s.UpdatedAt = time.Now()
+	s.mu.Unlock()
+
+	if messageHandler != nil {
+		messageHandler(msg)
+	}
+	if statusHandler != nil {
+		statusHandler(SessionStatusRunning)
+	}
+
+	preparedReq, initialEvents, err := runprep.Prepare(s.ctx, req, runprep.DefaultOptions())
+	if err != nil {
+		err = fmt.Errorf("prepare runtime request: %w", err)
+		s.handleError(err)
+		_ = SaveSession(s)
+		return "", nil, err
+	}
+	req = preparedReq
+	provider = runprep.NewInitialEventsProvider(provider, initialEvents)
+	store, storeEnabled, err := runstore.ForRequest(req)
+	if err != nil {
+		err = fmt.Errorf("runtime run store: %w", err)
+		s.handleError(err)
+		_ = SaveSession(s)
+		return "", nil, err
+	}
+	if storeEnabled {
+		provider = runstore.NewRecordingProvider(provider, store)
+	}
+	stream, err := provider.StartRun(s.ctx, req)
+	if err != nil {
+		err = fmt.Errorf("failed to start model provider: %w", err)
+		s.handleError(err)
+		_ = SaveSession(s)
+		return "", nil, err
+	}
+	if onStarted != nil {
+		onStarted(req)
+	}
+
+	report, usage, err := s.consumeRuntimeStream(stream)
+	if err != nil {
+		s.handleError(err)
+		_ = SaveSession(s)
+	}
+	return report, usage, err
+}
+
+func (s *Session) consumeRuntimeStream(stream agentruntime.EventStream) (string, *agentruntime.Usage, error) {
 	var responseBuilder strings.Builder
+	collector := sessionRuntimeCollector{}
 	var currentMessageID string // Track the current streaming message
 	failed := false
+	var runErr error
 
 	for event := range stream {
+		collector.Observe(event)
 		switch event.Type {
 		case agentruntime.EventProviderRaw:
 			if event.Provider == runtimeproviders.DefaultProvider {
@@ -531,9 +629,9 @@ func (s *Session) runClaudeCommand(prompt string, authConfig AuthConfig) {
 		case agentruntime.EventRunFailed:
 			failed = true
 			if event.Message != "" {
-				s.handleError(errors.New(event.Message))
+				runErr = errors.New(event.Message)
 			} else {
-				s.handleError(errors.New("model provider run failed"))
+				runErr = errors.New("model provider run failed")
 			}
 		}
 	}
@@ -554,6 +652,36 @@ func (s *Session) runClaudeCommand(prompt string, authConfig AuthConfig) {
 	if err := SaveSession(s); err != nil {
 		fmt.Printf("Warning: failed to save session %s after command: %v\n", s.ID, err)
 	}
+	return collector.Report(), collector.usage, runErr
+}
+
+type sessionRuntimeCollector struct {
+	fallback  strings.Builder
+	completed []string
+	usage     *agentruntime.Usage
+}
+
+func (c *sessionRuntimeCollector) Observe(event agentruntime.Event) {
+	switch event.Type {
+	case agentruntime.EventMessageDelta:
+		c.fallback.WriteString(event.Message)
+	case agentruntime.EventMessageCompleted:
+		if strings.TrimSpace(event.Message) != "" {
+			c.completed = append(c.completed, event.Message)
+			c.fallback.Reset()
+		}
+	case agentruntime.EventUsageUpdated:
+		if event.Usage != nil {
+			c.usage = event.Usage
+		}
+	}
+}
+
+func (c *sessionRuntimeCollector) Report() string {
+	if len(c.completed) > 0 {
+		return strings.TrimSpace(strings.Join(c.completed, "\n\n"))
+	}
+	return strings.TrimSpace(c.fallback.String())
 }
 
 func (s *Session) handleRuntimeMessageDelta(event agentruntime.Event, responseBuilder *strings.Builder, currentMessageID *string) {
