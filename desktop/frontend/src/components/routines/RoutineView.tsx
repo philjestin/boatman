@@ -20,6 +20,7 @@ import {
   ListRoutines,
   RunRoutine,
 } from '../../../wailsjs/go/main/App';
+import { main } from '../../../wailsjs/go/models';
 import type {
   DesktopRoutine,
   DatadogMCPAuthResult,
@@ -114,8 +115,10 @@ export function RoutineView({ projectPath, onOpenSettings, onRoutineSessionOpen 
     values: routineValues(selectedRoutine, values),
   });
 
+  const bindingRequest = () => main.RoutineRunRequest.createFrom(buildRequest());
+
   const refreshRoutineCheck = async () => {
-    const response = (await DryRunRoutine(buildRequest())) as unknown as RoutineDryRunResult;
+    const response = (await DryRunRoutine(bindingRequest())) as unknown as RoutineDryRunResult;
     setDryRun(response);
     setResult(null);
     return response;
@@ -149,7 +152,7 @@ export function RoutineView({ projectPath, onOpenSettings, onRoutineSessionOpen 
     setNotice(null);
     setResult(null);
     try {
-      const response = await RunRoutine(buildRequest());
+      const response = await RunRoutine(bindingRequest());
       setResult(response as unknown as RoutineRunResult);
       setDryRun(null);
       if (response?.sessionId) {
