@@ -59,17 +59,18 @@ var launchClaudeMCPLogin = func(ctx context.Context, target claudeMCPLoginTarget
 
 // DesktopRoutine is the compact routine definition rendered by the frontend.
 type DesktopRoutine struct {
-	ID               string             `json:"id"`
-	Name             string             `json:"name"`
-	Description      string             `json:"description,omitempty"`
-	Schedule         string             `json:"schedule,omitempty"`
-	WorkflowTemplate string             `json:"workflowTemplate,omitempty"`
-	Role             string             `json:"role"`
-	Profile          string             `json:"profile"`
-	Integrations     []string           `json:"integrations,omitempty"`
-	Parameters       []RoutineParameter `json:"parameters,omitempty"`
-	Output           RoutineOutput      `json:"output"`
-	Metadata         map[string]string  `json:"metadata,omitempty"`
+	ID               string                    `json:"id"`
+	Name             string                    `json:"name"`
+	Description      string                    `json:"description,omitempty"`
+	Schedule         string                    `json:"schedule,omitempty"`
+	WorkflowTemplate string                    `json:"workflowTemplate,omitempty"`
+	Role             string                    `json:"role"`
+	Profile          string                    `json:"profile"`
+	Models           agentruntime.ModelProfile `json:"models,omitempty"`
+	Integrations     []string                  `json:"integrations,omitempty"`
+	Parameters       []RoutineParameter        `json:"parameters,omitempty"`
+	Output           RoutineOutput             `json:"output"`
+	Metadata         map[string]string         `json:"metadata,omitempty"`
 }
 
 // RoutineParameter is one user-supplied routine input.
@@ -89,13 +90,14 @@ type RoutineOutput struct {
 
 // RoutineRunRequest is the desktop request for dry-running or executing a routine.
 type RoutineRunRequest struct {
-	RoutineID   string            `json:"routineId"`
-	ProjectPath string            `json:"projectPath"`
-	Values      map[string]string `json:"values,omitempty"`
-	Provider    string            `json:"provider,omitempty"`
-	Model       string            `json:"model,omitempty"`
-	RunID       string            `json:"runId,omitempty"`
-	ReportOut   string            `json:"reportOut,omitempty"`
+	RoutineID   string                    `json:"routineId"`
+	ProjectPath string                    `json:"projectPath"`
+	Values      map[string]string         `json:"values,omitempty"`
+	Provider    string                    `json:"provider,omitempty"`
+	Model       string                    `json:"model,omitempty"`
+	Models      agentruntime.ModelProfile `json:"models,omitempty"`
+	RunID       string                    `json:"runId,omitempty"`
+	ReportOut   string                    `json:"reportOut,omitempty"`
 }
 
 // RoutineRequestPreview is a safe summary of the provider-neutral request.
@@ -117,26 +119,29 @@ type RoutineRequestPreview struct {
 
 // RoutineDryRunResult is returned without invoking a model.
 type RoutineDryRunResult struct {
-	Routine      DesktopRoutine          `json:"routine"`
-	Values       map[string]string       `json:"values"`
-	Request      RoutineRequestPreview   `json:"request"`
-	Integrations []mcp.IntegrationStatus `json:"integrations,omitempty"`
-	ReportPath   string                  `json:"reportPath,omitempty"`
-	Command      string                  `json:"command,omitempty"`
+	Routine      DesktopRoutine            `json:"routine"`
+	Values       map[string]string         `json:"values"`
+	Request      RoutineRequestPreview     `json:"request"`
+	Models       agentruntime.ModelProfile `json:"models,omitempty"`
+	Integrations []mcp.IntegrationStatus   `json:"integrations,omitempty"`
+	ReportPath   string                    `json:"reportPath,omitempty"`
+	Command      string                    `json:"command,omitempty"`
 }
 
 // RoutineRunResult is returned after a routine run completes.
 type RoutineRunResult struct {
-	RoutineID    string                  `json:"routineId"`
-	RunID        string                  `json:"runId"`
-	SessionID    string                  `json:"sessionId,omitempty"`
-	Provider     string                  `json:"provider"`
-	Model        string                  `json:"model,omitempty"`
-	Values       map[string]string       `json:"values,omitempty"`
-	ReportPath   string                  `json:"reportPath,omitempty"`
-	Integrations []mcp.IntegrationStatus `json:"integrations,omitempty"`
-	Usage        *agentruntime.Usage     `json:"usage,omitempty"`
-	Report       string                  `json:"report,omitempty"`
+	RoutineID    string                     `json:"routineId"`
+	RunID        string                     `json:"runId"`
+	SessionID    string                     `json:"sessionId,omitempty"`
+	Provider     string                     `json:"provider"`
+	Model        string                     `json:"model,omitempty"`
+	Models       agentruntime.ModelProfile  `json:"models,omitempty"`
+	Values       map[string]string          `json:"values,omitempty"`
+	ReportPath   string                     `json:"reportPath,omitempty"`
+	Integrations []mcp.IntegrationStatus    `json:"integrations,omitempty"`
+	Usage        *agentruntime.Usage        `json:"usage,omitempty"`
+	Report       string                     `json:"report,omitempty"`
+	Remediations []RoutineRemediationResult `json:"remediations,omitempty"`
 }
 
 // DatadogMCPAuthResult describes a Claude-managed Datadog MCP auth attempt.
@@ -157,6 +162,7 @@ type builtRoutineRun struct {
 	secretEnv    map[string]string
 	reportPath   string
 	providerName string
+	models       agentruntime.ModelProfile
 }
 
 // AuthenticateDatadogMCP opens Claude Code's Datadog MCP auth flow in an
@@ -223,6 +229,7 @@ func (a *App) DryRunRoutine(input RoutineRunRequest) (*RoutineDryRunResult, erro
 		Routine:      desktopRoutine(built.routine),
 		Values:       cloneStringMap(built.values),
 		Request:      routineRequestPreview(built.request),
+		Models:       built.models,
 		Integrations: built.statuses,
 		ReportPath:   built.reportPath,
 		Command:      routineCommandPreview(built.routine.ID, built.values),
@@ -278,6 +285,7 @@ func (a *App) RunRoutine(input RoutineRunRequest) (*RoutineRunResult, error) {
 		}
 		return nil, err
 	}
+	remediations, report := a.maybeRunRoutineRemediations(routineContext(a.ctx), built, session, report)
 	if strings.TrimSpace(built.reportPath) != "" && built.reportPath != "-" {
 		if err := writeRoutineReport(built.reportPath, report); err != nil {
 			if started {
@@ -295,12 +303,44 @@ func (a *App) RunRoutine(input RoutineRunRequest) (*RoutineRunResult, error) {
 		SessionID:    session.ID,
 		Provider:     built.providerName,
 		Model:        built.request.Model,
+		Models:       built.models,
 		Values:       cloneStringMap(built.values),
 		ReportPath:   built.reportPath,
 		Integrations: built.statuses,
 		Usage:        usage,
 		Report:       strings.TrimSpace(report),
+		Remediations: remediations,
 	}, nil
+}
+
+func routineContext(ctx context.Context) context.Context {
+	if ctx != nil {
+		return ctx
+	}
+	return context.Background()
+}
+
+func routineModelProfile(base, override agentruntime.ModelProfile, defaultModel string) agentruntime.ModelProfile {
+	out := agentruntime.ModelProfile{
+		Plan:           strings.TrimSpace(base.Plan),
+		Implementation: strings.TrimSpace(base.Implementation),
+		Skills:         strings.TrimSpace(base.Skills),
+	}
+	override = agentruntime.ModelProfile{
+		Plan:           strings.TrimSpace(override.Plan),
+		Implementation: strings.TrimSpace(override.Implementation),
+		Skills:         strings.TrimSpace(override.Skills),
+	}
+	if override.Plan != "" {
+		out.Plan = override.Plan
+	}
+	if override.Implementation != "" {
+		out.Implementation = override.Implementation
+	}
+	if override.Skills != "" {
+		out.Skills = override.Skills
+	}
+	return out.WithDefault(defaultModel)
 }
 
 func lastAssistantMessage(messages []agent.Message) string {
@@ -359,6 +399,7 @@ func (a *App) buildRoutineRun(ctx context.Context, input RoutineRunRequest, dryR
 	if model == "" {
 		model = strings.TrimSpace(prefs.DefaultModel)
 	}
+	models := routineModelProfile(routine.Models, input.Models, model)
 	req, err := routines.BuildRequest(routine, values, routines.BuildOptions{
 		RunID:      runID,
 		WorkDir:    workDir,
@@ -382,6 +423,7 @@ func (a *App) buildRoutineRun(ctx context.Context, input RoutineRunRequest, dryR
 		secretEnv:    secretEnv,
 		reportPath:   reportPath,
 		providerName: providerName,
+		models:       models,
 	}, nil
 }
 
@@ -411,6 +453,7 @@ func desktopRoutine(item routines.Routine) DesktopRoutine {
 		WorkflowTemplate: item.WorkflowTemplate,
 		Role:             string(item.Role),
 		Profile:          item.Profile,
+		Models:           item.Models,
 		Integrations:     append([]string(nil), item.Integrations...),
 		Parameters:       params,
 		Output: RoutineOutput{
@@ -960,6 +1003,9 @@ func routineCommandPreview(routineID string, values map[string]string) string {
 	}
 	if value := strings.TrimSpace(values["service"]); value != "" {
 		args = append(args, "--service", value)
+	}
+	if value := strings.TrimSpace(values["max_remediations"]); value != "" {
+		args = append(args, "--max-remediations", value)
 	}
 	return strings.Join(args, " ")
 }

@@ -1752,6 +1752,13 @@ func (s *Session) setStatus(status SessionStatus) {
 	}
 }
 
+// SetStatus updates the session lifecycle status and notifies listeners.
+func (s *Session) SetStatus(status SessionStatus) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.setStatus(status)
+}
+
 // TrimMessagesIfNeeded limits message history and optionally archives overflow
 // Note: This method expects the caller to hold s.mu lock
 func (s *Session) TrimMessagesIfNeeded(maxMessages int, archive bool) error {

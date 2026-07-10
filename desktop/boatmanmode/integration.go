@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	agentruntime "github.com/philjestin/boatman-ecosystem/shared/agentruntime"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -114,6 +115,23 @@ type BoatmanEvent struct {
 // MessageCallback is called for non-JSON output lines to route them as session messages
 type MessageCallback func(role, content string)
 
+// EventCallback is called for structured BoatmanMode events.
+type EventCallback func(event BoatmanEvent)
+
+// StreamExecutionOptions customizes a streamed BoatmanMode work run.
+type StreamExecutionOptions struct {
+	PlanFile          string
+	Resume            bool
+	KeepDraft         bool
+	ReviewSkill       string
+	ExtraReviewSkills []string
+	Models            agentruntime.ModelProfile
+	Title             string
+	BranchName        string
+	SuppressWailsEmit bool
+	OnEvent           EventCallback
+}
+
 // StreamExecution runs the workflow with live streaming output
 // It parses structured JSON events for agent/task tracking and emits them via Wails runtime
 // mode can be "ticket" or "prompt"
@@ -121,18 +139,16 @@ type MessageCallback func(role, content string)
 // resume, if true, adds the --resume flag to skip to review/refactor using the existing worktree
 // onMessage, if non-nil, receives non-JSON output lines as messages for the session
 func (i *Integration) StreamExecution(ctx context.Context, sessionID string, input string, mode string, planFile string, resume bool, outputChan chan<- string, onMessage MessageCallback) (map[string]interface{}, error) {
-	var args []string
-	if mode == "ticket" {
-		args = []string{"work", input}
-	} else {
-		args = []string{"work", "--prompt", input}
-	}
-	if planFile != "" {
-		args = append(args, "--plan-file", planFile)
-	}
-	if resume {
-		args = append(args, "--resume")
-	}
+	return i.StreamExecutionWithOptions(ctx, sessionID, input, mode, StreamExecutionOptions{
+		PlanFile: planFile,
+		Resume:   resume,
+	}, outputChan, onMessage)
+}
+
+// StreamExecutionWithOptions runs the workflow with live streaming output and
+// optional command flags used by higher-level orchestrators.
+func (i *Integration) StreamExecutionWithOptions(ctx context.Context, sessionID string, input string, mode string, opts StreamExecutionOptions, outputChan chan<- string, onMessage MessageCallback) (map[string]interface{}, error) {
+	args := boatmanWorkArgs(input, mode, opts)
 	cmd := exec.CommandContext(ctx, i.boatmanmodePath, args...)
 	cmd.Dir = i.repoPath
 
@@ -187,18 +203,23 @@ func (i *Integration) StreamExecution(ctx context.Context, sessionID string, inp
 			// Try to parse as structured event
 			var event BoatmanEvent
 			if err := json.Unmarshal([]byte(line), &event); err == nil && event.Type != "" {
+				if opts.OnEvent != nil {
+					opts.OnEvent(event)
+				}
 				// Emit structured event via Wails runtime (with panic recovery)
-				func() {
-					defer func() {
-						if r := recover(); r != nil {
-							fmt.Printf("[boatmanmode] Failed to emit event: %v\n", r)
-						}
+				if !opts.SuppressWailsEmit {
+					func() {
+						defer func() {
+							if r := recover(); r != nil {
+								fmt.Printf("[boatmanmode] Failed to emit event: %v\n", r)
+							}
+						}()
+						runtime.EventsEmit(ctx, "boatmanmode:event", map[string]interface{}{
+							"sessionId": sessionID,
+							"event":     event,
+						})
 					}()
-					runtime.EventsEmit(ctx, "boatmanmode:event", map[string]interface{}{
-						"sessionId": sessionID,
-						"event":     event,
-					})
-				}()
+				}
 
 				// Also send formatted output to channel
 				switch event.Type {
@@ -268,6 +289,48 @@ func (i *Integration) StreamExecution(ctx context.Context, sessionID string, inp
 	return map[string]interface{}{
 		"success": true,
 	}, nil
+}
+
+func boatmanWorkArgs(input string, mode string, opts StreamExecutionOptions) []string {
+	var args []string
+	if mode == "ticket" {
+		args = []string{"work", input}
+	} else {
+		args = []string{"work", "--prompt", input}
+	}
+	if opts.PlanFile != "" {
+		args = append(args, "--plan-file", opts.PlanFile)
+	}
+	if opts.Resume {
+		args = append(args, "--resume")
+	}
+	if opts.KeepDraft {
+		args = append(args, "--keep-draft")
+	}
+	if opts.ReviewSkill != "" {
+		args = append(args, "--review-skill", opts.ReviewSkill)
+	}
+	for _, skill := range opts.ExtraReviewSkills {
+		if strings.TrimSpace(skill) != "" {
+			args = append(args, "--extra-review-skill", strings.TrimSpace(skill))
+		}
+	}
+	if model := strings.TrimSpace(opts.Models.Plan); model != "" {
+		args = append(args, "--plan-model", model)
+	}
+	if model := strings.TrimSpace(opts.Models.Implementation); model != "" {
+		args = append(args, "--implementation-model", model)
+	}
+	if model := strings.TrimSpace(opts.Models.Skills); model != "" {
+		args = append(args, "--skill-model", model)
+	}
+	if opts.Title != "" && mode != "ticket" {
+		args = append(args, "--title", opts.Title)
+	}
+	if opts.BranchName != "" && mode != "ticket" {
+		args = append(args, "--branch-name", opts.BranchName)
+	}
+	return args
 }
 
 func (i *Integration) runtimeEnv() []string {

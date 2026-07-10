@@ -2,7 +2,10 @@ package boatmanmode
 
 import (
 	"encoding/json"
+	"reflect"
 	"testing"
+
+	agentruntime "github.com/philjestin/boatman-ecosystem/shared/agentruntime"
 )
 
 func TestIsRuntimeEventType(t *testing.T) {
@@ -91,5 +94,50 @@ func TestRuntimeEnvHonorsOverridesAndOptOut(t *testing.T) {
 	got = integration.runtimeEnv()
 	if len(got) != 2 || got[1] != "BOATMAN_MEMORY_DIR=/tmp/memory" {
 		t.Fatalf("runtimeEnv with opt out = %#v, want no runtime store dir", got)
+	}
+}
+
+func TestBoatmanWorkArgsIncludesAutomationOptions(t *testing.T) {
+	got := boatmanWorkArgs("fix slow gql", "prompt", StreamExecutionOptions{
+		PlanFile:          "/tmp/plan.json",
+		Resume:            true,
+		KeepDraft:         true,
+		ReviewSkill:       "peer-review",
+		ExtraReviewSkills: []string{"lydia-code-review", ""},
+		Models: agentruntime.ModelProfile{
+			Plan:           "opus",
+			Implementation: "sonnet",
+			Skills:         "haiku",
+		},
+		Title:      "Fix slow GQL",
+		BranchName: "routine/fix-slow-gql",
+	})
+	want := []string{
+		"work", "--prompt", "fix slow gql",
+		"--plan-file", "/tmp/plan.json",
+		"--resume",
+		"--keep-draft",
+		"--review-skill", "peer-review",
+		"--extra-review-skill", "lydia-code-review",
+		"--plan-model", "opus",
+		"--implementation-model", "sonnet",
+		"--skill-model", "haiku",
+		"--title", "Fix slow GQL",
+		"--branch-name", "routine/fix-slow-gql",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("boatmanWorkArgs = %#v, want %#v", got, want)
+	}
+}
+
+func TestBoatmanWorkArgsOmitsPromptOnlyFlagsForTicketMode(t *testing.T) {
+	got := boatmanWorkArgs("ENG-123", "ticket", StreamExecutionOptions{
+		Title:      "ignored",
+		BranchName: "ignored",
+		KeepDraft:  true,
+	})
+	want := []string{"work", "ENG-123", "--keep-draft"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("boatmanWorkArgs = %#v, want %#v", got, want)
 	}
 }

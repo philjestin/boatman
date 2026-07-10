@@ -201,6 +201,22 @@ func TestListProjectRoutinesLoadsProjectDefinitions(t *testing.T) {
 	}
 }
 
+func TestRoutineModelProfileFallsBackToDefaultModel(t *testing.T) {
+	got := routineModelProfile(
+		agentruntime.ModelProfile{Plan: "opus", Skills: "haiku"},
+		agentruntime.ModelProfile{Implementation: "sonnet"},
+		"default-model",
+	)
+	if got.Plan != "opus" || got.Implementation != "sonnet" || got.Skills != "haiku" {
+		t.Fatalf("models = %#v, want base plus override", got)
+	}
+
+	got = routineModelProfile(agentruntime.ModelProfile{}, agentruntime.ModelProfile{}, "dropdown-model")
+	if got.Plan != "dropdown-model" || got.Implementation != "dropdown-model" || got.Skills != "dropdown-model" {
+		t.Fatalf("models = %#v, want dropdown fallback for every phase", got)
+	}
+}
+
 func TestDesktopRoutineDryRunAllowsMissingDatadogConfig(t *testing.T) {
 	t.Setenv("DD_API_KEY", "")
 	t.Setenv("DD_APP_KEY", "")

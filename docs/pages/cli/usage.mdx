@@ -45,6 +45,11 @@ boatman work ENG-123 --review-skill my-review  # Use custom review skill
 | `--dry-run` | Run without making changes | `false` |
 | `--timeout` | Timeout in minutes for each Claude agent | 60 |
 | `--review-skill` | Claude skill for code review | `peer-review` |
+| `--extra-review-skill` | Additional review skill, repeatable | — |
+| `--keep-draft` | Leave the successful PR as a draft | `false` |
+| `--plan-model` | Model for `/plan` and planning | config/default |
+| `--implementation-model` | Model for code changes and refactor work | config/default |
+| `--skill-model` | Model for review and skill execution | config/default |
 | `--resume` | Resume interrupted workflow from checkpoint | `false` |
 
 ---
@@ -159,11 +164,19 @@ Project routines can extend built-ins and set project defaults:
         "graph_area": "employer",
         "service": "employer-graphql",
         "top_n": "10"
+      },
+      "models": {
+        "plan": "claude-opus-4-6",
+        "implementation": "claude-sonnet-4-5",
+        "skills": "claude-sonnet-4-5"
       }
     }
   ]
 }
 ```
+
+Routine `models` fields are optional. Empty `plan`, `implementation`, or
+`skills` values fall back to the model selected for the run.
 
 ```bash
 boatman routines
@@ -183,17 +196,18 @@ boatman routines run datadog-gql-slow-queries \
   --top-n 20 \
   --lookback 24h \
   --environment prod \
-  --service employer-graphql
+  --service employer-graphql \
+  --max-remediations 3
 ```
 
 The routine connects to the Datadog integration, passes an MCP config to capable
 providers such as Claude CLI, records the run under `.boatman/runs`, and writes
 a Markdown report to `.boatman/routines/datadog-gql-slow-queries/<run-id>.md`.
-When Datadog evidence identifies a high-confidence remediation, it also asks
-Claude Code to use `/plan`, create a fresh worktree from latest main, implement
-the smallest safe fix, run targeted validation, request `/peer-review` and
-`/lydia-code-review`, and address actionable feedback. If evidence is missing
-or ambiguous, it stops after the investigation report.
+The CLI routine produces a `boatman_remediation_candidates` block. In Desktop,
+Boatman automatically routes high-confidence candidates into BoatmanMode child
+runs that plan, create fresh worktrees, implement fixes, run validation, run
+`peer-review` plus `lydia-code-review`, address feedback, and leave draft PRs.
+If evidence is missing or ambiguous, it stops after the investigation report.
 Its built-in schedule is `0 8 * * *`; until Boatman has a daemon scheduler, run
 that command from cron or GitHub Actions for daily reports.
 
@@ -203,6 +217,7 @@ Useful flags:
 boatman routines run datadog-gql-slow-queries --graph-area employer --report-out /tmp/report.md
 boatman routines run datadog-gql-slow-queries --graph-area employer --provider claude-cli --model sonnet
 boatman routines run datadog-gql-slow-queries --graph-area employer --param lookback=7d
+boatman work --prompt "Fix slow resolver" --keep-draft --extra-review-skill lydia-code-review --plan-model opus --implementation-model sonnet --skill-model sonnet
 ```
 
 ---

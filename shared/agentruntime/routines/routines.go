@@ -43,21 +43,22 @@ type Output struct {
 
 // Routine is a saved, repeatable run definition.
 type Routine struct {
-	ID               string            `json:"id"`
-	Extends          string            `json:"extends,omitempty"`
-	Name             string            `json:"name"`
-	Description      string            `json:"description,omitempty"`
-	Schedule         string            `json:"schedule,omitempty"`
-	WorkflowTemplate string            `json:"workflowTemplate,omitempty"`
-	Role             agentruntime.Role `json:"role"`
-	Profile          string            `json:"profile"`
-	Integrations     []string          `json:"integrations,omitempty"`
-	Parameters       []Parameter       `json:"parameters,omitempty"`
-	Defaults         map[string]string `json:"defaults,omitempty"`
-	Output           Output            `json:"output"`
-	Instructions     string            `json:"instructions,omitempty"`
-	PromptTemplate   string            `json:"promptTemplate,omitempty"`
-	Metadata         map[string]string `json:"metadata,omitempty"`
+	ID               string                    `json:"id"`
+	Extends          string                    `json:"extends,omitempty"`
+	Name             string                    `json:"name"`
+	Description      string                    `json:"description,omitempty"`
+	Schedule         string                    `json:"schedule,omitempty"`
+	WorkflowTemplate string                    `json:"workflowTemplate,omitempty"`
+	Role             agentruntime.Role         `json:"role"`
+	Profile          string                    `json:"profile"`
+	Models           agentruntime.ModelProfile `json:"models,omitempty"`
+	Integrations     []string                  `json:"integrations,omitempty"`
+	Parameters       []Parameter               `json:"parameters,omitempty"`
+	Defaults         map[string]string         `json:"defaults,omitempty"`
+	Output           Output                    `json:"output"`
+	Instructions     string                    `json:"instructions,omitempty"`
+	PromptTemplate   string                    `json:"promptTemplate,omitempty"`
+	Metadata         map[string]string         `json:"metadata,omitempty"`
 }
 
 // Library stores routines by ID.
@@ -119,6 +120,7 @@ func DefaultRoutines() []Routine {
 				{Name: "lookback", Type: ParameterDuration, Description: "Datadog lookback window.", Default: "24h"},
 				{Name: "environment", Type: ParameterString, Description: "Datadog environment tag.", Default: "prod"},
 				{Name: "service", Type: ParameterString, Description: "Optional service tag to restrict the query."},
+				{Name: "max_remediations", Type: ParameterInteger, Description: "Maximum high-confidence findings Boatman should turn into draft PRs after discovery.", Default: "3"},
 			},
 			Output: Output{
 				Format:      "markdown",
@@ -129,7 +131,7 @@ You are Boatman running a repeatable performance investigation routine.
 
 Use the Datadog MCP integration as the source of truth for telemetry. Start with read-only observability discovery. Only move into code changes when Datadog evidence points to a credible code or schema fix with enough confidence to act.
 
-When implementing, isolate all changes in a new git worktree based on latest main. Do not dirty the current checkout. Do not push, open a pull request, or write to external systems unless the user explicitly asks; prepare a PR-ready branch and report exactly what changed.
+Do not implement code changes in this discovery phase. Boatman's routine orchestrator will automatically route high-confidence remediation candidates through planning, a fresh worktree, validation, review skills, feedback handling, and draft PR creation after your report.
 
 Be explicit about confidence. If telemetry is missing, stale, sampled, or ambiguous, say so and list the Datadog query or span evidence you attempted to inspect.
 `),
@@ -140,14 +142,7 @@ Investigate the top {{top_n}} slowest GraphQL operations for graph area "{{graph
 
 Use Datadog MCP to inspect APM traces, GraphQL operation names, span/resource names, latency percentiles, request volume, error rate, downstream DB/cache/external spans, and recent deploy or regression signals. Prefer p95/p99 plus volume over one-off maximum latency. When possible, include Datadog links or exact query dimensions.
 
-After telemetry discovery:
-
-1. If no high-confidence actionable code/schema fix is found, stop after the report and clearly state what evidence is missing.
-2. If there is a credible fix, use /plan to investigate implementation options and choose the smallest safe remediation.
-3. Refresh latest main, then create a git worktree from latest main for the remediation branch. Prefer git fetch origin main followed by a worktree based on origin/main; fall back to local main only if the remote is unavailable. Put the worktree under .boatman/worktrees/<run-id>-<short-fix-name> when the run ID is visible; otherwise use .boatman/worktrees/routine-<short-fix-name>.
-4. Implement the selected fix in that worktree.
-5. Run targeted validation for the touched area plus any repo-required formatting or tests.
-6. Use both /peer-review and /lydia-code-review to get PR-style feedback on the worktree diff, then address actionable feedback and rerun relevant checks.
+After telemetry discovery, identify at most {{max_remediations}} high-confidence actionable code/schema remediation candidates for Boatman's automation loop. A candidate is actionable only when Datadog evidence points to a likely code/schema fix, the suspected ownership area is clear enough to investigate in the repository, and the expected validation signal is concrete.
 
 Return a Markdown report with these sections:
 
@@ -165,21 +160,40 @@ Return a Markdown report with these sections:
    - code or schema area to inspect
    - expected impact
    - validation query/check
-6. Worktree and implementation summary
-   - worktree path
-   - branch/base
-   - changed files
-   - validation commands and results
-7. Review feedback
-   - /peer-review findings and actions taken
-   - /lydia-code-review findings and actions taken
-8. Follow-up questions, missing telemetry, and remaining risk
+   - whether Boatman should remediate automatically
+6. Follow-up questions, missing telemetry, and remaining risk
+
+End with a fenced JSON block headed by exactly this marker:
+
+boatman_remediation_candidates
+~~~json
+{
+  "candidates": [
+    {
+      "id": "short-stable-id",
+      "title": "Short remediation title",
+      "should_remediate": true,
+      "confidence": 0.0,
+      "summary": "What should be fixed and why",
+      "telemetry_evidence": ["Datadog fact or link"],
+      "suspected_files": ["optional/path/or/package"],
+      "validation": ["command or Datadog query to validate"],
+      "expected_impact": "Expected p95/p99, volume, or error-rate impact",
+      "risk": "Main implementation risk or empty string",
+      "prompt": "Self-contained implementation task for BoatmanMode"
+    }
+  ]
+}
+~~~
+
+Use an empty candidates array when evidence is too weak. Set should_remediate to false for plausible ideas that need human confirmation or missing telemetry. The prompt field must include the telemetry evidence, suspected area, expected validation, and explicit instruction to make the smallest safe change.
 
 Do not invent numbers. If Datadog does not expose a metric, mark it as unavailable and explain the closest evidence you found.
 `),
 			Metadata: map[string]string{
-				"category": "observability",
-				"cadence":  "daily",
+				"category":   "observability",
+				"cadence":    "daily",
+				"automation": "remediation-loop",
 			},
 		},
 	}
@@ -242,6 +256,7 @@ func Normalize(routine Routine) Routine {
 	if strings.TrimSpace(routine.Profile) == "" && routine.ID != "" {
 		routine.Profile = "routine." + routine.ID
 	}
+	routine.Models = normalizeModelProfile(routine.Models)
 	if strings.TrimSpace(routine.Output.Format) == "" {
 		routine.Output.Format = "markdown"
 	}
@@ -538,6 +553,7 @@ func mergeRoutine(base Routine, override Routine) Routine {
 	if override.Profile != "" {
 		out.Profile = override.Profile
 	}
+	out.Models = mergeModelProfiles(out.Models, override.Models)
 	if override.Integrations != nil {
 		out.Integrations = append([]string(nil), override.Integrations...)
 	}
@@ -610,6 +626,7 @@ func parseDuration(value string) (time.Duration, error) {
 }
 
 func cloneRoutine(routine Routine) Routine {
+	routine.Models = normalizeModelProfile(routine.Models)
 	routine.Integrations = append([]string(nil), routine.Integrations...)
 	routine.Parameters = append([]Parameter(nil), routine.Parameters...)
 	routine.Defaults = cloneStringMap(routine.Defaults)
@@ -624,6 +641,29 @@ func cloneStringMap(values map[string]string) map[string]string {
 	out := make(map[string]string, len(values))
 	for key, value := range values {
 		out[key] = value
+	}
+	return out
+}
+
+func normalizeModelProfile(models agentruntime.ModelProfile) agentruntime.ModelProfile {
+	return agentruntime.ModelProfile{
+		Plan:           strings.TrimSpace(models.Plan),
+		Implementation: strings.TrimSpace(models.Implementation),
+		Skills:         strings.TrimSpace(models.Skills),
+	}
+}
+
+func mergeModelProfiles(base, override agentruntime.ModelProfile) agentruntime.ModelProfile {
+	out := normalizeModelProfile(base)
+	override = normalizeModelProfile(override)
+	if override.Plan != "" {
+		out.Plan = override.Plan
+	}
+	if override.Implementation != "" {
+		out.Implementation = override.Implementation
+	}
+	if override.Skills != "" {
+		out.Skills = override.Skills
 	}
 	return out
 }

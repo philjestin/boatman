@@ -65,3 +65,18 @@ func main() {
 ```
 
 Add checkpoint, cost, memory, or any other primitives as needed. See [Primitives](/harness/primitives) for the full list.
+
+## Model Routing
+
+Generated harnesses read the same model-routing environment variables that the
+desktop Harness runner sends:
+
+| Variable | Purpose |
+|----------|---------|
+| `HARNESS_MODEL` | Default model for every phase |
+| `HARNESS_PLAN_MODEL` | Model for planner work |
+| `HARNESS_IMPLEMENTATION_MODEL` | Model for execute/refactor work |
+| `HARNESS_SKILLS_MODEL` | Model for review or skill execution |
+
+If a phase variable is empty, the generated config falls back to
+`HARNESS_MODEL`.

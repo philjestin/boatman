@@ -59,6 +59,7 @@ func init() {
 	routinesRunCmd.Flags().String("lookback", "24h", "Datadog lookback window, such as 24h or 7d")
 	routinesRunCmd.Flags().String("environment", "prod", "Datadog environment tag")
 	routinesRunCmd.Flags().String("service", "", "Optional Datadog service tag")
+	routinesRunCmd.Flags().Int("max-remediations", 3, "Maximum high-confidence findings to route into remediation automation")
 	routinesRunCmd.Flags().StringArray("param", nil, "Additional routine parameter as key=value")
 	routinesRunCmd.Flags().String("provider", "", "Runtime provider override")
 	routinesRunCmd.Flags().String("model", "", "Runtime model override")
@@ -357,6 +358,10 @@ func routineValuesFromCommand(cmd *cobra.Command, routine routines.Routine) (map
 	}
 	if service, _ := cmd.Flags().GetString("service"); strings.TrimSpace(service) != "" {
 		values["service"] = service
+	}
+	if cmd.Flags().Changed("max-remediations") && routineHasParameter(routine, "max_remediations") {
+		maxRemediations, _ := cmd.Flags().GetInt("max-remediations")
+		values["max_remediations"] = strconv.Itoa(maxRemediations)
 	}
 	return values, nil
 }

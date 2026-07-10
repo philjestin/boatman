@@ -310,6 +310,44 @@ func TestGenerate_MainIncludesPlanner(t *testing.T) {
 	if !strings.Contains(string(content), "WithPlanner") {
 		t.Error("main.go should wire planner when IncludePlanner is true")
 	}
+	if !strings.Contains(string(content), "Planner{Model: cfg.PlanModel}") {
+		t.Error("main.go should pass the plan model to Planner")
+	}
+}
+
+func TestGenerate_ModelRoutingConfig(t *testing.T) {
+	dir := t.TempDir()
+	outDir := filepath.Join(dir, "proj")
+
+	_, err := Generate(ScaffoldConfig{
+		ProjectName:    "github.com/test/proj",
+		OutputDir:      outDir,
+		Provider:       ProviderGeneric,
+		IncludePlanner: true,
+	})
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	configContent, err := os.ReadFile(filepath.Join(outDir, "config.go"))
+	if err != nil {
+		t.Fatalf("read config.go: %v", err)
+	}
+	for _, want := range []string{"HARNESS_MODEL", "HARNESS_PLAN_MODEL", "HARNESS_IMPLEMENTATION_MODEL", "HARNESS_SKILLS_MODEL"} {
+		if !strings.Contains(string(configContent), want) {
+			t.Fatalf("config.go should contain %q", want)
+		}
+	}
+
+	mainContent, err := os.ReadFile(filepath.Join(outDir, "main.go"))
+	if err != nil {
+		t.Fatalf("read main.go: %v", err)
+	}
+	for _, want := range []string{"Developer{WorkDir: workDir, Model: cfg.ImplementationModel}", "Reviewer{Model: cfg.SkillsModel}"} {
+		if !strings.Contains(string(mainContent), want) {
+			t.Fatalf("main.go should contain %q", want)
+		}
+	}
 }
 
 func TestGenerate_MainExcludesOptionals(t *testing.T) {

@@ -24,6 +24,7 @@ import type {
   DesktopRoutine,
   DatadogMCPAuthResult,
   IntegrationStatus,
+  ModelProfile,
   RoutineDryRunResult,
   RoutineRunResult,
   RoutineRunRequest,
@@ -48,6 +49,7 @@ export function RoutineView({ projectPath, onOpenSettings, onRoutineSessionOpen 
   const [selectedRoutineId, setSelectedRoutineId] = useState(DEFAULT_ROUTINE_ID);
   const [values, setValues] = useState<Record<string, string>>({});
   const [model, setModel] = useState('');
+  const [modelProfile, setModelProfile] = useState<ModelProfile>({});
   const [dryRun, setDryRun] = useState<RoutineDryRunResult | null>(null);
   const [result, setResult] = useState<RoutineRunResult | null>(null);
   const [runState, setRunState] = useState<RunState>('idle');
@@ -91,9 +93,11 @@ export function RoutineView({ projectPath, onOpenSettings, onRoutineSessionOpen 
   useEffect(() => {
     if (!selectedRoutine) {
       setValues({});
+      setModelProfile({});
       return;
     }
     setValues(defaultValuesForRoutine(selectedRoutine));
+    setModelProfile(selectedRoutine.models || {});
   }, [selectedRoutine]);
 
   const selectedStatuses = result?.integrations || dryRun?.integrations || [];
@@ -106,6 +110,7 @@ export function RoutineView({ projectPath, onOpenSettings, onRoutineSessionOpen 
     routineId: selectedRoutine?.id || selectedRoutineId,
     projectPath: projectPath || '',
     model: model.trim(),
+    models: compactModelProfile(modelProfile),
     values: routineValues(selectedRoutine, values),
   });
 
@@ -259,7 +264,7 @@ export function RoutineView({ projectPath, onOpenSettings, onRoutineSessionOpen 
               />
             )}
 
-            <Field label="Model">
+            <Field label="Default Model">
               <input
                 value={model}
                 onChange={(event) => setModel(event.target.value)}
@@ -267,6 +272,11 @@ export function RoutineView({ projectPath, onOpenSettings, onRoutineSessionOpen 
                 className={INPUT_CLASS}
               />
             </Field>
+
+            <ModelRoutingFields
+              models={modelProfile}
+              onChange={setModelProfile}
+            />
 
             {selectedRoutine && (
               <IntegrationsPanel
@@ -387,6 +397,47 @@ function RoutineParameters({
   );
 }
 
+function ModelRoutingFields({
+  models,
+  onChange,
+}: {
+  models: ModelProfile;
+  onChange: (models: ModelProfile) => void;
+}) {
+  const update = (key: keyof ModelProfile, value: string) => {
+    onChange({ ...models, [key]: value });
+  };
+
+  return (
+    <div className="grid grid-cols-1 gap-3">
+      <Field label="/plan Model">
+        <input
+          value={models.plan || ''}
+          onChange={(event) => update('plan', event.target.value)}
+          placeholder="default model"
+          className={INPUT_CLASS}
+        />
+      </Field>
+      <Field label="Implementation Model">
+        <input
+          value={models.implementation || ''}
+          onChange={(event) => update('implementation', event.target.value)}
+          placeholder="default model"
+          className={INPUT_CLASS}
+        />
+      </Field>
+      <Field label="Skills Model">
+        <input
+          value={models.skills || ''}
+          onChange={(event) => update('skills', event.target.value)}
+          placeholder="default model"
+          className={INPUT_CLASS}
+        />
+      </Field>
+    </div>
+  );
+}
+
 function IntegrationsPanel({
   routine,
   statuses,
@@ -499,6 +550,7 @@ function RoutineOutputPane({
           icon={<FileText className="w-4 h-4 text-teal-400" />}
         />
         <RunMetrics result={result} />
+        {(result.remediations || []).length > 0 && <RemediationSummary result={result} />}
         <pre className="whitespace-pre-wrap text-sm leading-6 text-slate-200 bg-slate-950 border border-slate-800 rounded-md p-4 overflow-x-auto">
           {result.report || 'No report text returned.'}
         </pre>
@@ -555,6 +607,40 @@ function RunMetrics({ result }: { result: RoutineRunResult }) {
   );
 }
 
+function RemediationSummary({ result }: { result: RoutineRunResult }) {
+  return (
+    <div className="border border-slate-800 rounded-md bg-slate-950/40 overflow-hidden">
+      <div className="px-3 py-2 border-b border-slate-800 text-xs uppercase text-slate-500">Remediation</div>
+      <div className="divide-y divide-slate-800">
+        {(result.remediations || []).map((item, index) => (
+          <div key={item.id || `${item.title}-${index}`} className="p-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-sm font-medium text-slate-100 truncate">{item.title}</div>
+                <div className="mt-1 text-xs text-slate-500 truncate">{item.branchName || item.id || '-'}</div>
+              </div>
+              <StatusBadge status={item.status} />
+            </div>
+            {(item.prUrl || item.error || item.message) && (
+              <div className="mt-2 text-xs text-slate-400 break-words">
+                {item.prUrl ? (
+                  <a className="text-teal-300 hover:text-teal-200" href={item.prUrl} target="_blank" rel="noreferrer">
+                    {item.prUrl}
+                  </a>
+                ) : item.error ? (
+                  <span className="text-red-300">{item.error}</span>
+                ) : (
+                  item.message
+                )}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function Field({ label, required, children }: { label: string; required?: boolean; children: ReactNode }) {
   return (
     <label className="block">
@@ -591,13 +677,16 @@ function EmptyState({ title, body, loading }: { title: string; body: string; loa
 }
 
 function StatusBadge({ status }: { status: string }) {
-  const classes = status === 'connected' || status === 'ready'
-    ? 'bg-emerald-950 text-emerald-300 border-emerald-900'
-    : status === 'needs_configuration'
-      ? 'bg-amber-950 text-amber-300 border-amber-900'
-      : status === 'failed'
-        ? 'bg-red-950 text-red-300 border-red-900'
-        : 'bg-slate-800 text-slate-400 border-slate-700';
+  let classes = 'bg-slate-800 text-slate-400 border-slate-700';
+  if (status === 'connected' || status === 'ready' || status === 'completed') {
+    classes = 'bg-emerald-950 text-emerald-300 border-emerald-900';
+  } else if (status === 'running') {
+    classes = 'bg-cyan-950 text-cyan-300 border-cyan-900';
+  } else if (status === 'needs_configuration') {
+    classes = 'bg-amber-950 text-amber-300 border-amber-900';
+  } else if (status === 'failed') {
+    classes = 'bg-red-950 text-red-300 border-red-900';
+  }
 
   return (
     <span className={`px-1.5 py-0.5 text-xs rounded border ${classes}`}>
@@ -642,6 +731,14 @@ function routineValues(routine: DesktopRoutine | null, values: Record<string, st
     }
   }
   return out;
+}
+
+function compactModelProfile(models: ModelProfile): ModelProfile | undefined {
+  const out: ModelProfile = {};
+  if ((models.plan || '').trim()) out.plan = (models.plan || '').trim();
+  if ((models.implementation || '').trim()) out.implementation = (models.implementation || '').trim();
+  if ((models.skills || '').trim()) out.skills = (models.skills || '').trim();
+  return out.plan || out.implementation || out.skills ? out : undefined;
 }
 
 function parameterLabel(name: string): string {

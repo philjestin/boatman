@@ -36,8 +36,9 @@ Boatman is an AI-powered autonomous development system that:
 - **Creates draft PRs as safety checkpoints** so work is preserved even if later stages fail
 - **Supports resume** — pick up a failed execution from the review/refactor stage without re-doing the work
 - **Routes model calls through provider adapters** so Claude CLI, OpenAI Responses, and future providers can be adopted per workflow role
+- **Routes phase-specific models** for routine and harness work, including `/plan`, implementation/refactor, and skill execution models with dropdown/default fallbacks
 - **Models workflows as provider-neutral templates** with explicit stages, gates, previews, skips, and validation loops
-- **Runs repeatable project routines** from `.boatman/routines.json` or `.boatman/routines/*.json`, including the built-in Datadog GraphQL slow-query investigation, with each desktop run opening a continuable chat session
+- **Runs repeatable project routines** from `.boatman/routines.json` or `.boatman/routines/*.json`, including the built-in Datadog GraphQL slow-query investigation, with desktop runs opening a continuable session and automatically routing high-confidence findings into draft-PR remediation loops
 - **Evaluates side-effecting actions through approval policy rules** before humans, chat clients, or future services render durable approvals
 - **Runs independent verifier checks** so code review, runtime recordings, and future central-plane quality gates share one contract
 - **Records inspectable runtime runs** with normalized events, original requests, artifacts, usage, raw provider payloads, integration status, and memory-load events
@@ -119,7 +120,7 @@ A cross-platform desktop application built with Wails that provides a GUI for th
 - **Firefighter mode** for production incident investigation
 - **Agent logs panel** for real-time visibility into AI actions
 - **Runtime tab** for inspecting `.boatman/runs` events, artifacts, and `.boatman/memory` documents
-- **Routines tab** for running built-in and project-local routines from the desktop app as new continuable agent sessions
+- **Routines tab** for running built-in and project-local routines from the desktop app as new continuable agent sessions, including automatic remediation child runs for high-confidence Datadog findings
 - **Integration health** for MCP-backed services before starting incident or autonomous workflows
 - **Onboarding wizard** for first-time setup
 - **MCP server management** via UI dialog

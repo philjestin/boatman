@@ -29,7 +29,7 @@ func TestValuesAppliesDefaultsAndValidatesRequired(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Values error: %v", err)
 	}
-	if values["top_n"] != "20" || values["lookback"] != "24h" || values["environment"] != "prod" {
+	if values["top_n"] != "20" || values["lookback"] != "24h" || values["environment"] != "prod" || values["max_remediations"] != "3" {
 		t.Fatalf("values = %#v, want defaults", values)
 	}
 	if _, err := Values(routine, nil); err == nil {
@@ -46,16 +46,17 @@ func TestValuesAppliesDefaultsAndValidatesRequired(t *testing.T) {
 func TestRenderPrompt(t *testing.T) {
 	routine, _ := DefaultLibrary().Get(DatadogGQLSlowQueriesID)
 	prompt, err := RenderPrompt(routine, map[string]string{
-		"graph_area":  "employer",
-		"top_n":       "5",
-		"lookback":    "12h",
-		"environment": "prod",
-		"service":     "employer-graphql",
+		"graph_area":       "employer",
+		"top_n":            "5",
+		"lookback":         "12h",
+		"environment":      "prod",
+		"service":          "employer-graphql",
+		"max_remediations": "2",
 	})
 	if err != nil {
 		t.Fatalf("RenderPrompt error: %v", err)
 	}
-	for _, want := range []string{"top 5", "employer", "12h", "employer-graphql", "Markdown report", "/plan", "git worktree", "/peer-review", "/lydia-code-review"} {
+	for _, want := range []string{"top 5", "employer", "12h", "employer-graphql", "Markdown report", "at most 2", "boatman_remediation_candidates", "should_remediate", "prompt"} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("prompt should contain %q:\n%s", want, prompt)
 		}
@@ -112,6 +113,11 @@ func TestProjectLibraryLoadsExtendingRoutineDefaults(t *testing.T) {
         "graph_area": "employer",
         "service": "employer-graphql",
         "top_n": "10"
+      },
+      "models": {
+        "plan": "opus",
+        "implementation": "sonnet",
+        "skills": "haiku"
       }
     }
   ]
@@ -130,6 +136,9 @@ func TestProjectLibraryLoadsExtendingRoutineDefaults(t *testing.T) {
 	}
 	if routine.Profile != "routine.daily-employer-gql" || routine.Output.DefaultPath != filepath.Join(".boatman", "routines", "daily-employer-gql") {
 		t.Fatalf("routine defaults not normalized: %#v", routine)
+	}
+	if routine.Models.Plan != "opus" || routine.Models.Implementation != "sonnet" || routine.Models.Skills != "haiku" {
+		t.Fatalf("routine models = %#v, want project overrides", routine.Models)
 	}
 	values, err := Values(routine, nil)
 	if err != nil {

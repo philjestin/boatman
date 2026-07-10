@@ -436,8 +436,8 @@ func (a *Agent) stepPlanning(ctx context.Context, wc *workContext) error {
 		fmt.Printf("   📋 Using pre-generated plan: %s\n", truncate(a.PreloadedPlan.Summary, 120))
 		fmt.Printf("   📁 %d candidate files, %d warnings\n", len(a.PreloadedPlan.RelevantFiles), len(a.PreloadedPlan.Warnings))
 		events.AgentCompletedWithData(agentID, "Planning & Analysis", "success", map[string]any{
-			"plan":       a.PreloadedPlan.Summary,
-			"preloaded":  true,
+			"plan":      a.PreloadedPlan.Summary,
+			"preloaded": true,
 		})
 	} else {
 		events.AgentStarted(agentID, "Planning & Analysis", "Analyzing codebase and creating implementation plan")
@@ -626,12 +626,8 @@ func (a *Agent) stepTestAndReview(ctx context.Context, wc *workContext) error {
 		defer wg.Done()
 		events.AgentStarted(reviewAgentID, "Code Review #1", "Reviewing code quality and best practices")
 		reviewHandoff := handoff.NewReviewHandoff(wc.task, initialDiff, wc.execResult.FilesChanged)
-		reviewer := scottbott.NewWithSkill(wc.worktree.Path, 1, a.config.ReviewSkill, a.config)
-		reviewResult, usage, _ := reviewer.Review(ctx, reviewHandoff.Concise(), initialDiff)
+		reviewResult, _ := a.runReviewSkills(ctx, wc, 1, reviewHandoff.Concise(), initialDiff)
 		wc.reviewResult = reviewResult
-		if usage != nil {
-			wc.costTracker.Add("Review #1", *usage)
-		}
 		if reviewResult != nil && reviewResult.Passed {
 			feedback := reviewResult.Summary
 			if feedback == "" && len(reviewResult.Issues) > 0 {
@@ -741,6 +737,114 @@ func (a *Agent) stepRefactorLoop(ctx context.Context, wc *workContext) error {
 	return nil
 }
 
+func (a *Agent) reviewSkills() []string {
+	primary := strings.TrimSpace(a.config.ReviewSkill)
+	if primary == "" {
+		primary = "peer-review"
+	}
+	skills := []string{primary}
+	seen := map[string]bool{primary: true}
+	for _, skill := range a.config.ExtraReviewSkills {
+		skill = strings.TrimSpace(skill)
+		if skill == "" || seen[skill] {
+			continue
+		}
+		seen[skill] = true
+		skills = append(skills, skill)
+	}
+	return skills
+}
+
+func (a *Agent) runReviewSkills(ctx context.Context, wc *workContext, iteration int, ticketContext, diff string) (*scottbott.ReviewResult, error) {
+	skills := a.reviewSkills()
+	var merged *scottbott.ReviewResult
+	for _, skill := range skills {
+		fmt.Printf("   🔍 Running review skill: %s\n", skill)
+		reviewer := scottbott.NewWithSkill(wc.worktree.Path, iteration, skill, a.config)
+		reviewResult, usage, err := reviewer.Review(ctx, ticketContext, diff)
+		if usage != nil {
+			label := fmt.Sprintf("Review #%d", iteration)
+			if len(skills) > 1 {
+				label = fmt.Sprintf("%s (%s)", label, skill)
+			}
+			wc.costTracker.Add(label, *usage)
+		}
+		if err != nil {
+			reviewResult = &scottbott.ReviewResult{
+				Passed:  false,
+				Score:   0,
+				Summary: fmt.Sprintf("%s review failed: %v", skill, err),
+				Issues: []scottbott.Issue{{
+					Severity:    "major",
+					Description: fmt.Sprintf("%s review could not complete", skill),
+					Suggestion:  "Inspect the reviewer failure and rerun the review before merging.",
+				}},
+				Guidance: fmt.Sprintf("%s review failed: %v", skill, err),
+			}
+		}
+		merged = mergeReviewResults(merged, reviewResult, skill)
+	}
+	if merged == nil {
+		return &scottbott.ReviewResult{
+			Passed:   false,
+			Score:    0,
+			Summary:  "No review skills produced a result.",
+			Issues:   []scottbott.Issue{{Severity: "major", Description: "No review result was available"}},
+			Guidance: "Rerun review before merging.",
+		}, nil
+	}
+	return merged, nil
+}
+
+func mergeReviewResults(base *scottbott.ReviewResult, next *scottbott.ReviewResult, skill string) *scottbott.ReviewResult {
+	if next == nil {
+		return base
+	}
+	tagged := *next
+	tagged.Issues = append([]scottbott.Issue(nil), next.Issues...)
+	tagged.Praise = append([]string(nil), next.Praise...)
+	if strings.TrimSpace(skill) != "" {
+		if tagged.Summary != "" {
+			tagged.Summary = fmt.Sprintf("%s: %s", skill, tagged.Summary)
+		}
+		for i := range tagged.Issues {
+			if tagged.Issues[i].Description != "" {
+				tagged.Issues[i].Description = fmt.Sprintf("[%s] %s", skill, tagged.Issues[i].Description)
+			}
+		}
+		for i := range tagged.Praise {
+			tagged.Praise[i] = fmt.Sprintf("[%s] %s", skill, tagged.Praise[i])
+		}
+		if tagged.Guidance != "" {
+			tagged.Guidance = fmt.Sprintf("%s: %s", skill, tagged.Guidance)
+		}
+	}
+	if base == nil {
+		return &tagged
+	}
+	base.Passed = base.Passed && tagged.Passed
+	if tagged.Score < base.Score || base.Score == 0 {
+		base.Score = tagged.Score
+	}
+	base.Summary = joinNonEmpty(base.Summary, tagged.Summary)
+	base.Issues = append(base.Issues, tagged.Issues...)
+	base.Praise = append(base.Praise, tagged.Praise...)
+	base.Guidance = joinNonEmpty(base.Guidance, tagged.Guidance)
+	return base
+}
+
+func joinNonEmpty(left, right string) string {
+	left = strings.TrimSpace(left)
+	right = strings.TrimSpace(right)
+	if left == "" {
+		return right
+	}
+	if right == "" {
+		return left
+	}
+	return left + "\n" + right
+}
+
 // doReview gets a fresh diff and runs the review.
 func (a *Agent) doReview(ctx context.Context, wc *workContext, previousDiff *string) error {
 	diff, err := wc.exec.GetDiff()
@@ -750,14 +854,9 @@ func (a *Agent) doReview(ctx context.Context, wc *workContext, previousDiff *str
 	fmt.Printf("   📏 Diff size: %d lines\n", strings.Count(diff, "\n"))
 
 	reviewHandoff := handoff.NewReviewHandoff(wc.task, diff, wc.execResult.FilesChanged)
-	reviewer := scottbott.NewWithSkill(wc.worktree.Path, wc.iterations, a.config.ReviewSkill, a.config)
-	reviewResult, usage, err := reviewer.Review(ctx, reviewHandoff.ForTokenBudget(handoff.DefaultBudget.Context), diff)
+	reviewResult, err := a.runReviewSkills(ctx, wc, wc.iterations, reviewHandoff.ForTokenBudget(handoff.DefaultBudget.Context), diff)
 	if err != nil {
 		return fmt.Errorf("review failed: %w", err)
-	}
-
-	if usage != nil {
-		wc.costTracker.Add(fmt.Sprintf("Review #%d", wc.iterations), *usage)
 	}
 
 	fmt.Println(reviewResult.FormatReview())
@@ -907,6 +1006,21 @@ func (a *Agent) stepFinalizePR(ctx context.Context, wc *workContext) (*WorkResul
 	// Update PR body
 	if err := github.UpdatePRBody(ctx, wc.worktree.Path, prBody); err != nil {
 		fmt.Printf("   ⚠️  Failed to update PR body: %v\n", err)
+	}
+
+	if a.config.KeepDraftPR {
+		fmt.Println("   📋 Keeping PR as draft.")
+		events.AgentCompleted(agentID, "Finalize PR", "success")
+		a.printWorkflowSummary(wc, wc.draftPRURL)
+
+		return &WorkResult{
+			PRCreated:    true,
+			PRURL:        wc.draftPRURL,
+			Message:      "Successfully updated draft PR",
+			Iterations:   wc.iterations,
+			TestsPassed:  wc.testResult == nil || wc.testResult.Passed,
+			TestCoverage: getTestCoverage(wc.testResult),
+		}, nil
 	}
 
 	// Mark PR ready

@@ -7,8 +7,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/philjestin/boatman-ecosystem/harness/scaffold"
+	agentruntime "github.com/philjestin/boatman-ecosystem/shared/agentruntime"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -41,11 +43,13 @@ type HarnessInfo struct {
 
 // RunRequest describes the parameters for running a harness.
 type RunRequest struct {
-	HarnessPath     string            `json:"harnessPath"`
-	WorkDir         string            `json:"workDir"`
-	TaskTitle       string            `json:"taskTitle"`
-	TaskDescription string            `json:"taskDescription"`
-	EnvVars         map[string]string `json:"envVars"`
+	HarnessPath     string                    `json:"harnessPath"`
+	WorkDir         string                    `json:"workDir"`
+	TaskTitle       string                    `json:"taskTitle"`
+	TaskDescription string                    `json:"taskDescription"`
+	Model           string                    `json:"model,omitempty"`
+	Models          agentruntime.ModelProfile `json:"models,omitempty"`
+	EnvVars         map[string]string         `json:"envVars"`
 }
 
 // GenerateScaffold creates a new harness project using the scaffold package.
@@ -136,20 +140,7 @@ func RunHarness(ctx context.Context, wailsCtx context.Context, runID string, req
 	cmd.Dir = req.HarnessPath
 
 	// Build environment
-	cmd.Env = os.Environ()
-	if req.TaskTitle != "" {
-		cmd.Env = append(cmd.Env, "HARNESS_TASK_TITLE="+req.TaskTitle)
-	}
-	if req.TaskDescription != "" {
-		cmd.Env = append(cmd.Env, "HARNESS_TASK_DESCRIPTION="+req.TaskDescription)
-	}
-	if req.WorkDir != "" {
-		cmd.Env = append(cmd.Env, "HARNESS_WORK_DIR="+req.WorkDir)
-	}
-	for k, v := range req.EnvVars {
-		cmd.Env = append(cmd.Env, k+"="+v)
-	}
-
+	cmd.Env = harnessRunEnv(os.Environ(), req)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return fmt.Errorf("failed to create stdout pipe: %w", err)
@@ -193,4 +184,36 @@ func RunHarness(ctx context.Context, wailsCtx context.Context, runID string, req
 	}()
 
 	return cmd.Wait()
+}
+
+func harnessRunEnv(base []string, req RunRequest) []string {
+	env := append([]string(nil), base...)
+	if req.TaskTitle != "" {
+		env = append(env, "HARNESS_TASK_TITLE="+req.TaskTitle)
+	}
+	if req.TaskDescription != "" {
+		env = append(env, "HARNESS_TASK_DESCRIPTION="+req.TaskDescription)
+	}
+	if req.WorkDir != "" {
+		env = append(env, "HARNESS_WORK_DIR="+req.WorkDir)
+	}
+	models := req.Models.WithDefault(req.Model)
+	if model := strings.TrimSpace(req.Model); model != "" {
+		env = append(env, "HARNESS_MODEL="+model)
+	}
+	if model := strings.TrimSpace(models.Plan); model != "" {
+		env = append(env, "HARNESS_PLAN_MODEL="+model)
+	}
+	if model := strings.TrimSpace(models.Implementation); model != "" {
+		env = append(env, "HARNESS_IMPLEMENTATION_MODEL="+model)
+	}
+	if model := strings.TrimSpace(models.Skills); model != "" {
+		env = append(env, "HARNESS_SKILLS_MODEL="+model)
+	}
+	for k, v := range req.EnvVars {
+		if strings.TrimSpace(k) != "" {
+			env = append(env, k+"="+v)
+		}
+	}
+	return env
 }
