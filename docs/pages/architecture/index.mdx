@@ -37,6 +37,14 @@ The Boatman Ecosystem is composed of two main components that communicate throug
 
 ## Design Principles
 
+### Shared Agent Plane
+Boatman keeps CLI and Desktop as thin clients over shared runtime contracts:
+provider-neutral events, workflow templates, approval policy decisions,
+independent verifier verdicts, inspectable memory, and durable run records. The
+current implementation is local-first, but these contracts are shaped so a
+future control-plane API can own routing, approvals, verification, telemetry,
+and event storage without replacing the clients.
+
 ### Subprocess Integration
 The Desktop app calls the CLI as a subprocess (`exec.Command`) rather than importing Go modules. This provides:
 - Clean separation of concerns (UI vs engine)

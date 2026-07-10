@@ -65,6 +65,7 @@ An AI-powered development agent that automates ticket execution with peer review
 - `openai-responses` can be routed to selected roles or profiles
 - Normalized runtime events can be emitted and recorded alongside legacy events
 - Local tools flow through a shared broker with workspace and approval policy checks
+- Built-in workflow templates describe stages, gates, preview points, skips, and validation loops before a service runtime exists
 
 ### 🌲 Git Worktree Isolation
 - Each ticket works in an isolated worktree
@@ -130,6 +131,9 @@ memory documents from the CLI:
 ```bash
 boatman providers
 boatman providers check
+
+boatman workflows
+boatman workflows show feature
 
 boatman integrations
 boatman integrations check --emit-events

@@ -69,6 +69,10 @@ and future adapters share the same recording path. Project-scoped provider calls
 now set request metadata `runStoreDir` by default, which writes events under the
 run workdir at `.boatman/runs`. Set `BOATMAN_RUNTIME_STORE_DIR=/path/to/runs`
 for a fixed location, or `BOATMAN_RUNTIME_STORE=0` to disable default recording.
+The package now exposes an `EventStore` interface over run metadata, events,
+original `RunRequest` payloads, and artifact manifests, so a future central
+agent-plane service can swap the file store for Postgres or another durable
+append-only store without changing CLI or desktop callers.
 
 The CLI registry lives in `cli/internal/providers`. It currently registers
 `claude-cli`, preserves the existing configured Claude command, and routes
@@ -255,6 +259,34 @@ Glass-inspired inspection loop close to the main workflow: a user can run an
 agent, inspect what provider/tool/memory events were recorded, and use the same
 UI to move back into chat, tasks, or diff review.
 
+### Central Agent Plane Slice
+
+The peer architecture's strongest idea is a shared plane behind thin clients.
+Boatman now implements the local minimum of that shape in shared packages instead
+of adding a network service too early:
+
+- `shared/agentruntime/workflows` defines built-in provider-neutral templates
+  for feature, bugfix, triage, code-review, firefighter, and research flows.
+  Stages explicitly model intake, context, planning, implementation,
+  validation, pull-request, and synthesis responsibilities, plus gates, preview
+  points, skips, and validation loopbacks. The CLI exposes these through
+  `boatman workflows` and `boatman workflows show <id>`.
+- `shared/agentruntime/approvals` is the first approval PDP. Deterministic rules
+  can allow, deny, or require a human for risky actions such as destructive
+  commands, secrets, auth/payment changes, migrations, external writes, and very
+  large changes. An optional classifier can only raise an allowed action to a
+  human gate; it cannot lower deterministic rules. Approval requests are durable
+  resources with pending/approved/denied/canceled lifecycle states.
+- `shared/agentruntime/verifier` defines the independent verification contract
+  and ships a first local policy verifier over diffs and changed files. It fails
+  on secret-like or destructive database diffs and warns on sensitive domains
+  such as auth, payments, billing, and migrations. This gives review, CI,
+  desktop, and future service workflows one quality-gate shape.
+
+This keeps Goose, Slack, GitHub Actions, IDEs, Boatman CLI, and Boatman Desktop
+compatible with one shared event/workflow/approval/verifier contract later,
+while keeping today's implementation local, inspectable, and easy to test.
+
 ### Inspectable Memory
 
 Memory should be written by background jobs and read by sessions. Agents should
@@ -344,6 +376,9 @@ This keeps the codebase teachable for both humans and agents.
 12. Add inspectable runtime memory documents and CLI inspection commands. ✅
 13. Add desktop inspection for runtime runs, artifacts, events, and memory. ✅
 14. Add defrag, docs validation, and provider conformance checks to CI. ✅
+15. Add shared workflow template library plus CLI inspection commands. ✅
+16. Add deterministic approval PDP and durable approval request types. ✅
+17. Add independent verifier contract and first local policy verifier. ✅
 
 The design principle is simple: Boatman owns workflow, tools, memory, approvals,
 artifacts, and quality gates. Providers own model inference. Everything else is

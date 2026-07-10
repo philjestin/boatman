@@ -243,6 +243,19 @@ events during migration.
 
 ## Runtime Inspection Commands
 
+### Workflows
+
+```bash
+boatman workflows
+boatman workflows --json
+boatman workflows show <template-id>
+boatman workflows show <template-id> --json
+```
+
+The built-in templates live in
+`github.com/philjestin/boatman-ecosystem/shared/agentruntime/workflows` and
+model central-plane stages, gates, preview points, skips, and validation loops.
+
 ### Providers
 
 ```bash
@@ -397,4 +410,8 @@ type HealthReport struct {
 | `boatman checkpoint snapshot <name>` | Create checkpoint snapshot |
 | `boatman checkpoint squash <msg>` | Squash checkpoint commits |
 | `boatman checkpoint rollback --step <step>` | Rollback to step |
+| `boatman workflows` | List built-in workflow templates |
+| `boatman workflows show <id>` | Show workflow template stages and gates |
+| `boatman providers` | Inspect registered model providers |
+| `boatman runs list` | List recorded runtime runs |
 | `boatman version [--verbose]` | Show version information |

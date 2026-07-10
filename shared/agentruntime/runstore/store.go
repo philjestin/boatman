@@ -53,13 +53,25 @@ type ArtifactRecord struct {
 	EventCount  int                    `json:"eventCount"`
 }
 
-// Store persists run metadata and events.
+// Store persists run metadata and append-only runtime events.
 type Store interface {
 	StartRun(ctx context.Context, req agentruntime.RunRequest) error
 	Append(ctx context.Context, event agentruntime.Event) error
 	LoadRun(ctx context.Context, runID string) (RunMetadata, []agentruntime.Event, error)
 	ListRuns(ctx context.Context) ([]RunMetadata, error)
 }
+
+// EventStore is the central-plane storage contract for run replay, inspection,
+// resume, and audit tooling. FileStore is the default local implementation; a
+// future service can satisfy this interface with Postgres or another durable
+// event store without changing callers.
+type EventStore interface {
+	Store
+	LoadRequest(ctx context.Context, runID string) (agentruntime.RunRequest, error)
+	ListArtifacts(ctx context.Context, runID string) ([]ArtifactRecord, error)
+}
+
+var _ EventStore = (*FileStore)(nil)
 
 // ForRequest returns the configured file store for a run request. Recording is
 // enabled when request metadata contains runStoreDir, BOATMAN_RUNTIME_STORE_DIR

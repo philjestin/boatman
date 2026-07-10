@@ -115,6 +115,23 @@ Use these before long runs when changing `runtime.default_provider`,
 
 ---
 
+## Workflow Template Inspection
+
+Workflow commands are local checks over Boatman's built-in central-plane
+templates.
+
+```bash
+boatman workflows
+boatman workflows --json
+boatman workflows show feature
+boatman workflows show firefighter --json
+```
+
+Templates describe stages, gates, preview points, and validation loopbacks for
+feature, bugfix, triage, code-review, firefighter, and research flows.
+
+---
+
 ## Integration Inspection
 
 Boatman has shared descriptors for built-in service integrations.
