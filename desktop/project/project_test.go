@@ -38,6 +38,16 @@ func createTestDir(t *testing.T) string {
 	return dir
 }
 
+func createNamedTestDir(t *testing.T, parent, name string) string {
+	t.Helper()
+
+	dir := filepath.Join(parent, name)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatalf("Failed to create named test directory: %v", err)
+	}
+	return dir
+}
+
 func TestNewProjectManager(t *testing.T) {
 	// Save original home dir
 	originalHome := os.Getenv("HOME")
@@ -121,6 +131,16 @@ func TestAddProject_NewProject(t *testing.T) {
 		t.Errorf("Expected non-zero LastOpened time")
 	}
 
+	if len(project.Repositories) != 1 {
+		t.Fatalf("Expected 1 repository, got %d", len(project.Repositories))
+	}
+	if project.Repositories[0].Path != projectDir {
+		t.Errorf("Expected repository Path = %v, got %v", projectDir, project.Repositories[0].Path)
+	}
+	if !project.Repositories[0].IsPrimary {
+		t.Errorf("Expected single repository to be primary")
+	}
+
 	// Verify project was added to list
 	if len(pm.projects) != 1 {
 		t.Errorf("Expected 1 project in list, got %d", len(pm.projects))
@@ -198,6 +218,89 @@ func TestAddProject_FileNotDirectory(t *testing.T) {
 	_, err := pm.AddProject(testFile)
 	if err != os.ErrInvalid {
 		t.Errorf("Expected os.ErrInvalid for file path, got %v", err)
+	}
+}
+
+func TestAddMultiRepoProject_NewProject(t *testing.T) {
+	pm, tempDir := setupTestProjectManager(t)
+	defer os.RemoveAll(tempDir)
+
+	primaryRepo := createNamedTestDir(t, tempDir, "employer-api")
+	secondaryRepo := createNamedTestDir(t, tempDir, "frontend")
+
+	project, err := pm.AddMultiRepoProject("Employer Graph", []string{primaryRepo, secondaryRepo})
+	if err != nil {
+		t.Fatalf("AddMultiRepoProject() error = %v", err)
+	}
+
+	if project.Name != "Employer Graph" {
+		t.Errorf("Expected Name = Employer Graph, got %v", project.Name)
+	}
+	if project.Path != primaryRepo {
+		t.Errorf("Expected primary Path = %v, got %v", primaryRepo, project.Path)
+	}
+	if len(project.Repositories) != 2 {
+		t.Fatalf("Expected 2 repositories, got %d", len(project.Repositories))
+	}
+	if !project.Repositories[0].IsPrimary {
+		t.Errorf("Expected first repository to be primary")
+	}
+	if project.Repositories[0].Name != "employer-api" {
+		t.Errorf("Expected first repository name = employer-api, got %v", project.Repositories[0].Name)
+	}
+	if project.Repositories[1].Path != secondaryRepo {
+		t.Errorf("Expected second repository Path = %v, got %v", secondaryRepo, project.Repositories[1].Path)
+	}
+	if project.Repositories[1].IsPrimary {
+		t.Errorf("Expected second repository not to be primary")
+	}
+}
+
+func TestAddMultiRepoProject_ExistingRepositorySet(t *testing.T) {
+	pm, tempDir := setupTestProjectManager(t)
+	defer os.RemoveAll(tempDir)
+
+	primaryRepo := createNamedTestDir(t, tempDir, "api")
+	secondaryRepo := createNamedTestDir(t, tempDir, "web")
+
+	project1, err := pm.AddMultiRepoProject("Original", []string{primaryRepo, secondaryRepo})
+	if err != nil {
+		t.Fatalf("AddMultiRepoProject() first call error = %v", err)
+	}
+	originalID := project1.ID
+	originalLastOpened := project1.LastOpened
+
+	time.Sleep(10 * time.Millisecond)
+
+	project2, err := pm.AddMultiRepoProject("Renamed", []string{secondaryRepo, primaryRepo})
+	if err != nil {
+		t.Fatalf("AddMultiRepoProject() second call error = %v", err)
+	}
+
+	if project2.ID != originalID {
+		t.Errorf("Expected ID to remain %v, got %v", originalID, project2.ID)
+	}
+	if project2.Name != "Renamed" {
+		t.Errorf("Expected project to be renamed, got %v", project2.Name)
+	}
+	if project2.Path != secondaryRepo {
+		t.Errorf("Expected primary Path to update to %v, got %v", secondaryRepo, project2.Path)
+	}
+	if !project2.LastOpened.After(originalLastOpened) {
+		t.Errorf("Expected LastOpened to be updated")
+	}
+	if len(pm.projects) != 1 {
+		t.Errorf("Expected 1 project in list, got %d", len(pm.projects))
+	}
+}
+
+func TestAddMultiRepoProject_EmptyPaths(t *testing.T) {
+	pm, tempDir := setupTestProjectManager(t)
+	defer os.RemoveAll(tempDir)
+
+	_, err := pm.AddMultiRepoProject("Empty", []string{"", "   "})
+	if err != os.ErrInvalid {
+		t.Errorf("Expected os.ErrInvalid, got %v", err)
 	}
 }
 
@@ -311,6 +414,31 @@ func TestGetProjectByPath_Exists(t *testing.T) {
 
 	if project.ID != added.ID {
 		t.Errorf("Expected ID = %v, got %v", added.ID, project.ID)
+	}
+}
+
+func TestGetProjectByPath_SecondaryRepository(t *testing.T) {
+	pm, tempDir := setupTestProjectManager(t)
+	defer os.RemoveAll(tempDir)
+
+	primaryRepo := createNamedTestDir(t, tempDir, "api")
+	secondaryRepo := createNamedTestDir(t, tempDir, "web")
+
+	added, err := pm.AddMultiRepoProject("Multi Repo", []string{primaryRepo, secondaryRepo})
+	if err != nil {
+		t.Fatalf("AddMultiRepoProject() error = %v", err)
+	}
+
+	project, err := pm.GetProjectByPath(secondaryRepo)
+	if err != nil {
+		t.Fatalf("GetProjectByPath() error = %v", err)
+	}
+
+	if project.ID != added.ID {
+		t.Errorf("Expected ID = %v, got %v", added.ID, project.ID)
+	}
+	if project.Path != primaryRepo {
+		t.Errorf("Expected project Path = %v, got %v", primaryRepo, project.Path)
 	}
 }
 

@@ -84,11 +84,19 @@ export const REASONING_EFFORT_OPTIONS = [
 // Project Types
 // =============================================================================
 
+export interface ProjectRepository {
+  id: string;
+  name: string;
+  path: string;
+  isPrimary?: boolean;
+}
+
 export interface Project {
   id: string;
   name: string;
   path: string;
   description?: string;
+  repositories?: ProjectRepository[];
   lastOpened: string;
   createdAt: string;
 }

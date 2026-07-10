@@ -1380,12 +1380,31 @@ export namespace mcp {
 }
 
 export namespace project {
-	
+
+	export class ProjectRepository {
+	    id: string;
+	    name: string;
+	    path: string;
+	    isPrimary?: boolean;
+
+	    static createFrom(source: any = {}) {
+	        return new ProjectRepository(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.path = source["path"];
+	        this.isPrimary = source["isPrimary"];
+	    }
+	}
 	export class Project {
 	    id: string;
 	    name: string;
 	    path: string;
 	    description?: string;
+	    repositories?: ProjectRepository[];
 	    // Go type: time
 	    lastOpened: any;
 	    // Go type: time
@@ -1401,6 +1420,7 @@ export namespace project {
 	        this.name = source["name"];
 	        this.path = source["path"];
 	        this.description = source["description"];
+	        this.repositories = this.convertValues(source["repositories"], ProjectRepository);
 	        this.lastOpened = this.convertValues(source["lastOpened"], null);
 	        this.createdAt = this.convertValues(source["createdAt"], null);
 	    }
@@ -1423,6 +1443,7 @@ export namespace project {
 		    return a;
 		}
 	}
+
 	export class WorkspaceInfo {
 	    path: string;
 	    name: string;
@@ -1687,4 +1708,3 @@ export namespace triage {
 	}
 
 }
-

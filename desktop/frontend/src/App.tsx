@@ -10,6 +10,7 @@ import { ApprovalBar } from './components/approval/ApprovalBar';
 import { SettingsModal } from './components/settings/SettingsModal';
 import { OnboardingWizard } from './components/onboarding/OnboardingWizard';
 import { SearchModal } from './components/search/SearchModal';
+import { ProjectDialog } from './components/project/ProjectDialog';
 import { FirefighterDialog } from './components/firefighter/FirefighterDialog';
 import { FirefighterMonitor } from './components/firefighter/FirefighterMonitor';
 import { FirefighterView } from './components/firefighter/FirefighterView';
@@ -38,6 +39,7 @@ function App() {
   const [firefighterDialogOpen, setFirefighterDialogOpen] = useState(false);
   const [boatmanModeDialogOpen, setBoatmanModeDialogOpen] = useState(false);
   const [triageDialogOpen, setTriageDialogOpen] = useState(false);
+  const [projectDialogOpen, setProjectDialogOpen] = useState(false);
   const [monitoringActive, setMonitoringActive] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
 
@@ -76,6 +78,8 @@ function App() {
   const {
     projects,
     activeProject,
+    createMultiRepoProject,
+    selectFolder,
     selectAndOpenProject,
     selectProject,
   } = useProject();
@@ -112,8 +116,12 @@ function App() {
 
   // Update available projects for search
   useEffect(() => {
-    const projectPaths = projects.map((p) => p.path);
-    setProjects(projectPaths);
+    const projectPaths = projects.flatMap((project) => {
+      const repositoryPaths = project.repositories?.map((repo) => repo.path) ?? [];
+      return [project.path, ...repositoryPaths];
+    });
+    const uniqueProjectPaths = [...new Set(projectPaths.filter(Boolean))];
+    setProjects(uniqueProjectPaths);
   }, [projects, setProjects]);
 
   // Load diffs when active project changes or when switching to diff tab
@@ -243,7 +251,15 @@ function App() {
 
   // Handle project open
   const handleOpenProject = async () => {
-    await selectAndOpenProject();
+    setProjectDialogOpen(true);
+  };
+
+  const handleOpenSingleProject = async () => {
+    return await selectAndOpenProject();
+  };
+
+  const handleCreateMultiRepoProject = async (name: string, repositoryPaths: string[]) => {
+    return await createMultiRepoProject(name, repositoryPaths);
   };
 
   const handleSelectSession = async (sessionId: string) => {
@@ -409,6 +425,15 @@ function App() {
         onSearch={performSearch}
         availableTags={availableTags}
         availableProjects={availableProjects}
+      />
+
+      {/* Project Dialog */}
+      <ProjectDialog
+        isOpen={projectDialogOpen}
+        onClose={() => setProjectDialogOpen(false)}
+        onOpenSingleProject={handleOpenSingleProject}
+        onCreateMultiRepoProject={handleCreateMultiRepoProject}
+        onSelectFolder={selectFolder}
       />
 
       {/* Error Toast */}

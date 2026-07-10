@@ -3,6 +3,7 @@ import {
   ChevronDown,
   ChevronRight,
   Folder,
+  GitBranch,
   MessageSquare,
   Clock,
   Play,
@@ -78,6 +79,10 @@ function getSessionTitle(session: AgentSession): string {
   return session.projectPath.split('/').pop() || 'Session';
 }
 
+function getProjectRepositoryCount(project: Project): number {
+  return project.repositories?.length || 1;
+}
+
 export function Sidebar({
   projects,
   sessions,
@@ -123,20 +128,34 @@ export function Sidebar({
             {projects.length === 0 ? (
               <p className="px-2 py-1 text-xs text-slate-500">No projects yet</p>
             ) : (
-              projects.map((project) => (
-                <button
-                  key={project.id}
-                  onClick={() => onProjectSelect(project.id)}
-                  className={`w-full flex items-center gap-2 px-2 py-1.5 text-sm rounded-md transition-colors ${
-                    activeProjectId === project.id
-                      ? 'bg-slate-700 text-slate-100'
-                      : 'text-slate-300 hover:bg-slate-800 hover:text-slate-200'
-                  }`}
-                >
-                  <Folder className="w-4 h-4 flex-shrink-0" />
-                  <span className="truncate">{project.name}</span>
-                </button>
-              ))
+              projects.map((project) => {
+                const repositoryCount = getProjectRepositoryCount(project);
+                return (
+                  <button
+                    key={project.id}
+                    onClick={() => onProjectSelect(project.id)}
+                    className={`w-full flex items-start gap-2 px-2 py-1.5 text-sm rounded-md transition-colors ${
+                      activeProjectId === project.id
+                        ? 'bg-slate-700 text-slate-100'
+                        : 'text-slate-300 hover:bg-slate-800 hover:text-slate-200'
+                    }`}
+                  >
+                    {repositoryCount > 1 ? (
+                      <GitBranch className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                    ) : (
+                      <Folder className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                    )}
+                    <span className="min-w-0 flex-1 text-left">
+                      <span className="block truncate">{project.name}</span>
+                      {repositoryCount > 1 && (
+                        <span className="block text-[11px] text-slate-500">
+                          {repositoryCount} repos
+                        </span>
+                      )}
+                    </span>
+                  </button>
+                );
+              })
             )}
           </div>
         )}
@@ -383,7 +402,11 @@ export function Sidebar({
             onClick={() => onProjectSelect(project.id)}
             className="w-full flex items-center gap-2 px-2 py-1 text-xs text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded transition-colors"
           >
-            <MessageSquare className="w-3 h-3" />
+            {getProjectRepositoryCount(project) > 1 ? (
+              <GitBranch className="w-3 h-3" />
+            ) : (
+              <MessageSquare className="w-3 h-3" />
+            )}
             <span className="truncate">{project.name}</span>
           </button>
         ))}

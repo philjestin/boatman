@@ -337,6 +337,11 @@ func (a *App) OpenProject(path string) (*project.Project, error) {
 	return a.projectManager.AddProject(path)
 }
 
+// CreateMultiRepoProject opens or creates a project backed by multiple repositories.
+func (a *App) CreateMultiRepoProject(name string, repositoryPaths []string) (*project.Project, error) {
+	return a.projectManager.AddMultiRepoProject(name, repositoryPaths)
+}
+
 // RemoveProject removes a project from recents
 func (a *App) RemoveProject(id string) error {
 	return a.projectManager.RemoveProject(id)

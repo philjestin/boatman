@@ -3,10 +3,10 @@
 import {mcp} from '../models';
 import {main} from '../models';
 import {services} from '../models';
+import {project} from '../models';
 import {agent} from '../models';
 import {integrations} from '../models';
 import {config} from '../models';
-import {project} from '../models';
 import {diff} from '../models';
 import {harnessui} from '../models';
 import {triage} from '../models';
@@ -34,6 +34,8 @@ export function CreateAgentSession(arg1:string):Promise<main.AgentSessionInfo>;
 export function CreateBoatmanModeSession(arg1:string,arg2:string,arg3:string):Promise<main.AgentSessionInfo>;
 
 export function CreateFirefighterSession(arg1:string,arg2:string,arg3:string):Promise<main.AgentSessionInfo>;
+
+export function CreateMultiRepoProject(arg1:string,arg2:Array<string>):Promise<project.Project>;
 
 export function CreateTriageSession(arg1:string):Promise<main.AgentSessionInfo>;
 
