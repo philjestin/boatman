@@ -36,8 +36,8 @@ describe('RoutineView', () => {
     vi.mocked(ListProjectRoutines).mockResolvedValue([routine] as any);
     vi.mocked(ListRoutines).mockResolvedValue([routine] as any);
     vi.mocked(AuthenticateDatadogMCP).mockResolvedValue({
-      mcpName: 'plugin:datadog:datadog-mcp',
-      command: 'claude mcp login plugin:datadog:datadog-mcp',
+      mcpName: 'boatman-datadog-mcp',
+      command: 'claude mcp add --transport http --scope user boatman-datadog-mcp https://mcp.datadoghq.com/v1/mcp?toolsets=core,llmobs,alerting,apm,onboarding && claude mcp login boatman-datadog-mcp',
       message: 'Datadog MCP auth opened in an interactive terminal. Complete the browser flow, then click Check.',
       interactive: true,
       launched: true,

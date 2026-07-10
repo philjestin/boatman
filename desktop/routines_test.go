@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"boatman/config"
@@ -50,6 +51,9 @@ func TestDesktopRoutineIntegrationRefsUsesClaudeManagedDatadog(t *testing.T) {
 	t.Setenv("DD_APP_KEY", "")
 	t.Setenv("DD_SITE", "")
 	withClaudeMCPCommand(t, func(_ context.Context, args ...string) (string, error) {
+		if len(args) == 3 && args[0] == "mcp" && args[1] == "get" && args[2] != datadogClaudeMCPName {
+			return `No MCP server named "` + args[2] + `". Configured servers:`, errors.New("not found")
+		}
 		if len(args) == 3 && args[0] == "mcp" && args[1] == "get" && args[2] == datadogClaudeMCPName {
 			return `plugin:datadog:datadog-mcp:
   Scope: Dynamic config (from command line)
@@ -80,9 +84,17 @@ func TestDesktopRoutineIntegrationRefsUsesClaudeManagedDatadog(t *testing.T) {
 }
 
 func TestAuthenticateDatadogMCPOpensInteractiveLogin(t *testing.T) {
-	var gotName string
-	withClaudeMCPLoginLauncher(t, func(_ context.Context, mcpName string) (string, error) {
-		gotName = mcpName
+	t.Setenv("DD_SITE", "")
+	withClaudeMCPCommand(t, func(_ context.Context, args ...string) (string, error) {
+		if len(args) == 3 && args[0] == "mcp" && args[1] == "get" {
+			return `No MCP server named "` + args[2] + `". Configured servers:`, errors.New("not found")
+		}
+		return "", errors.New("unexpected command")
+	})
+
+	var gotTarget claudeMCPLoginTarget
+	withClaudeMCPLoginLauncher(t, func(_ context.Context, target claudeMCPLoginTarget) (string, error) {
+		gotTarget = target
 		return "opened", nil
 	})
 
@@ -90,11 +102,54 @@ func TestAuthenticateDatadogMCPOpensInteractiveLogin(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AuthenticateDatadogMCP error: %v", err)
 	}
-	if gotName != datadogClaudeMCPName {
-		t.Fatalf("mcpName = %q, want %q", gotName, datadogClaudeMCPName)
+	if gotTarget.Name != datadogBoatmanMCPName || !gotTarget.EnsureHTTP {
+		t.Fatalf("target = %#v, want Boatman-managed HTTP Datadog MCP", gotTarget)
 	}
-	if result.MCPName != datadogClaudeMCPName || result.Output != "opened" || !result.Interactive || !result.Launched {
+	if !strings.Contains(gotTarget.URL, "https://mcp.datadoghq.com/v1/mcp") {
+		t.Fatalf("target URL = %q, want current Datadog MCP endpoint", gotTarget.URL)
+	}
+	if result.MCPName != datadogBoatmanMCPName || result.Output != "opened" || !result.Interactive || !result.Launched {
 		t.Fatalf("result = %#v", result)
+	}
+}
+
+func TestAuthenticateDatadogMCPFallsBackFromLegacyPluginEndpoint(t *testing.T) {
+	withClaudeMCPCommand(t, func(_ context.Context, args ...string) (string, error) {
+		if len(args) != 3 || args[0] != "mcp" || args[1] != "get" {
+			return "", errors.New("unexpected command")
+		}
+		switch args[2] {
+		case datadogBoatmanMCPName, datadogManualMCPName:
+			return `No MCP server named "` + args[2] + `". Configured servers:`, errors.New("not found")
+		case datadogClaudeMCPName:
+			return `plugin:datadog:datadog-mcp:
+  Scope: Dynamic config (from command line)
+  Status: ✘ Failed to connect
+  Type: http
+  URL: https://mcp.datadoghq.com/api/unstable/mcp-server/mcp?toolsets=core,llmobs,alerting,apm,onboarding`, errors.New("failed to connect")
+		default:
+			return "", errors.New("unexpected mcp name")
+		}
+	})
+
+	var gotTarget claudeMCPLoginTarget
+	withClaudeMCPLoginLauncher(t, func(_ context.Context, target claudeMCPLoginTarget) (string, error) {
+		gotTarget = target
+		return "opened", nil
+	})
+
+	result, err := (&App{}).AuthenticateDatadogMCP()
+	if err != nil {
+		t.Fatalf("AuthenticateDatadogMCP error: %v", err)
+	}
+	if gotTarget.Name != datadogBoatmanMCPName || !gotTarget.EnsureHTTP {
+		t.Fatalf("target = %#v, want Boatman-managed fallback", gotTarget)
+	}
+	if strings.Contains(gotTarget.URL, datadogLegacyRemotePath) || !strings.Contains(gotTarget.URL, "/v1/mcp") {
+		t.Fatalf("target URL = %q, want non-legacy Datadog MCP endpoint", gotTarget.URL)
+	}
+	if result.MCPName != datadogBoatmanMCPName {
+		t.Fatalf("result MCPName = %q, want %q", result.MCPName, datadogBoatmanMCPName)
 	}
 }
 
@@ -181,7 +236,7 @@ func withClaudeMCPCommand(t *testing.T, fn func(context.Context, ...string) (str
 	})
 }
 
-func withClaudeMCPLoginLauncher(t *testing.T, fn func(context.Context, string) (string, error)) {
+func withClaudeMCPLoginLauncher(t *testing.T, fn func(context.Context, claudeMCPLoginTarget) (string, error)) {
 	t.Helper()
 	original := launchClaudeMCPLogin
 	launchClaudeMCPLogin = fn
