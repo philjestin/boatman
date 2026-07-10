@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { X, Moon, Sun, Bell, BellOff, Shield, Zap, Bot, Server, Key, Eye, EyeOff, Database, Trash2, Plus, Flame, Pencil } from 'lucide-react';
-import type { UserPreferences, ApprovalMode, Theme, MCPServer } from '../../types';
-import { CleanupOldSessions, GetSessionStats, GetMCPServers, GetMCPPresets, AddMCPServer, RemoveMCPServer, UpdateMCPServer } from '../../../wailsjs/go/main/App';
+import { X, Moon, Sun, Bell, BellOff, Shield, Zap, Bot, Server, Key, Eye, EyeOff, Database, Trash2, Plus, Flame, Pencil, CheckCircle, AlertTriangle, CircleSlash } from 'lucide-react';
+import type { UserPreferences, ApprovalMode, Theme, MCPServer, IntegrationStatus, IntegrationState } from '../../types';
+import { CleanupOldSessions, GetSessionStats, GetMCPServers, GetMCPPresets, GetIntegrationStatuses, AddMCPServer, RemoveMCPServer, UpdateMCPServer } from '../../../wailsjs/go/main/App';
 import { MCPServerDialog } from './MCPServerDialog';
 import { GCloudAuthSection } from './GCloudAuthSection';
 import { FirefighterSettings } from './FirefighterSettings';
@@ -599,6 +599,50 @@ function MemorySettings({
   );
 }
 
+function integrationStatusMeta(state: IntegrationState): {
+  icon: typeof CheckCircle;
+  container: string;
+  iconClass: string;
+  text: string;
+} {
+  switch (state) {
+    case 'ready':
+    case 'connected':
+      return {
+        icon: CheckCircle,
+        container: 'border-emerald-500/20 bg-emerald-500/10',
+        iconClass: 'text-emerald-400',
+        text: 'text-emerald-300',
+      };
+    case 'needs_configuration':
+    case 'degraded':
+      return {
+        icon: AlertTriangle,
+        container: 'border-amber-500/20 bg-amber-500/10',
+        iconClass: 'text-amber-400',
+        text: 'text-amber-300',
+      };
+    case 'disabled':
+      return {
+        icon: CircleSlash,
+        container: 'border-slate-700 bg-slate-800/50',
+        iconClass: 'text-slate-500',
+        text: 'text-slate-400',
+      };
+    default:
+      return {
+        icon: AlertTriangle,
+        container: 'border-red-500/20 bg-red-500/10',
+        iconClass: 'text-red-400',
+        text: 'text-red-300',
+      };
+  }
+}
+
+function integrationStatusLabel(state: IntegrationState): string {
+  return state.replace(/_/g, ' ');
+}
+
 // MCP Settings Tab
 function MCPSettings({
   servers,
@@ -607,8 +651,9 @@ function MCPSettings({
   servers: MCPServer[];
   onChange: (servers: MCPServer[]) => void;
 }) {
-  const [localServers, setLocalServers] = useState<MCPServer[]>([]);
+  const [localServers, setLocalServers] = useState<MCPServer[]>(servers);
   const [presets, setPresets] = useState<MCPServer[]>([]);
+  const [integrationStatuses, setIntegrationStatuses] = useState<IntegrationStatus[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -624,12 +669,23 @@ function MCPSettings({
       setIsLoading(true);
       const mcpServers = await GetMCPServers();
       setLocalServers(mcpServers);
+      onChange(mcpServers);
+      await loadIntegrationStatuses();
       setError(null);
     } catch (err) {
       console.error('Failed to load MCP servers:', err);
       setError('Failed to load MCP servers');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const loadIntegrationStatuses = async () => {
+    try {
+      const statuses = await GetIntegrationStatuses();
+      setIntegrationStatuses(statuses as IntegrationStatus[]);
+    } catch (err) {
+      console.error('Failed to load integration statuses:', err);
     }
   };
 
@@ -701,6 +757,9 @@ function MCPSettings({
   const handleToggleServer = async (server: MCPServer) => {
     try {
       const updated = { ...server, enabled: !server.enabled };
+      const nextServers = localServers.map((item) => item.name === server.name ? updated : item);
+      setLocalServers(nextServers);
+      onChange(nextServers);
       await UpdateMCPServer(updated);
       await loadServers();
     } catch (err) {
@@ -725,6 +784,39 @@ function MCPSettings({
         {error && (
           <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-sm text-red-400">
             {error}
+          </div>
+        )}
+
+        {integrationStatuses.length > 0 && (
+          <div className="mb-4">
+            <div className="flex items-center justify-between mb-2">
+              <h4 className="text-xs font-medium text-slate-300">Integration health</h4>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {integrationStatuses.map((status) => {
+                const meta = integrationStatusMeta(status.state);
+                const Icon = meta.icon;
+                return (
+                  <div
+                    key={status.name}
+                    className={`flex items-start gap-2 rounded-md border px-3 py-2 ${meta.container}`}
+                  >
+                    <Icon className={`w-4 h-4 mt-0.5 flex-shrink-0 ${meta.iconClass}`} />
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="text-xs font-medium text-slate-100">{status.name}</p>
+                        <span className={`text-[11px] ${meta.text}`}>{integrationStatusLabel(status.state)}</span>
+                      </div>
+                      {status.missingEnv && status.missingEnv.length > 0 && (
+                        <p className="text-[11px] text-amber-300 mt-1 truncate">
+                          {status.missingEnv.join(', ')}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
 

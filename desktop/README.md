@@ -1,10 +1,10 @@
 # Boatman
 
-> A desktop application that brings Claude AI to your codebase with specialized **Firefighter Mode** for production incident investigation.
+> A desktop application that brings AI agents to your codebase with specialized **Firefighter Mode** for production incident investigation and a Runtime inspector for recorded agent runs.
 
 ## About
 
-Boatman is a native desktop application built with Wails (Go + React) that provides a powerful interface for Claude AI. It includes a specialized **Firefighter Mode** that integrates Linear, Bugsnag, and Datadog for automated production incident investigation and response.
+Boatman is a native desktop application built with Wails (Go + React) that provides a powerful interface for AI-assisted development. It includes a provider-neutral runtime layer, a specialized **Firefighter Mode** that integrates Linear, Bugsnag, and Datadog, and an inspectable Runtime tab for recorded runs, artifacts, events, and memory.
 
 ## Features
 
@@ -19,6 +19,7 @@ Boatman is a native desktop application built with Wails (Go + React) that provi
 - **Task Tracking**: View and monitor tasks created by the agent during sessions
 - **Agent Logs**: Real-time streaming logs panel to see agent activity and tool usage
 - **Task Detail Modal**: Clickable task cards showing diffs, feedback, plans, and issues
+- **Provider Runtime**: Sessions are shaped as provider-neutral runtime requests before adapter-specific execution
 
 ### 📊 Triage Mode
 - **Backlog Analysis**: Score and classify tickets from Linear using a 7-dimension AI rubric
@@ -52,6 +53,13 @@ See [TRIAGE.md](./TRIAGE.md) for full documentation.
 - **OAuth Support**: Authenticate via Okta SSO for enterprise integrations
 - **Custom Servers**: Build your own MCP servers for specialized workflows
 - **MCP Server Dialog**: Easy configuration and management of MCP servers via UI
+- **Integration Health**: Shows whether built-in services are ready, disabled, degraded, or missing configuration
+
+### 🧭 Runtime Inspector
+- **Run Browser**: Inspect project-local `.boatman/runs` metadata
+- **Event Timeline**: Review normalized runtime events for phases, messages, tools, usage, schema checks, memory loads, integrations, and artifacts
+- **Artifact Manifest**: See files, diffs, PRs, or other durable outputs recorded by each run
+- **Inspectable Memory**: Read `.boatman/memory` Markdown context files with provenance and source run IDs
 
 ### 🔍 Advanced UI Features
 - **Smart Search**: Full-text search across sessions with filters (tags, dates, favorites, projects)
@@ -62,6 +70,7 @@ See [TRIAGE.md](./TRIAGE.md) for full documentation.
 - **Onboarding Wizard**: Guided first-run experience for setting up authentication and preferences
 - **Model Selection**: Choose between Claude Opus 4.6, Sonnet 4.5, Haiku 4, and Claude 3.5 Sonnet
 - **Session Modes**: Visual badges to distinguish standard, firefighter, and boatmanmode sessions
+- **Runtime Tab**: Browse recorded runs and memory without leaving the app
 
 ## Quick Start
 
@@ -80,8 +89,8 @@ open build/bin/boatman.app
 ## Prerequisites
 
 ### Required
-- **Go 1.18+**: Build the application
-- **Node.js 16+**: Frontend development
+- **Go 1.24.1+**: Build the application
+- **Node.js 24+**: Frontend development and quality gates
 - **Wails CLI**: `go install github.com/wailsapp/wails/v2/cmd/wails@latest`
 - **Claude API**: Get key from https://console.anthropic.com
 
@@ -218,6 +227,23 @@ Linear Ticket → Extract Context → Query Bugsnag/Datadog → Analyze Git Hist
 - ✅ Full autonomous workflow (plan → execute → review → refactor → PR)
 - ✅ Git worktree isolation for safe parallel work
 - ✅ Real-time event streaming with structured task tracking
+
+### Runtime Tab
+
+Open the **Runtime** tab after selecting a project. It reads:
+
+```text
+<project>/.boatman/runs/
+<project>/.boatman/memory/
+```
+
+Use it to answer:
+
+- Which provider, model, role, and profile handled a run?
+- What prompt/request shape, tools, MCP refs, schema, and approval mode were used?
+- What tool calls, schema checks, usage events, integration states, memory loads, and artifacts were recorded?
+- What memory documents might future sessions load?
+- Which run generated a memory document?
 - ✅ Task metadata includes diffs, plans, feedback, and issues
 - ✅ Integrated with CLI for subprocess execution
 

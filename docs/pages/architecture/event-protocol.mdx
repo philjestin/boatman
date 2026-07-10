@@ -2,6 +2,11 @@
 
 The CLI and Desktop communicate through a structured JSON event protocol emitted via stdout.
 
+Boatman now also has a provider-neutral runtime event contract in
+`shared/agentruntime`. The legacy protocol below remains the default for
+backward compatibility. Set `BOATMAN_RUNTIME_EVENTS=1` to emit a normalized
+runtime event after each legacy event during migration.
+
 ## Protocol Design
 
 ### Format
@@ -49,6 +54,94 @@ The CLI and Desktop communicate through a structured JSON event protocol emitted
 | `progress` | General progress update | `message` |
 | `task_created` | Internal task created (reserved) | `id`, `name`, `description` |
 | `task_updated` | Task status change (reserved) | `id`, `status` |
+
+---
+
+## Runtime Event Bridge
+
+The runtime event bridge maps legacy events to provider-neutral event names:
+
+| Legacy Type | Runtime Type |
+|-------------|--------------|
+| `agent_started` | `phase.started` |
+| `agent_completed` | `phase.completed` |
+| `task_created` | `task.created` |
+| `task_updated` | `task.updated` |
+| `progress` | `log.message` |
+| `claude_stream` | `provider.raw` |
+
+The bridge preserves raw provider payloads in `provider.raw` events while giving
+new UI and runtime consumers stable fields such as `phaseId`, `provider`,
+`status`, `usage`, `tool`, `approval`, `artifact`, and `schema`.
+
+Broker-backed providers emit `tool.call` and `tool.result` when a model requests
+a local tool through `shared/agentruntime/toolbroker`. The raw provider event is
+still preserved, but UI and audit consumers can rely on the normalized tool
+payload:
+
+```json
+{"version":1,"type":"tool.call","provider":"openai-responses","tool":{"id":"call_1","name":"Read","input":{"file_path":"README.md"}}}
+```
+
+Integration brokers emit `integration.state` when a service descriptor changes
+health or configuration state. The normalized `status` field maps to runtime
+status, while `data.state` preserves the integration-specific state:
+
+```json
+{"version":1,"type":"integration.state","name":"datadog","status":"waiting","message":"integration is missing required configuration","data":{"state":"needs_configuration","missing_env":["DD_API_KEY","DD_APP_KEY"]}}
+```
+
+`boatman integrations check --emit-events` prints `run.started`,
+`integration.state`, and `run.completed` events for local integration health
+checks. If runtime-store env vars are configured, the same events are also
+persisted for `boatman runs list` and `boatman runs show`.
+
+Memory loaders emit `memory.loaded` when inspectable runtime memory documents
+are rendered for a run. The `data.documents` array carries document IDs, scope,
+title, path, provenance, and source run IDs when available:
+
+```json
+{"version":1,"type":"memory.loaded","runId":"run-1","role":"memory","status":"completed","data":{"documents":[{"id":"project","scope":"project","title":"Project Memory"}]}}
+```
+
+Use `boatman memory list`, `boatman memory show <id>`, and
+`boatman memory context --emit-event --run-id <run-id>` to inspect the same
+Markdown memory documents and event shape locally.
+
+Runtime events can also be persisted by `shared/agentruntime/runstore`.
+Project-scoped provider runs now record under `.boatman/runs` by default. Set
+`BOATMAN_RUNTIME_STORE_DIR` to an explicit directory, or set
+`BOATMAN_RUNTIME_STORE=0` to disable default recording. Each run directory
+contains:
+
+```text
+metadata.json
+request.json
+events.ndjson
+artifacts.json
+```
+
+Recorded runs can be inspected with:
+
+```bash
+boatman runs list
+boatman runs show <run-id>
+boatman runs show <run-id> --json
+boatman runs request <run-id>
+boatman runs artifacts <run-id>
+```
+
+`request.json` stores the original provider-neutral `RunRequest` so future
+resume and replay tooling can reconstruct the model call without scraping logs.
+`artifacts.json` is a compact index derived from `artifact.changed` events, so
+files, diffs, PRs, and URLs can be inspected without replaying the full event
+stream.
+
+The desktop subprocess bridge recognizes these runtime event types and ignores
+them for legacy task/message updates during the transition. This lets the CLI
+emit both streams without duplicating UI state.
+
+See [Runtime Platform](./runtime-platform) for the target architecture.
 
 ---
 

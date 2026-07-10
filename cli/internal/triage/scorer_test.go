@@ -1,8 +1,36 @@
 package triage
 
 import (
+	"context"
+	"encoding/json"
 	"testing"
+
+	agentruntime "github.com/philjestin/boatman-ecosystem/shared/agentruntime"
+	"github.com/philjestin/boatmanmode/internal/config"
+	"github.com/philjestin/boatmanmode/internal/cost"
 )
+
+type scorerFakeProvider struct{}
+
+func (scorerFakeProvider) Name() string {
+	return "fake"
+}
+
+func (scorerFakeProvider) Capabilities(context.Context) (agentruntime.Capabilities, error) {
+	return agentruntime.Capabilities{}, nil
+}
+
+func (scorerFakeProvider) StartRun(context.Context, agentruntime.RunRequest) (agentruntime.EventStream, error) {
+	return nil, nil
+}
+
+func (scorerFakeProvider) ResumeRun(context.Context, string, agentruntime.RunInput) (agentruntime.EventStream, error) {
+	return nil, nil
+}
+
+func (scorerFakeProvider) CancelRun(context.Context, string) error {
+	return nil
+}
 
 func TestParseScoreResponse_RawJSON(t *testing.T) {
 	response := `{"clarity": 4, "codeLocality": 3, "patternMatch": 5, "validationStrength": 2, "dependencyRisk": 1, "productAmbiguity": 0, "blastRadius": 2, "uncertainAxes": ["validationStrength"], "reasons": ["clear requirements", "single module"]}`
@@ -152,11 +180,11 @@ func TestBuildUserPrompt(t *testing.T) {
 		Title:       "Fix button alignment",
 		Description: "The submit button is misaligned on mobile viewports",
 		Signals: Signals{
-			Labels:                    []string{"frontend", "bug"},
-			MentionsFiles:             []string{"next/packages/ui/Button.tsx"},
-			Domains:                   []string{"frontend"},
-			Dependencies:              []string{"FE-100"},
-			AcceptanceCriteriaPresent: true,
+			Labels:                     []string{"frontend", "bug"},
+			MentionsFiles:              []string{"next/packages/ui/Button.tsx"},
+			Domains:                    []string{"frontend"},
+			Dependencies:               []string{"FE-100"},
+			AcceptanceCriteriaPresent:  true,
 			AcceptanceCriteriaExplicit: false,
 			HasDesignSpec:              true,
 		},
@@ -220,6 +248,69 @@ func TestBuildUserPrompt_EmptySignals(t *testing.T) {
 	}
 	if !containsStr(prompt, "none detected") {
 		t.Error("expected 'none detected' for empty signals")
+	}
+}
+
+func TestScorerOutputSchemaIsValidJSON(t *testing.T) {
+	schema := scorerOutputSchema()
+	if schema == nil {
+		t.Fatal("schema should not be nil")
+	}
+	if !schema.Strict {
+		t.Fatal("schema should be strict")
+	}
+	if !json.Valid(schema.Schema) {
+		t.Fatalf("schema is not valid JSON: %s", schema.Schema)
+	}
+	if err := agentruntime.ValidateOutputSchema(schema); err != nil {
+		t.Fatalf("schema should pass runtime validation: %v", err)
+	}
+}
+
+func TestScoreUsesRuntimeProviderRequest(t *testing.T) {
+	cfg := &config.Config{
+		Claude: config.ClaudeConfig{
+			Models: config.ModelConfig{Scorer: "score-model"},
+		},
+	}
+	scorer := newScorerWithProvider(cfg, scorerFakeProvider{})
+
+	var captured agentruntime.RunRequest
+	scorer.runText = func(_ context.Context, provider agentruntime.Provider, req agentruntime.RunRequest) (string, *cost.Usage, error) {
+		captured = req
+		if provider.Name() != "fake" {
+			t.Fatalf("provider = %q, want fake", provider.Name())
+		}
+		return `{"clarity": 4, "codeLocality": 3, "patternMatch": 2, "validationStrength": 1, "dependencyRisk": 0, "productAmbiguity": 1, "blastRadius": 2, "uncertainAxes": [], "reasons": ["ok"]}`, &cost.Usage{InputTokens: 3}, nil
+	}
+
+	response, usage, err := scorer.Score(context.Background(), NormalizedTicket{
+		TicketID: "ENG-9",
+		Title:    "Runtime scorer",
+	})
+	if err != nil {
+		t.Fatalf("Score error: %v", err)
+	}
+	if response.Clarity != 4 {
+		t.Fatalf("Clarity = %d, want 4", response.Clarity)
+	}
+	if usage == nil || usage.InputTokens != 3 {
+		t.Fatalf("usage = %#v, want input tokens", usage)
+	}
+	if captured.Role != agentruntime.RoleScorer {
+		t.Fatalf("Role = %q, want %q", captured.Role, agentruntime.RoleScorer)
+	}
+	if captured.Profile != "triage-scorer" {
+		t.Fatalf("Profile = %q, want triage-scorer", captured.Profile)
+	}
+	if captured.Model != "score-model" {
+		t.Fatalf("Model = %q, want score-model", captured.Model)
+	}
+	if captured.OutputSchema == nil || captured.OutputSchema.Name != "triage_scorer_response" {
+		t.Fatalf("OutputSchema = %#v, want triage scorer schema", captured.OutputSchema)
+	}
+	if len(captured.Messages) != 1 || !containsStr(captured.Messages[0].Content, "ENG-9") {
+		t.Fatalf("Messages = %#v, want ticket prompt", captured.Messages)
 	}
 }
 

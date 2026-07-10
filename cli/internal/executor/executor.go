@@ -1,4 +1,4 @@
-// Package executor handles AI-powered task execution using Claude CLI.
+// Package executor handles AI-powered task execution through runtime providers.
 // It takes a ticket and executes the development work described.
 package executor
 
@@ -11,21 +11,30 @@ import (
 	"strings"
 	"time"
 
-	"github.com/philjestin/boatmanmode/internal/claude"
+	agentruntime "github.com/philjestin/boatman-ecosystem/shared/agentruntime"
+	"github.com/philjestin/boatman-ecosystem/shared/agentruntime/toolbroker"
 	"github.com/philjestin/boatmanmode/internal/config"
 	"github.com/philjestin/boatmanmode/internal/cost"
 	"github.com/philjestin/boatmanmode/internal/events"
 	"github.com/philjestin/boatmanmode/internal/handoff"
 	"github.com/philjestin/boatmanmode/internal/linear"
 	"github.com/philjestin/boatmanmode/internal/planner"
+	runtimeproviders "github.com/philjestin/boatmanmode/internal/providers"
 	"github.com/philjestin/boatmanmode/internal/task"
 )
 
 // Executor performs AI-powered development tasks.
 type Executor struct {
-	client       *claude.Client
+	provider     agentruntime.Provider
 	worktreePath string
 	brainContext string // pre-rendered brain handoff content
+	model        string
+	effort       string
+	enableTools  bool
+	promptCache  bool
+	phaseID      string
+	profile      string
+	runText      func(context.Context, agentruntime.Provider, agentruntime.RunRequest, func(agentruntime.Event)) (string, *cost.Usage, error)
 }
 
 // BrainHandoffer is the interface for brain handoff content.
@@ -50,71 +59,85 @@ type ExecutionResult struct {
 
 // New creates a new Executor.
 func New(worktreePath string, cfg *config.Config) *Executor {
-	var client *claude.Client
-
-	if cfg.EnableTools {
-		// Full toolset for development: Read, Edit, Bash, Grep, Glob
-		client = claude.NewWithTools(worktreePath, "executor", nil) // nil = allow all tools
-	} else {
-		// Backward compatibility - no tools
-		client = claude.NewWithTmux(worktreePath, "executor")
-	}
-
-	// Configure model if specified
-	if cfg.Claude.Models.Executor != "" {
-		client.Model = cfg.Claude.Models.Executor
-	}
-	client.Effort = cfg.Claude.Effort
-	client.EnablePromptCaching = cfg.Claude.EnablePromptCaching
-
-	// Skip permissions so Claude doesn't prompt for tool approval interactively.
-	// The tmux bash script uses --dangerously-skip-permissions; when bypassing tmux
-	// via BOATMAN_NO_TMUX, doStreamingRequest() needs SkipPermissions set to add the flag.
-	client.SkipPermissions = true
-
-	// Forward Claude stream events for desktop app visibility
-	client.EventForwarder = func(rawLine string) {
-		events.ClaudeStream("executor", rawLine)
-	}
-
-	return &Executor{
-		client:       client,
-		worktreePath: worktreePath,
-	}
+	provider := runtimeproviders.MustFromConfig(cfg, agentruntime.RoleExecutor, "executor")
+	return newExecutorWithProvider(worktreePath, cfg, provider, "executor", "executor", cfg.Claude.Models.Executor)
 }
 
 // NewRefactorExecutor creates an executor for a refactor iteration.
 func NewRefactorExecutor(worktreePath string, iteration int, cfg *config.Config) *Executor {
 	sessionName := fmt.Sprintf("refactor-%d", iteration)
-	var client *claude.Client
+	provider := runtimeproviders.MustFromConfig(cfg, agentruntime.RoleRefactorer, "refactor")
+	return newExecutorWithProvider(worktreePath, cfg, provider, sessionName, "refactor", cfg.Claude.Models.Refactor)
+}
 
-	if cfg.EnableTools {
-		// Full toolset for refactoring: Read, Edit, Bash, Grep, Glob
-		client = claude.NewWithTools(worktreePath, sessionName, nil) // nil = allow all tools
-	} else {
-		// Backward compatibility - no tools
-		client = claude.NewWithTmux(worktreePath, sessionName)
-	}
-
-	// Configure model if specified
-	if cfg.Claude.Models.Refactor != "" {
-		client.Model = cfg.Claude.Models.Refactor
-	}
-	client.Effort = cfg.Claude.Effort
-	client.EnablePromptCaching = cfg.Claude.EnablePromptCaching
-
-	// Skip permissions so Claude doesn't prompt for tool approval interactively
-	client.SkipPermissions = true
-
-	// Forward Claude stream events for desktop app visibility
-	phaseID := fmt.Sprintf("refactor-%d", iteration)
-	client.EventForwarder = func(rawLine string) {
-		events.ClaudeStream(phaseID, rawLine)
-	}
-
+func newExecutorWithProvider(worktreePath string, cfg *config.Config, provider agentruntime.Provider, phaseID, profile, model string) *Executor {
 	return &Executor{
-		client:       client,
+		provider:     provider,
 		worktreePath: worktreePath,
+		model:        model,
+		effort:       cfg.Claude.Effort,
+		enableTools:  cfg.EnableTools,
+		promptCache:  cfg.Claude.EnablePromptCaching,
+		phaseID:      phaseID,
+		profile:      profile,
+		runText:      runtimeproviders.RunTextWithEvents,
+	}
+}
+
+func (e *Executor) runModel(
+	ctx context.Context,
+	role agentruntime.Role,
+	profile string,
+	phaseID string,
+	runID string,
+	systemPrompt string,
+	prompt string,
+) (string, *cost.Usage, error) {
+	metadata := map[string]string{
+		"phaseId": phaseID,
+		"useTmux": "true",
+	}
+	if e.promptCache {
+		metadata["enablePromptCaching"] = "true"
+	}
+
+	return e.runText(ctx, e.provider, agentruntime.RunRequest{
+		RunID:        runID,
+		Role:         role,
+		Profile:      profile,
+		Provider:     e.provider.Name(),
+		Model:        e.model,
+		WorkDir:      e.worktreePath,
+		Instructions: systemPrompt,
+		Messages: []agentruntime.Message{
+			{Role: "user", Content: prompt},
+		},
+		Tools:          executorTools(e.enableTools),
+		ApprovalPolicy: agentruntime.ApprovalFullAuto,
+		Reasoning: &agentruntime.ReasoningOptions{
+			Effort: e.effort,
+		},
+		Metadata: metadata,
+	}, forwardProviderRaw(phaseID))
+}
+
+func executorTools(enabled bool) []agentruntime.ToolRef {
+	if !enabled {
+		return nil
+	}
+	return toolbroker.ExecutorRefs()
+}
+
+func forwardProviderRaw(phaseID string) func(agentruntime.Event) {
+	return func(event agentruntime.Event) {
+		if event.Type != agentruntime.EventProviderRaw {
+			return
+		}
+		if len(event.Raw) > 0 {
+			events.ProviderRaw(phaseID, event.Provider, string(event.Raw))
+		} else if event.Message != "" {
+			events.ProviderRaw(phaseID, event.Provider, event.Message)
+		}
 	}
 }
 
@@ -168,22 +191,22 @@ If implementation already exists, add tests or make improvements as needed.`
 		systemPrompt = projectRules + "\n\n---\n\n" + systemPrompt
 	}
 
-	// Phase 3: Execute with Claude
-	fmt.Println("   🤖 Phase 3: Executing with Claude...")
+	// Phase 3: Execute with the configured model provider.
+	fmt.Println("   🤖 Phase 3: Executing with model provider...")
 	fmt.Printf("   📝 Prompt size: %d chars\n", len(prompt))
 
 	start := time.Now()
-	response, usage, err := e.client.Message(ctx, systemPrompt, prompt)
+	response, usage, err := e.runModel(ctx, agentruntime.RoleExecutor, e.profile, e.phaseID, "executor-"+t.GetID(), systemPrompt, prompt)
 	elapsed := time.Since(start)
 
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to call Claude: %w", err)
+		return nil, nil, fmt.Errorf("failed to call model provider: %w", err)
 	}
 
-	fmt.Printf("   ⏱️  Claude responded in %s\n", elapsed.Round(time.Second))
+	fmt.Printf("   ⏱️  Model provider responded in %s\n", elapsed.Round(time.Second))
 	fmt.Printf("   📄 Response size: %d chars\n", len(response))
 
-	// Claude in agentic mode writes files directly - detect what changed via git
+	// Agentic providers write files directly - detect what changed via git.
 	fmt.Println("   📦 Detecting file changes in worktree...")
 	filesChanged, err := e.detectChangedFiles()
 	if err != nil {
@@ -191,9 +214,9 @@ If implementation already exists, add tests or make improvements as needed.`
 	}
 
 	if len(filesChanged) == 0 {
-		// No files changed - show Claude's response for debugging
+		// No files changed - show the provider response for debugging.
 		fmt.Println("   ⚠️  No files were changed in the worktree!")
-		fmt.Println("   📋 Claude's response:")
+		fmt.Println("   📋 Model provider response:")
 		preview := response
 		if len(preview) > 2000 {
 			preview = preview[:2000] + "\n... (truncated)"
@@ -203,11 +226,11 @@ If implementation already exists, add tests or make improvements as needed.`
 		}
 		return &ExecutionResult{
 			Success: false,
-			Error:   fmt.Errorf("claude did not produce any file changes - check response above"),
+			Error:   fmt.Errorf("model provider did not produce any file changes - check response above"),
 		}, usage, nil
 	}
 
-	fmt.Printf("   ✏️  Claude modified %d files:\n", len(filesChanged))
+	fmt.Printf("   ✏️  Model provider modified %d files:\n", len(filesChanged))
 	for _, f := range filesChanged {
 		fmt.Printf("      • %s\n", f)
 	}
@@ -224,7 +247,7 @@ func (e *Executor) DetectChangedFiles() ([]string, error) {
 	return e.detectChangedFiles()
 }
 
-// detectChangedFiles uses git status to find what files Claude modified.
+// detectChangedFiles uses git status to find what files the provider modified.
 func (e *Executor) detectChangedFiles() ([]string, error) {
 	// Get list of changed files (staged, unstaged, and untracked)
 	cmd := exec.Command("git", "status", "--porcelain")
@@ -240,16 +263,16 @@ func (e *Executor) detectChangedFiles() ([]string, error) {
 		if len(line) < 4 {
 			continue
 		}
-		
+
 		// Format is "XY filename" where XY is 2 status chars + 1 space
 		// Examples: " M packs/file.rb", "A  packs/file.rb", "?? packs/file.rb"
 		file := line[3:]
-		
+
 		// Handle renamed files: "R  old -> new"
 		if idx := strings.Index(file, " -> "); idx != -1 {
 			file = file[idx+4:]
 		}
-		
+
 		// Skip directories (end with /)
 		if strings.HasSuffix(file, "/") {
 			continue
@@ -353,18 +376,18 @@ Format your response with complete file contents:
 // Full updated file contents
 ` + "```"
 
-	fmt.Println("   🤖 Sending refactor request to Claude...")
+	fmt.Println("   🤖 Sending refactor request to model provider...")
 	fmt.Printf("   📝 Prompt size: %d chars\n", len(prompt))
 
 	start := time.Now()
-	response, usage, err := e.client.Message(ctx, systemPrompt, prompt)
+	response, usage, err := e.runModel(ctx, agentruntime.RoleRefactorer, e.profile, e.phaseID, e.phaseID+"-"+t.GetID(), systemPrompt, prompt)
 	elapsed := time.Since(start)
 
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to call Claude: %w", err)
+		return nil, nil, fmt.Errorf("failed to call model provider: %w", err)
 	}
 
-	fmt.Printf("   ⏱️  Claude responded in %s\n", elapsed.Round(time.Second))
+	fmt.Printf("   ⏱️  Model provider responded in %s\n", elapsed.Round(time.Second))
 
 	fmt.Println("   📦 Applying refactored changes...")
 	filesChanged, err := e.parseAndApplyChanges(response)
@@ -416,11 +439,11 @@ Common mistakes to avoid:
 	fmt.Println("   🤖 Sending refactor request...")
 
 	start := time.Now()
-	response, usage, err := e.client.Message(ctx, systemPrompt, prompt)
+	response, usage, err := e.runModel(ctx, agentruntime.RoleRefactorer, e.profile, e.phaseID, e.phaseID+"-handoff", systemPrompt, prompt)
 	elapsed := time.Since(start)
 
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to call Claude: %w", err)
+		return nil, nil, fmt.Errorf("failed to call model provider: %w", err)
 	}
 
 	fmt.Printf("   ⏱️  Completed in %s\n", elapsed.Round(time.Second))
@@ -691,4 +714,3 @@ func (e *Executor) LoadProjectRules() string {
 
 	return strings.TrimSpace(rules.String())
 }
-

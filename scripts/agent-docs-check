@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+# agent-docs-check - validate that runtime/provider architecture docs stay in sync.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$REPO_ROOT"
+
+failures=0
+
+fail() {
+  failures=$((failures + 1))
+  echo "[agent-docs-check] missing: $1"
+}
+
+require_file() {
+  local path="$1"
+  [[ -f "$path" ]] || fail "$path"
+}
+
+require_text() {
+  local path="$1"
+  local text="$2"
+  if [[ ! -f "$path" ]] || ! grep -Fq "$text" "$path"; then
+    fail "$path should mention '$text'"
+  fi
+}
+
+require_file "docs/pages/architecture/runtime-platform.mdx"
+require_text "docs/pages/architecture/_meta.json" '"runtime-platform"'
+require_text "docs/pages/architecture/event-protocol.mdx" "Runtime Event Bridge"
+require_text "docs/pages/architecture/event-protocol.mdx" "provider.raw"
+require_text "docs/pages/architecture/runtime-platform.mdx" "shared/agentruntime"
+require_text "docs/pages/architecture/runtime-platform.mdx" "shared/agentruntime/conformance"
+require_text "docs/pages/architecture/runtime-platform.mdx" "shared/agentruntime/toolbroker"
+require_text "docs/pages/architecture/runtime-platform.mdx" "shared/agentruntime/runstore"
+require_text "docs/pages/architecture/runtime-platform.mdx" "shared/agentruntime/integrations"
+require_text "docs/pages/architecture/runtime-platform.mdx" "shared/agentruntime/memorydocs"
+require_text "docs/pages/architecture/runtime-platform.mdx" "shared/agentruntime/workflows"
+require_text "docs/pages/architecture/runtime-platform.mdx" "shared/agentruntime/approvals"
+require_text "docs/pages/architecture/runtime-platform.mdx" "shared/agentruntime/verifier"
+require_text "docs/pages/architecture/runtime-platform.mdx" "EventStore"
+require_text "docs/pages/architecture/runtime-platform.mdx" "Manager"
+require_text "docs/pages/architecture/runtime-platform.mdx" "connected"
+require_text "docs/pages/architecture/runtime-platform.mdx" "request.json"
+require_text "docs/pages/architecture/runtime-platform.mdx" "artifacts.json"
+require_text "docs/pages/architecture/runtime-platform.mdx" "GetIntegrationStatuses"
+require_text "docs/pages/architecture/runtime-platform.mdx" "desktop MCP settings tab"
+require_text "docs/pages/architecture/runtime-platform.mdx" "boatman integrations"
+require_text "docs/pages/architecture/runtime-platform.mdx" "boatman integrations check"
+require_text "docs/pages/architecture/runtime-platform.mdx" "boatman integrations check --emit-events"
+require_text "docs/pages/architecture/runtime-platform.mdx" "boatman memory list"
+require_text "docs/pages/architecture/runtime-platform.mdx" "boatman memory show"
+require_text "docs/pages/architecture/runtime-platform.mdx" "boatman memory context --emit-event"
+require_text "docs/pages/architecture/runtime-platform.mdx" "shared/agentruntime/providers/openairesponses"
+require_text "docs/pages/architecture/runtime-platform.mdx" "cli/internal/providers/claudecli"
+require_text "docs/pages/architecture/runtime-platform.mdx" "desktop/agent/providers/claudecli"
+require_text "docs/pages/architecture/runtime-platform.mdx" "harness/scaffold/agent/providers/claudecli"
+require_text "docs/pages/architecture/runtime-platform.mdx" "boatman providers"
+require_text "docs/pages/architecture/runtime-platform.mdx" "boatman providers check"
+require_text "docs/pages/architecture/runtime-platform.mdx" "boatman workflows"
+require_text "docs/pages/cli/api-reference.mdx" "boatman workflows show <template-id>"
+require_text "docs/pages/cli/usage.mdx" "Workflow Template Inspection"
+require_text "docs/pages/architecture/event-protocol.mdx" "tool.call"
+require_text "docs/pages/architecture/event-protocol.mdx" "tool.result"
+require_text "docs/pages/architecture/event-protocol.mdx" "integration.state"
+require_text "docs/pages/architecture/event-protocol.mdx" "memory.loaded"
+require_text "docs/pages/architecture/event-protocol.mdx" "boatman integrations check --emit-events"
+require_text "docs/pages/architecture/event-protocol.mdx" "boatman memory context --emit-event"
+require_text "docs/pages/architecture/event-protocol.mdx" "BOATMAN_RUNTIME_STORE"
+require_text "docs/pages/architecture/event-protocol.mdx" "boatman runs list"
+require_text "docs/pages/architecture/event-protocol.mdx" "boatman runs request"
+require_text "docs/pages/architecture/event-protocol.mdx" "boatman runs artifacts"
+require_text "docs/pages/architecture/event-protocol.mdx" "request.json"
+require_text "docs/pages/architecture/event-protocol.mdx" "artifacts.json"
+
+for provider_dir in cli/internal/providers/*; do
+  [[ -d "$provider_dir" ]] || continue
+  [[ "$provider_dir" == "cli/internal/providers/claudecli" ]] || continue
+  require_text "docs/pages/architecture/runtime-platform.mdx" "$provider_dir"
+  if ! find "$provider_dir" -maxdepth 1 -name '*_test.go' | grep -q .; then
+    fail "$provider_dir should include adapter tests"
+  fi
+done
+
+if [[ "$failures" -gt 0 ]]; then
+  echo "[agent-docs-check] found $failures documentation issue(s)"
+  exit 1
+fi
+
+echo "[agent-docs-check] ok"

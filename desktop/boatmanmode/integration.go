@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -106,6 +107,7 @@ type BoatmanEvent struct {
 	Description string                 `json:"description,omitempty"`
 	Status      string                 `json:"status,omitempty"`
 	Message     string                 `json:"message,omitempty"`
+	Raw         json.RawMessage        `json:"raw,omitempty"`
 	Data        map[string]interface{} `json:"data,omitempty"`
 }
 
@@ -143,6 +145,7 @@ func (i *Integration) StreamExecution(ctx context.Context, sessionID string, inp
 	if i.claudeAPIKey != "" {
 		cmd.Env = append(cmd.Env, "ANTHROPIC_API_KEY="+i.claudeAPIKey)
 	}
+	cmd.Env = append(cmd.Env, i.runtimeEnv()...)
 
 	// Bypass tmux so Claude streams directly, allowing EventForwarder to
 	// forward real-time events to the desktop UI.
@@ -199,6 +202,24 @@ func (i *Integration) StreamExecution(ctx context.Context, sessionID string, inp
 
 				// Also send formatted output to channel
 				switch event.Type {
+				case "provider.raw":
+					if onMessage != nil {
+						if payload := runtimeRawPayload(event); payload != "" {
+							onMessage("provider.raw", payload)
+						}
+					}
+				case "run.started", "run.completed", "run.failed",
+					"phase.started", "phase.completed",
+					"message.delta", "message.completed",
+					"usage.updated",
+					"tool.call", "tool.result",
+					"approval.requested", "approval.resolved",
+					"artifact.changed", "schema.result",
+					"log.message", "memory.loaded", "integration.state":
+					// Runtime events are emitted for provider-neutral consumers.
+					// During migration the legacy event stream is still present, so
+					// avoid duplicating chat/task updates or raw debug output here.
+					continue
 				case "agent_started":
 					outputChan <- fmt.Sprintf("Agent started: %s\n", event.Name)
 				case "agent_completed":
@@ -210,12 +231,14 @@ func (i *Integration) StreamExecution(ctx context.Context, sessionID string, inp
 				case "progress":
 					outputChan <- fmt.Sprintf("%s\n", event.Message)
 				case "claude_stream":
-					// Forward raw Claude stream line to the session for parsing
+					// Backward compatibility for old CLI versions.
 					if onMessage != nil && event.Message != "" {
-						onMessage("claude_stream", event.Message)
+						onMessage("provider.raw", event.Message)
 					}
 				default:
-					outputChan <- line + "\n"
+					if !isRuntimeEventType(event.Type) {
+						outputChan <- line + "\n"
+					}
 				}
 			} else {
 				// Regular output line (not JSON event).
@@ -245,6 +268,42 @@ func (i *Integration) StreamExecution(ctx context.Context, sessionID string, inp
 	return map[string]interface{}{
 		"success": true,
 	}, nil
+}
+
+func (i *Integration) runtimeEnv() []string {
+	env := []string{"BOATMAN_RUNTIME_EVENTS=1"}
+	if !falseyEnv(os.Getenv("BOATMAN_RUNTIME_STORE")) {
+		env = append(env, "BOATMAN_RUNTIME_STORE_DIR="+envOrDefault("BOATMAN_RUNTIME_STORE_DIR", filepath.Join(i.repoPath, ".boatman", "runs")))
+	}
+	env = append(env, "BOATMAN_MEMORY_DIR="+envOrDefault("BOATMAN_MEMORY_DIR", filepath.Join(i.repoPath, ".boatman", "memory")))
+	return env
+}
+
+func envOrDefault(key, fallback string) string {
+	if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+		return value
+	}
+	return fallback
+}
+
+func falseyEnv(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "0", "false", "no", "off", "disabled":
+		return true
+	default:
+		return false
+	}
+}
+
+func runtimeRawPayload(event BoatmanEvent) string {
+	if len(event.Raw) > 0 {
+		return string(event.Raw)
+	}
+	return event.Message
+}
+
+func isRuntimeEventType(eventType string) bool {
+	return strings.Contains(eventType, ".")
 }
 
 // FetchTickets retrieves tickets from Linear (via boatmanmode CLI)

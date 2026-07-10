@@ -16,7 +16,13 @@ interface LogEntry {
 
 export function LogsPanel({ messages, isActive }: LogsPanelProps) {
   const [isExpanded, setIsExpanded] = useState(true);
+  const [clearedSignature, setClearedSignature] = useState<string | null>(null);
   const logsEndRef = useRef<HTMLDivElement>(null);
+
+  const messageSignature = useMemo(
+    () => messages.map((msg) => `${msg.id}:${msg.timestamp}`).join('|'),
+    [messages]
+  );
 
   // Memoize log conversion to avoid rebuilding on every render
   const logs = useMemo(() => {
@@ -37,17 +43,19 @@ export function LogsPanel({ messages, isActive }: LogsPanelProps) {
     return newLogs;
   }, [messages]);
 
+  const visibleLogs = clearedSignature === messageSignature ? [] : logs;
+
   // Memoize activity indicator separately to avoid rebuilding logs
   const logsWithActivity = useMemo(() => {
-    if (isActive && logs.length > 0) {
-      return [...logs, {
+    if (isActive && visibleLogs.length > 0) {
+      return [...visibleLogs, {
         timestamp: new Date(),
         type: 'event' as const,
         content: '⚡ Claude is working...',
       }];
     }
-    return logs;
-  }, [logs, isActive]);
+    return visibleLogs;
+  }, [visibleLogs, isActive]);
 
   useEffect(() => {
     // Auto-scroll to bottom
@@ -99,7 +107,19 @@ export function LogsPanel({ messages, isActive }: LogsPanelProps) {
           <span className="text-xs text-slate-500">({logsWithActivity.length} entries)</span>
         </div>
         <div className="flex items-center gap-2">
-          {/* Clear button removed since logs are now derived from messages */}
+          {logsWithActivity.length > 0 && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setClearedSignature(messageSignature);
+              }}
+              className="p-1 text-slate-500 hover:text-red-400 transition-colors"
+              title="Clear logs"
+              aria-label="Clear logs"
+            >
+              <Trash2 className="w-3 h-3" />
+            </button>
+          )}
           {isExpanded ? (
             <ChevronDown className="w-4 h-4 text-slate-400" />
           ) : (

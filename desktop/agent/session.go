@@ -1,14 +1,18 @@
 package agent
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"os/exec"
 	"strings"
 	"sync"
 	"time"
+
+	runtimeproviders "boatman/agent/providers"
+	agentruntime "github.com/philjestin/boatman-ecosystem/shared/agentruntime"
+	"github.com/philjestin/boatman-ecosystem/shared/agentruntime/runprep"
+	"github.com/philjestin/boatman-ecosystem/shared/agentruntime/runstore"
 )
 
 // SessionStatus represents the current state of an agent session
@@ -37,7 +41,7 @@ type AgentInfo struct {
 	AgentType     string    `json:"agentType"` // "main", "task", "explore", etc.
 	ParentAgentID string    `json:"parentAgentId,omitempty"`
 	Description   string    `json:"description,omitempty"`
-	Status        string    `json:"status,omitempty"`        // "active" or "completed"
+	Status        string    `json:"status,omitempty"` // "active" or "completed"
 	CompletedAt   time.Time `json:"completedAt,omitempty"`
 }
 
@@ -75,34 +79,34 @@ type Task struct {
 	ID          string                 `json:"id"`
 	Subject     string                 `json:"subject"`
 	Description string                 `json:"description"`
-	Status      string                 `json:"status"` // "pending", "in_progress", "completed"
+	Status      string                 `json:"status"`             // "pending", "in_progress", "completed"
 	Metadata    map[string]interface{} `json:"metadata,omitempty"` // Phase-specific data (diffs, feedback, etc.)
 }
 
 // Session represents an individual agent session
 type Session struct {
-	ID          string                 `json:"id"`
-	ProjectPath string                 `json:"projectPath"`
-	Status      SessionStatus          `json:"status"`
-	Messages    []Message              `json:"messages"`
-	Tasks       []Task                 `json:"tasks"`
-	CreatedAt   time.Time              `json:"createdAt"`
-	UpdatedAt   time.Time              `json:"updatedAt"`
-	Model            string                 `json:"model"`
-	ReasoningEffort  string                 `json:"reasoningEffort,omitempty"`
-	Tags        []string               `json:"tags,omitempty"`
-	IsFavorite  bool                   `json:"isFavorite,omitempty"`
-	Mode        string                 `json:"mode"` // "standard", "firefighter", "boatmanmode"
-	ModeConfig  map[string]interface{} `json:"modeConfig,omitempty"`
+	ID              string                 `json:"id"`
+	ProjectPath     string                 `json:"projectPath"`
+	Status          SessionStatus          `json:"status"`
+	Messages        []Message              `json:"messages"`
+	Tasks           []Task                 `json:"tasks"`
+	CreatedAt       time.Time              `json:"createdAt"`
+	UpdatedAt       time.Time              `json:"updatedAt"`
+	Model           string                 `json:"model"`
+	ReasoningEffort string                 `json:"reasoningEffort,omitempty"`
+	Tags            []string               `json:"tags,omitempty"`
+	IsFavorite      bool                   `json:"isFavorite,omitempty"`
+	Mode            string                 `json:"mode"` // "standard", "firefighter", "boatmanmode"
+	ModeConfig      map[string]interface{} `json:"modeConfig,omitempty"`
 
-	mu             sync.RWMutex
-	ctx            context.Context
-	cancel         context.CancelFunc
-	onMessage      func(Message)
-	onTask         func(Task)
-	onStatus       func(SessionStatus)
-	conversationID string
-	currentAgentID  string // Tracks which agent is currently active
+	mu              sync.RWMutex
+	ctx             context.Context
+	cancel          context.CancelFunc
+	onMessage       func(Message)
+	onTask          func(Task)
+	onStatus        func(SessionStatus)
+	conversationID  string
+	currentAgentID  string                // Tracks which agent is currently active
 	agents          map[string]*AgentInfo // All known agents in this session
 	toolIDToAgentID map[string]string     // Maps Task tool_use ID -> spawned agent ID
 	agentStack      []string              // Stack of active agent IDs for nested subagents
@@ -446,151 +450,93 @@ func (s *Session) handleSlashCommand(cmd string, authConfig AuthConfig) error {
 	}
 }
 
-// runClaudeCommand executes the Claude CLI with the given prompt
+// runClaudeCommand executes the configured provider command with the given prompt.
 func (s *Session) runClaudeCommand(prompt string, authConfig AuthConfig) {
-	// Inject system prompt for firefighter mode
-	actualPrompt := prompt
-	s.mu.RLock()
-	if s.Mode == "firefighter" && len(s.Messages) <= 1 {
-		scope, _ := s.ModeConfig["scope"].(string)
-		// Extract MCP server names stored at session creation
-		var mcpNames []string
-		if raw, ok := s.ModeConfig["mcpServers"]; ok {
-			if names, ok := raw.([]string); ok {
-				mcpNames = names
-			} else if ifaces, ok := raw.([]interface{}); ok {
-				for _, v := range ifaces {
-					if name, ok := v.(string); ok {
-						mcpNames = append(mcpNames, name)
-					}
-				}
-			}
-		}
-		systemPrompt := GetFirefighterPrompt(scope, mcpNames...)
-		actualPrompt = systemPrompt + "\n\n" + prompt
-	}
-	s.mu.RUnlock()
-
-	// Build command arguments
-	args := []string{
-		"-p", actualPrompt,
-		"--output-format", "stream-json",
-		"--verbose",
-	}
-
-	// Add system prompt if set (Claude CLI -s flag)
-	if s.systemPrompt != "" {
-		args = append(args, "--system-prompt", s.systemPrompt)
-	}
-
-	// Add conversation resume if we have one
-	if s.conversationID != "" {
-		args = append(args, "-r", s.conversationID)
-	}
-
-	if s.Model != "" {
-		args = append(args, "--model", s.Model)
-	}
-
-	if s.ReasoningEffort != "" {
-		args = append(args, "--effort", s.ReasoningEffort)
-	}
-
-
-	// MCP servers are automatically loaded from ~/.claude/claude_mcp_config.json
-	// No need to pass them as command-line arguments
-
-	// Add approval mode flags
-	// Firefighter mode always gets full permissions since it's a non-interactive agent
-	// that needs unrestricted access to MCP tools (Datadog, Bugsnag, Linear)
-	s.mu.RLock()
-	isFirefighter := s.Mode == "firefighter"
-	s.mu.RUnlock()
-
-	if isFirefighter {
-		args = append(args, "--dangerously-skip-permissions")
-	} else {
-		switch authConfig.ApprovalMode {
-		case "auto-edit":
-			// Allow Edit and Write tools without approval
-			args = append(args, "--allowedTools", "Edit,Write")
-		case "full-auto":
-			// Allow all tools without approval
-			args = append(args, "--dangerously-skip-permissions")
-		case "suggest":
-			// This is the default - require approval for everything
-			// We need to run without stream-json for this to work properly
-			// For now, we'll just use dangerously-skip-permissions to avoid hanging
-			args = append(args, "--dangerously-skip-permissions")
-		}
-	}
-
-	cmd := exec.CommandContext(s.ctx, "claude", args...)
-	cmd.Dir = s.ProjectPath
-
-	// Set environment variables based on auth method
-	if authConfig.Method == "google-cloud" {
-		if authConfig.GCPProjectID != "" {
-			cmd.Env = append(cmd.Environ(), "CLOUD_ML_PROJECT_ID="+authConfig.GCPProjectID)
-		}
-		if authConfig.GCPRegion != "" {
-			cmd.Env = append(cmd.Environ(), "CLOUD_ML_REGION="+authConfig.GCPRegion)
-		}
-	} else {
-		// Use Anthropic API key authentication
-		if authConfig.APIKey != "" {
-			cmd.Env = append(cmd.Environ(), "ANTHROPIC_API_KEY="+authConfig.APIKey)
-		}
-	}
-
-	stdout, err := cmd.StdoutPipe()
+	req := s.buildRuntimeRequest(prompt, authConfig)
+	preparedReq, initialEvents, err := runprep.Prepare(s.ctx, req, runprep.DefaultOptions())
 	if err != nil {
-		s.handleError(fmt.Errorf("failed to create stdout pipe: %w", err))
+		s.handleError(fmt.Errorf("prepare runtime request: %w", err))
 		return
 	}
-
-	stderr, err := cmd.StderrPipe()
+	req = preparedReq
+	provider, err := runtimeproviders.NewDefaultRegistry().ForRequest(req)
 	if err != nil {
-		s.handleError(fmt.Errorf("failed to create stderr pipe: %w", err))
+		s.handleError(err)
+		return
+	}
+	provider = runprep.NewInitialEventsProvider(provider, initialEvents)
+	store, storeEnabled, err := runstore.ForRequest(req)
+	if err != nil {
+		s.handleError(fmt.Errorf("runtime run store: %w", err))
+		return
+	}
+	if storeEnabled {
+		provider = runstore.NewRecordingProvider(provider, store)
+	}
+	stream, err := provider.StartRun(s.ctx, req)
+	if err != nil {
+		s.handleError(fmt.Errorf("failed to start model provider: %w", err))
 		return
 	}
 
-	if err := cmd.Start(); err != nil {
-		s.handleError(fmt.Errorf("failed to start claude: %w", err))
-		return
-	}
-
-	// Read stderr in background and show as system messages
-	go func() {
-		scanner := bufio.NewScanner(stderr)
-		for scanner.Scan() {
-			line := scanner.Text()
-			// Only show non-empty stderr lines
-			if strings.TrimSpace(line) != "" {
-				fmt.Printf("[claude stderr] %s\n", line)
-				// Add as system message if it contains useful info
-				if strings.Contains(line, "error") || strings.Contains(line, "warning") ||
-				   strings.Contains(line, "token") || strings.Contains(line, "cost") {
-					s.addSystemMessage("⚠️  " + line)
-				}
-			}
-		}
-	}()
-
-	// Read and parse stdout
 	var responseBuilder strings.Builder
 	var currentMessageID string // Track the current streaming message
-	scanner := bufio.NewScanner(stdout)
-	buf := make([]byte, 0, 64*1024)
-	scanner.Buffer(buf, 10*1024*1024) // 10MB max to handle large thinking blocks
+	failed := false
 
-	for scanner.Scan() {
-		line := scanner.Text()
-		s.parseStreamLine(line, &responseBuilder, &currentMessageID)
+	for event := range stream {
+		switch event.Type {
+		case agentruntime.EventProviderRaw:
+			if event.Provider == runtimeproviders.DefaultProvider {
+				if len(event.Raw) > 0 {
+					s.parseStreamLine(string(event.Raw), &responseBuilder, &currentMessageID)
+				} else if event.Message != "" {
+					s.parseStreamLine(event.Message, &responseBuilder, &currentMessageID)
+				}
+			}
+
+		case agentruntime.EventMessageDelta:
+			s.handleRuntimeMessageDelta(event, &responseBuilder, &currentMessageID)
+
+		case agentruntime.EventMessageCompleted:
+			s.handleRuntimeMessageCompleted(event, &responseBuilder, &currentMessageID)
+
+		case agentruntime.EventToolCall:
+			s.handleRuntimeToolCall(event)
+
+		case agentruntime.EventToolResult:
+			s.handleRuntimeToolResult(event)
+
+		case agentruntime.EventTaskCreated, agentruntime.EventTaskUpdated:
+			s.handleRuntimeTaskEvent(event)
+
+		case agentruntime.EventApprovalRequest:
+			s.mu.Lock()
+			s.setStatus(SessionStatusWaiting)
+			s.mu.Unlock()
+
+		case agentruntime.EventMemoryLoaded:
+			s.handleRuntimeMemoryLoaded(event)
+
+		case agentruntime.EventLogMessage:
+			line := strings.TrimSpace(event.Message)
+			if line == "" {
+				continue
+			}
+			fmt.Printf("[claude stderr] %s\n", line)
+			if strings.Contains(line, "error") || strings.Contains(line, "warning") ||
+				strings.Contains(line, "token") || strings.Contains(line, "cost") {
+				s.addSystemMessage("⚠️  " + line)
+			}
+
+		case agentruntime.EventRunFailed:
+			failed = true
+			if event.Message != "" {
+				s.handleError(errors.New(event.Message))
+			} else {
+				s.handleError(errors.New("model provider run failed"))
+			}
+		}
 	}
-
-	// Wait for command to finish
-	cmd.Wait()
 
 	// Flush any remaining response
 	if responseBuilder.Len() > 0 {
@@ -599,7 +545,7 @@ func (s *Session) runClaudeCommand(prompt string, authConfig AuthConfig) {
 
 	// Set status back to idle
 	s.mu.Lock()
-	if s.Status == SessionStatusRunning {
+	if s.Status == SessionStatusRunning && !failed {
 		s.setStatus(SessionStatusIdle)
 	}
 	s.mu.Unlock()
@@ -608,6 +554,115 @@ func (s *Session) runClaudeCommand(prompt string, authConfig AuthConfig) {
 	if err := SaveSession(s); err != nil {
 		fmt.Printf("Warning: failed to save session %s after command: %v\n", s.ID, err)
 	}
+}
+
+func (s *Session) handleRuntimeMessageDelta(event agentruntime.Event, responseBuilder *strings.Builder, currentMessageID *string) {
+	if strings.TrimSpace(event.Message) == "" {
+		return
+	}
+	responseBuilder.WriteString(event.Message)
+	if *currentMessageID == "" {
+		*currentMessageID = s.createStreamingMessage()
+	}
+	s.updateStreamingMessage(*currentMessageID, responseBuilder.String())
+}
+
+func (s *Session) handleRuntimeMessageCompleted(event agentruntime.Event, responseBuilder *strings.Builder, currentMessageID *string) {
+	message := strings.TrimSpace(event.Message)
+	if *currentMessageID != "" && responseBuilder.Len() > 0 {
+		current := responseBuilder.String()
+		s.finalizeMessage(*currentMessageID, current)
+		responseBuilder.Reset()
+		*currentMessageID = ""
+		if message == "" || message == strings.TrimSpace(current) {
+			return
+		}
+	}
+	if message != "" {
+		s.addAssistantMessage(event.Message)
+	}
+}
+
+func (s *Session) handleRuntimeToolCall(event agentruntime.Event) {
+	if event.Tool == nil {
+		return
+	}
+	input := any(nil)
+	if len(event.Tool.Input) > 0 {
+		_ = json.Unmarshal(event.Tool.Input, &input)
+	}
+	s.handleToolUse(map[string]any{
+		"name":  event.Tool.Name,
+		"id":    event.Tool.ID,
+		"input": input,
+	})
+}
+
+func (s *Session) handleRuntimeToolResult(event agentruntime.Event) {
+	if event.Tool == nil {
+		return
+	}
+	content := string(event.Tool.Output)
+	var decoded any
+	if len(event.Tool.Output) > 0 && json.Unmarshal(event.Tool.Output, &decoded) == nil {
+		if text, ok := decoded.(string); ok {
+			content = text
+		}
+	}
+	s.handleToolResult(map[string]any{
+		"tool_use_id": event.Tool.ID,
+		"content":     content,
+		"is_error":    event.Tool.IsError,
+	})
+}
+
+func (s *Session) handleRuntimeTaskEvent(event agentruntime.Event) {
+	id := strings.TrimSpace(event.TaskID)
+	if id == "" {
+		id = strings.TrimSpace(event.PhaseID)
+	}
+	if id == "" {
+		id = fmt.Sprintf("task-%d", time.Now().UnixNano())
+	}
+	subject := firstNonEmpty(event.Name, event.Message, event.Description, id)
+	s.AddOrUpdateTask(id, subject, event.Description, runtimeTaskStatus(event.Status, event.Type))
+}
+
+func (s *Session) handleRuntimeMemoryLoaded(event agentruntime.Event) {
+	count := 0
+	if rawDocs, ok := event.Data["documents"].([]map[string]any); ok {
+		count = len(rawDocs)
+	} else if rawDocs, ok := event.Data["documents"].([]any); ok {
+		count = len(rawDocs)
+	}
+	if count == 0 {
+		return
+	}
+	s.addSystemMessage(fmt.Sprintf("Loaded %d memory document(s) for this run.", count))
+}
+
+func runtimeTaskStatus(status agentruntime.Status, eventType agentruntime.EventType) string {
+	switch status {
+	case agentruntime.StatusCompleted, agentruntime.StatusSucceeded:
+		return "completed"
+	case agentruntime.StatusStarted, agentruntime.StatusRunning, agentruntime.StatusInProgress:
+		return "in_progress"
+	case agentruntime.StatusFailed, agentruntime.StatusCanceled, agentruntime.StatusSkipped:
+		return string(status)
+	}
+	if eventType == agentruntime.EventTaskCreated {
+		return "pending"
+	}
+	return "in_progress"
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
 }
 
 // parseStreamLine parses a single line of stream-json output

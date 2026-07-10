@@ -4,7 +4,7 @@
 
 ### Prerequisites
 - Go 1.24.1+
-- Node.js 18+
+- Node.js 24+
 - Wails v2 CLI
 - `tmux`
 
@@ -23,7 +23,7 @@ go work sync
 cd cli && go build -o boatman ./cmd/boatman
 
 # Desktop
-cd desktop && wails build
+make build-desktop
 
 # Or use the Makefile
 make build-all
@@ -39,10 +39,10 @@ cd cli && go test ./...
 cd desktop && go test ./...
 
 # Frontend tests
-cd desktop/frontend && npm test
+cd desktop/frontend && npm run test:run
 
-# All tests
-make test-all
+# Runtime/provider/docs/frontend quality gate
+make quality
 ```
 
 ---

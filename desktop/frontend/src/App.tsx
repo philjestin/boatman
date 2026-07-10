@@ -18,17 +18,18 @@ import { TriageDialog } from './components/triage/TriageDialog';
 import { TriageView } from './components/triage/TriageView';
 import { HarnessView } from './components/harness/HarnessView';
 import { BrainView } from './components/brain/BrainView';
+import { RuntimeView } from './components/runtime/RuntimeView';
 import { useAgent } from './hooks/useAgent';
 import { useProject } from './hooks/useProject';
 import { usePreferences } from './hooks/usePreferences';
 import { useSearch } from './hooks/useSearch';
 import { useDiff } from './hooks/useDiff';
 import { useStore } from './store';
-import { ListTodo, MessageSquare, FileCode, Hammer, Brain } from 'lucide-react';
+import { Activity, ListTodo, MessageSquare, FileCode, Hammer, Brain } from 'lucide-react';
 import { ListAgentSessions, SetSessionFavorite, AddSessionTag, RemoveSessionTag } from '../wailsjs/go/main/App';
 import type { Task, TriageOptions } from './types';
 
-type TabView = 'chat' | 'tasks' | 'diff' | 'harness' | 'brain';
+type TabView = 'chat' | 'tasks' | 'diff' | 'harness' | 'brain' | 'runtime';
 
 function App() {
   const [activeTab, setActiveTab] = useState<TabView>('chat');
@@ -458,7 +459,7 @@ function App() {
 
         {/* Main Content */}
         <MainPanel
-          isEmpty={!hasActiveSession && activeTab !== 'harness' && activeTab !== 'brain'}
+          isEmpty={!hasActiveSession && activeTab !== 'harness' && activeTab !== 'brain' && activeTab !== 'runtime'}
           onNewSession={handleNewSession}
           onOpenProject={handleOpenProject}
         >
@@ -533,6 +534,17 @@ function App() {
               <Brain className="w-4 h-4" />
               Brain
             </button>
+            <button
+              onClick={() => setActiveTab('runtime')}
+              className={`flex items-center gap-2 px-4 py-3 text-sm transition-colors border-b-2 ${
+                activeTab === 'runtime'
+                  ? 'border-cyan-500 text-slate-100'
+                  : 'border-transparent text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Activity className="w-4 h-4" />
+              Runtime
+            </button>
           </div>
 
           {/* Tab Content */}
@@ -599,6 +611,7 @@ function App() {
             )}
             {activeTab === 'harness' && <HarnessView />}
             {activeTab === 'brain' && <BrainView />}
+            {activeTab === 'runtime' && <RuntimeView projectPath={activeProject?.path} />}
           </div>
         </MainPanel>
       </div>

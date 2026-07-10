@@ -11,6 +11,8 @@ Boatman Desktop stores all data locally on your machine. No cloud sync is used u
 | `~/.boatman/checkpoints/` | Workflow checkpoints (used by CLI pipeline) |
 | `~/.boatman/memory/` | Per-project learning data (used by CLI pipeline) |
 | `~/.claude/claude_mcp_config.json` | MCP server configurations |
+| `<project>/.boatman/runs/` | Provider-neutral runtime run records |
+| `<project>/.boatman/memory/` | Inspectable runtime memory Markdown documents |
 
 ---
 
@@ -67,6 +69,51 @@ Configure in Settings > Memory:
 
 ---
 
+## Runtime Store
+
+When runtime recording is enabled, Boatman writes one directory per run:
+
+```text
+<project>/.boatman/runs/<run-id>/
+  metadata.json
+  request.json
+  events.ndjson
+  artifacts.json
+```
+
+The Desktop Runtime tab reads these files directly. The CLI can inspect the
+same data:
+
+```bash
+boatman runs list
+boatman runs show <run-id>
+boatman runs request <run-id>
+boatman runs artifacts <run-id>
+```
+
+Project-local recording is enabled for Desktop and provider-backed CLI runs by
+default. Set `BOATMAN_RUNTIME_STORE_DIR` to write runs somewhere else, or set
+`BOATMAN_RUNTIME_STORE=0` to disable default recording.
+
+---
+
+## Runtime Memory Documents
+
+Runtime memory documents are Markdown files with frontmatter:
+
+```text
+<project>/.boatman/memory/
+  project.md
+  domains/payments.md
+```
+
+They are intended to be human-inspectable. Boatman loads non-expired documents
+as context for future provider runs, records a `memory.loaded` event, and the
+Runtime tab shows their scope, provenance, source run, expiration, path, and
+full body.
+
+---
+
 ## Data Privacy
 
 - All session data stays on your local machine
@@ -82,3 +129,5 @@ The CLI pipeline (used by BoatmanMode) stores additional data. See [Harness Stor
 
 - **Checkpoints** (`~/.boatman/checkpoints/`) — workflow progress for crash recovery
 - **Memory** (`~/.boatman/memory/`) — learned patterns and preferences per project
+- **Runtime runs** (`<project>/.boatman/runs/`) — provider-neutral run events and artifacts
+- **Runtime memory** (`<project>/.boatman/memory/`) — inspectable Markdown context documents

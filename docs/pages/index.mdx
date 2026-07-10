@@ -2,7 +2,9 @@
 
 **AI-powered autonomous software development, from CLI to desktop.**
 
-Boatman is an integrated ecosystem for automating software development workflows using Claude AI. It takes tasks — from Linear tickets, inline prompts, or markdown files — and implements them end-to-end: planning, coding, testing, reviewing, refactoring, and creating pull requests.
+Boatman is an integrated ecosystem for automating software development workflows with provider-backed AI agents. It takes tasks — from Linear tickets, inline prompts, or markdown files — and implements them end-to-end: planning, coding, testing, reviewing, refactoring, and creating pull requests.
+
+The current architecture uses a provider-neutral runtime so new Claude, OpenAI, MCP, tool, structured-output, and background-run features can be adopted behind adapters instead of being threaded through every workflow. Runtime runs, artifacts, integration health, and memory are recorded as inspectable files so both humans and future agents can understand what happened.
 
 ---
 
@@ -14,8 +16,9 @@ The command-line autonomous development agent. Feed it a task, and it orchestrat
 
 - Multi-phase workflow: plan, execute, test, review, refactor
 - Git worktree isolation for safe parallel work
-- Configurable Claude model selection per agent
-- Structured JSON event emission for integration
+- Provider routing for Claude CLI, OpenAI Responses, and future adapters
+- Structured legacy and normalized runtime event emission
+- Inspectable run store, artifacts, request replay, and memory docs
 - Usable as a Go library
 
 [Get started with the CLI →](/cli)
@@ -29,6 +32,8 @@ A cross-platform desktop application built with Wails (Go + React) that wraps th
 - Real-time streaming of agent execution
 - Session management and project organization
 - MCP server integration (Linear, Datadog, Bugsnag, Slack)
+- Runtime tab for inspecting recorded runs, artifacts, events, and memory
+- Integration health status before starting long-running workflows
 
 [Get started with the Desktop app →](/desktop)
 
@@ -52,7 +57,7 @@ A cross-platform desktop application built with Wails (Go + React) that wraps th
 │  4. Execute (AI Agent)   8. Commit & Push                   │
 │                          9. Create PR                       │
 │                                                             │
-│  Emits structured JSON events ─────────────────────────┐    │
+│  Emits legacy JSON + normalized runtime events ────────┐    │
 └─────────────────────────────────────────────────────────┼────┘
                                                           │
          ┌────────────────────────────────────────────────┘
@@ -65,7 +70,22 @@ A cross-platform desktop application built with Wails (Go + React) that wraps th
 │  • Displays real-time agent progress in Tasks tab           │
 │  • Provides Firefighter Mode for incident investigation     │
 │  • Integrates with Linear, Bugsnag, Datadog via MCP         │
+│  • Reads .boatman/runs and .boatman/memory in Runtime tab   │
 └─────────────────────────────────────────────────────────────┘
+```
+
+Runtime files are intentionally plain:
+
+```text
+.boatman/
+  runs/<run-id>/
+    metadata.json
+    request.json
+    events.ndjson
+    artifacts.json
+  memory/
+    project.md
+    domains/payments.md
 ```
 
 ---
@@ -106,7 +126,7 @@ make dev
 | Tool | Purpose | Required For |
 |------|---------|-------------|
 | Go 1.24.1+ | Build CLI and Desktop backend | Both |
-| Node.js 18+ | Desktop frontend | Desktop |
+| Node.js 24+ | Desktop frontend and quality gates | Desktop |
 | Wails v2 | Desktop app framework | Desktop |
 | `claude` CLI | AI code generation and review | Both |
 | `gh` CLI | Pull request creation | CLI |
@@ -131,7 +151,30 @@ boatman-ecosystem/
 │   └── config/       # Configuration
 │
 ├── shared/           # Shared Go packages
+│   └── agentruntime/ # Provider-neutral runtime contracts
+├── harness/          # Harness primitives and scaffold helpers
 ├── docs/             # This documentation site
 ├── go.work           # Go workspace configuration
 └── Makefile          # Build commands
 ```
+
+## Runtime Inspection
+
+Use the CLI when you want terminal output:
+
+```bash
+boatman providers
+boatman integrations check
+boatman work --prompt "Update docs"
+boatman runs list
+boatman runs show <run-id>
+boatman memory list
+boatman memory context project domains/payments
+```
+
+Use the Desktop Runtime tab when you want the same information in the app:
+
+- Runs: provider, model, role, status, event count, artifact count
+- Events: normalized lifecycle, tool, schema, memory, integration, usage, and artifact events
+- Artifacts: files, diffs, PRs, or other durable outputs recorded by the runtime
+- Memory: Markdown context documents with scope, provenance, source run, expiration, path, and full body

@@ -30,11 +30,20 @@ Access settings via the gear icon in the top-right corner.
 | Auto-cleanup sessions | 30 days | Delete sessions older than this |
 | Max total sessions | 100 | Maximum number of stored sessions |
 
+This tab controls desktop conversation retention. Provider-neutral runtime memory
+documents are separate Markdown files under `.boatman/memory` or
+`BOATMAN_MEMORY_DIR`.
+
 ### MCP Servers Tab
 
 - Enable/disable individual MCP servers
 - Add custom MCP servers
 - Configure environment variables per server
+- Review integration health for built-in MCP-backed services
+
+Built-in integration health currently covers Datadog, Bugsnag, Linear, and
+Slack. A status of `needs_configuration` means required environment variables or
+settings are missing before Boatman can hand that integration to a provider run.
 
 ### Firefighter Tab
 
@@ -59,6 +68,21 @@ Access settings via the gear icon in the top-right corner.
 | `~/.boatman/config.json` | User preferences and settings |
 | `~/.claude/claude_mcp_config.json` | MCP server configurations |
 | `~/.boatman/sessions/` | Session data and history |
+| `<project>/.boatman/runs/` | Recorded runtime runs, requests, events, and artifacts |
+| `<project>/.boatman/memory/` | Inspectable runtime memory Markdown documents |
+
+### Runtime Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `BOATMAN_RUNTIME_STORE=0` | Disable default project-local runtime recording |
+| `BOATMAN_RUNTIME_STORE_DIR` | Override the runtime run store directory |
+| `BOATMAN_MEMORY_DIR` | Override the runtime memory document directory |
+| `BOATMAN_RUNTIME_EVENTS=1` | Emit normalized runtime events alongside legacy CLI events |
+
+The Desktop Runtime tab reads the same run store and memory directories as the
+CLI inspection commands. Desktop sessions and BoatmanMode write to the active
+project's `.boatman/runs` and load `.boatman/memory` by default.
 
 ### Build Configuration
 

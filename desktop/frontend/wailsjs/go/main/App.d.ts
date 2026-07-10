@@ -84,6 +84,8 @@ export function GetGitDiff(arg1:string,arg2:string):Promise<string>;
 
 export function GetGitStatus(arg1:string):Promise<main.GitStatus>;
 
+export function GetIntegrationStatuses():Promise<Array<mcp.IntegrationStatus>>;
+
 export function GetKeepCompletedAgents():Promise<boolean>;
 
 export function GetMCPPresets():Promise<Array<mcp.Server>>;
@@ -91,6 +93,8 @@ export function GetMCPPresets():Promise<Array<mcp.Server>>;
 export function GetMCPServerNames():Promise<Array<string>>;
 
 export function GetMCPServers():Promise<Array<mcp.Server>>;
+
+export function GetMemoryDocument(arg1:string,arg2:string):Promise<main.MemoryDocumentDetail>;
 
 export function GetMaxAgentsPerSession():Promise<number>;
 
@@ -107,6 +111,8 @@ export function GetPreferences():Promise<config.UserPreferences>;
 export function GetProject(arg1:string):Promise<project.Project>;
 
 export function GetRecentProjects(arg1:number):Promise<Array<project.Project>>;
+
+export function GetRuntimeRun(arg1:string,arg2:string):Promise<main.RuntimeRunDetail>;
 
 export function GetSessionInfo(arg1:string):Promise<Record<string, any>>;
 
@@ -149,6 +155,10 @@ export function ListBrains():Promise<Array<services.BrainEntry>>;
 export function ListHarnesses():Promise<Array<harnessui.HarnessInfo>>;
 
 export function ListProjects():Promise<Array<project.Project>>;
+
+export function ListMemoryDocuments(arg1:string):Promise<Array<main.MemoryDocumentSummary>>;
+
+export function ListRuntimeRuns(arg1:string):Promise<Array<main.RuntimeRunSummary>>;
 
 export function ListSignals():Promise<Array<services.SignalEntry>>;
 

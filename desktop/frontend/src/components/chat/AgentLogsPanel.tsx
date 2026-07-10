@@ -24,7 +24,13 @@ export function AgentLogsPanel({ messages, isActive }: AgentLogsPanelProps) {
   const [isExpanded, setIsExpanded] = useState(true);
   const [activeAgentId, setActiveAgentId] = useState<string>('main');
   const [showHierarchy, setShowHierarchy] = useState(false);
+  const [clearedSignature, setClearedSignature] = useState<string | null>(null);
   const logsEndRef = useRef<HTMLDivElement>(null);
+
+  const messageSignature = useMemo(
+    () => messages.map((msg) => `${msg.id}:${msg.timestamp}`).join('|'),
+    [messages]
+  );
 
   // Memoize agent map construction to avoid rebuilding on every render
   const agents = useMemo(() => {
@@ -67,11 +73,13 @@ export function AgentLogsPanel({ messages, isActive }: AgentLogsPanelProps) {
     return agentMap;
   }, [messages]);
 
+  const visibleAgents = clearedSignature === messageSignature ? new Map<string, AgentData>() : agents;
+
   // Memoize agents with activity indicator separately
   const agentsWithActivity = useMemo(() => {
-    if (!isActive || agents.size === 0) return agents;
+    if (!isActive || visibleAgents.size === 0) return visibleAgents;
 
-    const agentMapCopy = new Map(agents);
+    const agentMapCopy = new Map(visibleAgents);
     agentMapCopy.forEach((data, agentId) => {
       agentMapCopy.set(agentId, {
         ...data,
@@ -85,7 +93,7 @@ export function AgentLogsPanel({ messages, isActive }: AgentLogsPanelProps) {
     });
 
     return agentMapCopy;
-  }, [agents, isActive]);
+  }, [visibleAgents, isActive]);
 
   // Auto-select first agent if current selection doesn't exist
   useEffect(() => {
@@ -222,7 +230,19 @@ export function AgentLogsPanel({ messages, isActive }: AgentLogsPanelProps) {
               <GitBranch className="w-3 h-3" />
             </button>
           )}
-          {/* Clear button removed since logs are now derived from messages */}
+          {agentsWithActivity.size > 0 && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setClearedSignature(messageSignature);
+              }}
+              className="p-1 text-slate-500 hover:text-red-400 transition-colors"
+              title="Clear logs"
+              aria-label="Clear logs"
+            >
+              <Trash2 className="w-3 h-3" />
+            </button>
+          )}
           {isExpanded ? (
             <ChevronDown className="w-4 h-4 text-slate-400" />
           ) : (
@@ -256,7 +276,7 @@ export function AgentLogsPanel({ messages, isActive }: AgentLogsPanelProps) {
                 ) : agentStatus === 'active' ? (
                   <span className="inline-block w-2 h-2 bg-cyan-400 rounded-full animate-pulse" title="Active" />
                 ) : null}
-                {data.info.agentType === 'main' ? 'Main' : data.info.agentType || 'Agent'}
+                {data.info.agentType === 'main' ? '⭐ Main' : `🤖 ${data.info.agentType || 'Agent'}`}
                 <span className="text-slate-600">({data.logs.length})</span>
               </button>
             );

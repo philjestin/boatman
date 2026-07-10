@@ -12,7 +12,6 @@ import (
 	"boatman/agent"
 	"boatman/auth"
 	bmintegration "boatman/boatmanmode"
-	triageintegration "boatman/triage"
 	"boatman/config"
 	"boatman/diff"
 	gitpkg "boatman/git"
@@ -20,6 +19,7 @@ import (
 	"boatman/mcp"
 	"boatman/project"
 	"boatman/services"
+	triageintegration "boatman/triage"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -385,12 +385,12 @@ func (a *App) GetWorkspaceInfo(path string) (*project.WorkspaceInfo, error) {
 
 // GitStatus represents git status for a project
 type GitStatus struct {
-	IsRepo    bool            `json:"isRepo"`
-	Branch    string          `json:"branch"`
-	Modified  []string        `json:"modified"`
-	Added     []string        `json:"added"`
-	Deleted   []string        `json:"deleted"`
-	Untracked []string        `json:"untracked"`
+	IsRepo    bool     `json:"isRepo"`
+	Branch    string   `json:"branch"`
+	Modified  []string `json:"modified"`
+	Added     []string `json:"added"`
+	Deleted   []string `json:"deleted"`
+	Untracked []string `json:"untracked"`
 }
 
 // GetGitStatus returns git status for a project
@@ -484,6 +484,15 @@ func (a *App) UpdateMCPServer(server mcp.Server) error {
 // GetMCPPresets returns preset MCP servers
 func (a *App) GetMCPPresets() []mcp.Server {
 	return mcp.GetPresetServers()
+}
+
+// GetIntegrationStatuses returns broker-visible status for known MCP-backed integrations.
+func (a *App) GetIntegrationStatuses() ([]mcp.IntegrationStatus, error) {
+	servers, err := a.mcpManager.GetServers()
+	if err != nil {
+		return nil, err
+	}
+	return mcp.GetIntegrationStatuses(servers), nil
 }
 
 // =============================================================================
@@ -967,8 +976,8 @@ func (a *App) StreamBoatmanModeExecution(sessionID, input, mode, linearAPIKey, p
 			var streamMsgID string
 
 			onMessage = func(role, content string) {
-				if role == "claude_stream" {
-					// Route raw Claude stream-json line through the session parser
+				if role == "provider.raw" || role == "claude_stream" {
+					// Route raw provider stream-json line through the session parser.
 					session.ProcessExternalStreamLine(content, &streamBuilder, &streamMsgID)
 				} else {
 					session.AddBoatmanMessage(role, content)
@@ -1055,6 +1064,19 @@ func (a *App) HandleBoatmanModeEvent(sessionID string, eventType string, eventDa
 	}
 
 	switch eventType {
+	case "run.started", "run.completed", "run.failed",
+		"phase.started", "phase.completed",
+		"message.delta", "message.completed",
+		"provider.raw", "usage.updated",
+		"tool.call", "tool.result",
+		"approval.requested", "approval.resolved",
+		"artifact.changed", "schema.result",
+		"log.message", "memory.loaded", "integration.state":
+		// Runtime events are emitted alongside legacy events during the
+		// migration to provider-neutral streams. The current desktop UI still
+		// derives task/message state from legacy events, so ignore these here.
+		return nil
+
 	case "agent_started":
 		// Create task for the agent
 		id, _ := eventData["id"].(string)
@@ -1640,13 +1662,13 @@ func (a *App) GetSessionInfo(sessionID string) (map[string]interface{}, error) {
 		return nil, err
 	}
 	return map[string]interface{}{
-		"projectPath":    session.ProjectPath,
-		"model":          session.Model,
+		"projectPath":     session.ProjectPath,
+		"model":           session.Model,
 		"reasoningEffort": session.ReasoningEffort,
-		"conversationId": session.GetConversationID(),
-		"systemPrompt":   session.GetSystemPrompt(),
-		"messageCount":   len(session.GetMessages()),
-		"mode":           session.Mode,
+		"conversationId":  session.GetConversationID(),
+		"systemPrompt":    session.GetSystemPrompt(),
+		"messageCount":    len(session.GetMessages()),
+		"mode":            session.Mode,
 	}, nil
 }
 

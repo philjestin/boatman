@@ -1,0 +1,385 @@
+# Runtime Platform
+
+Boatman's next architecture treats model providers as replaceable adapters behind a
+provider-neutral agent runtime. The goal is to let Boatman adopt new Claude,
+OpenAI, local-model, and MCP features without threading provider-specific flags,
+stream formats, and model names through the CLI and desktop UI.
+
+## Current Pressure
+
+The existing system works, but provider behavior leaks into several layers:
+
+- CLI execution shells directly to the Claude CLI and parses Claude stream JSON.
+- Desktop also shells directly to the Claude CLI for interactive sessions.
+- Events include provider-specific names such as `claude_stream`.
+- Triage, planning, and review often rely on prompt-only JSON instructions plus
+  best-effort parsing.
+- MCP configuration is shaped around Claude's local config file.
+
+These choices were practical early on. They become expensive as model providers
+ship new primitives such as structured outputs, tool search, remote MCP,
+background runs, computer use, approvals, hosted tools, tracing, and SDK-managed
+agent loops.
+
+## Target Shape
+
+```text
+runtime/
+  providers/      claude-cli, anthropic-api, claude-agent-sdk, openai-responses
+  events/         normalized runtime event stream
+  tools/          local tools, MCP, approvals, sandbox policy
+  schemas/        structured output registry
+  workflows/      plan, execute, review, triage, firefighter
+  state/          runs, sessions, artifacts, checkpoints, usage, raw logs
+  evals/          provider conformance and workflow regression tests
+```
+
+The first shared contract lives in `shared/agentruntime`. It defines normalized
+events, provider capabilities, run requests, tool references, MCP references,
+approval policies, reasoning options, and structured output schemas.
+
+The first concrete adapter is `cli/internal/providers/claudecli`. It wraps the
+existing Claude CLI integration behind `agentruntime.Provider`, emits normalized
+run/phase/message/usage events, and preserves raw Claude stream JSON as
+`provider.raw`.
+
+`shared/agentruntime/providers/openairesponses` adds a conservative OpenAI Responses
+adapter. It uses the current `/v1/responses` request shape with `input`,
+`reasoning`, `text.format` JSON schemas, usage extraction, raw response
+preservation, hosted tool descriptors, remote MCP descriptors, and
+`function_call` / `function_call_output` tool turns. It requires
+`OPENAI_API_KEY` plus either `RunRequest.Model` or `OPENAI_MODEL`.
+
+`shared/agentruntime/toolbroker` is the first local broker layer. It provides
+provider-neutral tool schemas and rooted local implementations for `Read`,
+`Write`, `Edit`, `Bash`, `Grep`, and `Glob`. Planner, executor, triage planner,
+desktop auto-edit, and OpenAI Responses all consume these same tool refs, so a
+tool schema or approval rule changes in one place. File tools are constrained to
+the run workspace. `Write` and `Edit` require edit approval, and `Bash` requires
+`full_auto`.
+
+`shared/agentruntime/runstore` persists normalized runtime events as
+human-readable files. Each run gets a directory with `metadata.json`,
+`request.json`, append-only `events.ndjson`, and an `artifacts.json` manifest,
+making raw provider logs, normalized tool calls, usage updates, terminal status,
+completed messages, original run requests, and durable outputs inspectable
+without a database. Runtime callers wrap providers with
+`runstore.NewRecordingProvider`, so CLI, desktop, Claude CLI, OpenAI Responses,
+and future adapters share the same recording path. Project-scoped provider calls
+now set request metadata `runStoreDir` by default, which writes events under the
+run workdir at `.boatman/runs`. Set `BOATMAN_RUNTIME_STORE_DIR=/path/to/runs`
+for a fixed location, or `BOATMAN_RUNTIME_STORE=0` to disable default recording.
+The package now exposes an `EventStore` interface over run metadata, events,
+original `RunRequest` payloads, and artifact manifests, so a future central
+agent-plane service can swap the file store for Postgres or another durable
+append-only store without changing CLI or desktop callers.
+
+The CLI registry lives in `cli/internal/providers`. It currently registers
+`claude-cli`, preserves the existing configured Claude command, and routes
+workflows through `runtime.default_provider`, `runtime.role_providers`, and
+`runtime.profile_providers`. This lets a future OpenAI, Anthropic API,
+local-model, or hosted-agent adapter be enabled for one role, such as `scorer`,
+or one narrow profile, such as `triage-planner`, without rewriting workflow
+code. `boatman providers` prints the registered adapters and their capability
+flags, with `boatman providers --json` for automation and docs checks.
+`boatman providers check` validates configured runtime routes before a long
+agent run reaches a missing adapter.
+
+```yaml
+runtime:
+  default_provider: claude-cli
+  role_providers:
+    reviewer: claude-cli
+  profile_providers:
+    triage-scorer: openai-responses
+```
+
+Provider conformance helpers live in `shared/agentruntime/conformance`. Adapter
+tests should use these checks to verify lifecycle events, provider identity,
+timestamps, terminal status, raw provider payload preservation, usage events,
+and completed messages. This gives new OpenAI or Claude adapters a clear bar to
+clear before workflow code depends on them.
+
+The first workflow callers using this runtime layer are triage scoring, triage plan
+generation, the main work-pipeline planner, executor, refactor executor, code
+review, and brain distillation. `triage.Scorer` now builds an
+`agentruntime.RunRequest` with role `scorer`, profile `triage-scorer`, and an
+explicit JSON schema for the rubric response. `plan.Generator` does the same
+with role `planner`, profile `triage-planner`, Read/Grep/Glob tool references,
+and a structured triage plan schema. `planner.Planner` uses the same provider
+seam for work-pipeline planning with a structured implementation-plan schema.
+`executor.Executor` builds runtime requests for code execution and refactor
+passes with provider-neutral tool, approval, reasoning, tmux, and raw-stream
+forwarding metadata. `scottbott.ScottBott` invokes review skills and fallback
+reviews through the runtime, including a structured review result schema.
+`brain.AutoDistiller` uses the runtime for memory synthesis while retaining
+template fallback. Each generated brain now also writes an inspectable runtime
+memory document through `shared/agentruntime/memorydocs`, so users can inspect
+the provenance and signal history that future sessions may load. The current
+Claude CLI adapter still relies on prompt adherence for schemas, but the request
+shape is ready for providers that enforce structured outputs natively.
+
+Desktop interactive sessions now use `desktop/agent/providers/claudecli` to
+adapt Claude CLI streaming into runtime events before the existing UI parser
+handles provider raw payloads. Harness scaffold enhancement uses
+`harness/scaffold/agent/providers/claudecli` for text-output enhancement runs.
+Both paths keep their UI-specific streaming and scaffold-specific file
+replacement behavior, but direct provider process execution is contained inside
+provider adapters and their model, role, approval, prompt, and metadata shape
+matches the shared runtime contract.
+
+Providers are selected by role/profile routing and can still be queried by
+capability when a workflow needs a specific primitive.
+
+```go
+type Provider interface {
+    Name() string
+    Capabilities(ctx context.Context) (Capabilities, error)
+    StartRun(ctx context.Context, req RunRequest) (EventStream, error)
+    ResumeRun(ctx context.Context, runID string, input RunInput) (EventStream, error)
+    CancelRun(ctx context.Context, runID string) error
+}
+```
+
+## Event Migration
+
+The legacy CLI protocol remains the default stdout contract. To opt in to the
+new normalized stream, set:
+
+```bash
+BOATMAN_RUNTIME_EVENTS=1
+```
+
+With the flag enabled, the CLI emits the legacy event first and the normalized
+runtime event second. This lets desktop and other consumers migrate one event
+family at a time.
+
+Legacy:
+
+```json
+{"type":"agent_completed","id":"execute-123","name":"Execution","status":"success"}
+```
+
+Runtime:
+
+```json
+{"version":1,"type":"phase.completed","phaseId":"execute-123","taskId":"execute-123","name":"Execution","status":"succeeded","timestamp":"..."}
+```
+
+Raw provider payloads are preserved as `provider.raw` events, so debugging still
+has access to exact Claude/OpenAI output while product UI can use normalized
+events.
+
+## Glass-Inspired Systems
+
+Several ideas from Glass map cleanly onto Boatman, but should be adapted to
+engineering workflows rather than copied wholesale.
+
+### Defrag
+
+Boatman should have a recurring "defrag" workflow that scans for fragmentation
+and optionally opens a PR. Initial checks should look for:
+
+- duplicated provider adapters or stream parsers
+- repeated prompts with drifted instructions
+- duplicate React components and inconsistent design tokens
+- stale docs for changed commands, skills, or providers
+- event types emitted by CLI but not documented or handled by desktop
+- repeated MCP config logic across desktop and CLI
+
+The output should be a normal Boatman plan: findings, proposed consolidation,
+files to touch, tests to run, and stop conditions.
+
+### Git-Backed Skill Marketplace
+
+Skills and workflows should be markdown files in a Git-backed repository. The UI
+can hide Git from non-engineers:
+
+1. User writes or edits a skill in Boatman.
+2. Boatman validates frontmatter, examples, required tools, and ownership.
+3. Boatman creates a branch, commits the markdown, and opens a PR.
+4. Reviewers approve with normal Git history and auditability.
+5. Published skills become discoverable in desktop and CLI.
+
+This is a strong fit for incident runbooks, Linear triage rubrics, Datadog
+investigation workflows, team conventions, and project-specific coding agents.
+
+### Integration Broker
+
+MCP and service connections should be long-lived at the app/runtime layer, not
+reopened independently by every chat. A local integration broker can:
+
+- connect once to Slack, Linear, GitHub, Datadog, Notion, and other MCP servers
+- expose lightweight per-session handles
+- centralize OAuth or SSO refresh
+- translate service failures into plain-language recovery steps
+- provide provider-neutral MCP references to Claude or OpenAI adapters
+
+This reduces startup latency and makes Firefighter Mode less brittle.
+
+The first descriptor and connection-manager slice lives in
+`shared/agentruntime/integrations`. It defines built-in Datadog, Bugsnag,
+Linear, and Slack integration metadata and converts known names into
+provider-neutral `MCPServerRef`s. Its descriptor broker reports `disabled`,
+`needs_configuration`, and `ready` health states and can turn them into
+normalized `integration.state` events. Its `Manager` adds cached connection
+handles with `connected` state, transport metadata, and reusable MCP refs so
+desktop sessions can share one app/runtime integration surface instead of
+re-resolving descriptors independently. Desktop Firefighter sessions now attach
+those refs to runtime requests while still allowing custom local MCP names to be
+resolved by existing Claude config, and the desktop app exposes
+`GetIntegrationStatuses` for UI health surfaces. The desktop MCP settings tab
+renders manager-backed statuses so missing integration credentials are visible
+before a Firefighter session starts. The CLI exposes the same descriptor view
+through `boatman integrations` and environment checks through
+`boatman integrations check`. Use
+`boatman integrations check --emit-events` to print normalized runtime events;
+when `BOATMAN_RUNTIME_STORE=1` or `BOATMAN_RUNTIME_STORE_DIR` is set, those
+integration check events are recorded in the same run store as model runs.
+
+The first broker slice is implemented locally in `shared/agentruntime/toolbroker`.
+It does not replace long-lived MCP connections yet, but it establishes the
+execution contract: providers request tools, Boatman enforces workspace roots
+and approval policy, and runtime events record `tool.call` / `tool.result`.
+OpenAI Responses now uses this broker to satisfy local function calls before
+continuing a response.
+
+The first run-store slice is implemented in `shared/agentruntime/runstore`.
+It gives Boatman a durable audit trail before adding a richer resume service:
+provider raw output, normalized messages, usage, tool calls, original
+`RunRequest` payloads, artifact manifests, and failures are stored in stable
+files that future desktop and CLI inspectors can read. The CLI exposes this
+through `boatman runs list`, `boatman runs show`, `boatman runs request`, and
+`boatman runs artifacts`.
+
+The desktop Runtime tab reads the same project-local `.boatman/runs` directory
+and renders run metadata, request summaries, event stream summaries, filters,
+search, and artifacts without requiring users to open a terminal. This keeps the
+Glass-inspired inspection loop close to the main workflow: a user can run an
+agent, inspect what provider/tool/memory events were recorded, and use the same
+UI to move back into chat, tasks, or diff review.
+
+### Central Agent Plane Slice
+
+The peer architecture's strongest idea is a shared plane behind thin clients.
+Boatman now implements the local minimum of that shape in shared packages instead
+of adding a network service too early:
+
+- `shared/agentruntime/workflows` defines built-in provider-neutral templates
+  for feature, bugfix, triage, code-review, firefighter, and research flows.
+  Stages explicitly model intake, context, planning, implementation,
+  validation, pull-request, and synthesis responsibilities, plus gates, preview
+  points, skips, and validation loopbacks. The CLI exposes these through
+  `boatman workflows` and `boatman workflows show <id>`.
+- `shared/agentruntime/approvals` is the first approval PDP. Deterministic rules
+  can allow, deny, or require a human for risky actions such as destructive
+  commands, secrets, auth/payment changes, migrations, external writes, and very
+  large changes. An optional classifier can only raise an allowed action to a
+  human gate; it cannot lower deterministic rules. Approval requests are durable
+  resources with pending/approved/denied/canceled lifecycle states.
+- `shared/agentruntime/verifier` defines the independent verification contract
+  and ships a first local policy verifier over diffs and changed files. It fails
+  on secret-like or destructive database diffs and warns on sensitive domains
+  such as auth, payments, billing, and migrations. This gives review, CI,
+  desktop, and future service workflows one quality-gate shape.
+
+This keeps Goose, Slack, GitHub Actions, IDEs, Boatman CLI, and Boatman Desktop
+compatible with one shared event/workflow/approval/verifier contract later,
+while keeping today's implementation local, inspectable, and easy to test.
+
+### Inspectable Memory
+
+Memory should be written by background jobs and read by sessions. Agents should
+not silently mutate memory during a conversation. The first file-backed slice is
+implemented in `shared/agentruntime/memorydocs`; it stores Markdown documents
+with stable frontmatter, provenance, optional source run IDs, optional
+expiration, deterministic IDs, and safe path validation.
+
+Implemented shape:
+
+```text
+.boatman/memory/
+  user.md
+  project.md
+  team.md
+  integrations/
+    slack.md
+    calendar.md
+    linear.md
+  domains/
+    payments.md
+```
+
+The memory pipeline can mine previous sessions, PRs, tickets, Slack threads, and
+docs on a schedule. Each generated file includes provenance metadata so users
+can inspect what Boatman knows and why. `brain.AutoDistiller` now writes
+`domains/<domain>.md` documents next to generated brain YAML files, tying the
+memory doc back to the `brain-distiller-<domain>` run and the source signals.
+
+The CLI exposes memory inspection through:
+
+```bash
+boatman memory list
+boatman memory show domains/payments
+boatman memory context project domains/payments
+boatman memory context --emit-event --run-id <run-id>
+```
+
+`boatman memory context --emit-event` prints a normalized `memory.loaded` event
+using the same runtime event contract as provider, tool, integration, and run
+store events. Provider runs now call the same shared store before starting a
+model run, prepend the rendered memory context to instructions, and append
+`memory.loaded` to the recorded stream.
+
+The desktop Runtime tab also reads project-local `.boatman/memory` documents,
+showing document scope, provenance, source run, expiration, path, and full body
+content. This makes memory inspectable by default: users can see exactly what
+future sessions may load and trace generated context back to recorded runs.
+
+### Docs And Schema Gates
+
+Every provider adapter, workflow, skill, and user-facing command should carry
+docs and examples. Merge gates should fail when:
+
+- a workflow changes without updating its docs
+- a skill changes without updating examples or required tools
+- a provider adapter changes without conformance tests
+- a structured output type changes without schema fixtures
+- an event type is emitted but not documented
+
+This keeps the codebase teachable for both humans and agents.
+
+## Migration Plan
+
+1. Keep legacy execution stable.
+2. Emit normalized runtime events behind `BOATMAN_RUNTIME_EVENTS=1`.
+3. Add a `claude-cli` provider adapter around the current CLI behavior. ✅
+4. Move triage, planning, execution, refactor, review, and memory synthesis
+   model calls to the provider runtime. Triage scoring, triage planning, work
+   planning, execution, refactor, review, and brain distillation are migrated. ✅
+5. Add provider routing by default, role, and profile so new adapters can be
+   adopted incrementally. ✅
+6. Add an OpenAI Responses provider adapter. The first version supports
+   text/structured output, remote provider tools, and broker-backed local
+   function calls. ✅
+7. Move desktop sessions to consume runtime events instead of Claude stream JSON.
+   Desktop interactive sessions now build runtime requests before invoking the
+   legacy stream parser.
+8. Move harness scaffold enhancement behind provider adapters. It now builds
+   runtime requests before invoking the legacy Claude CLI adapter.
+9. Introduce the local tool broker and OpenAI function-call loop. ✅
+10. Add a file-backed runtime run store for normalized events. ✅
+11. Introduce the integration broker for MCP and service connections. The first
+    catalog and connection-manager slice is in
+    `shared/agentruntime/integrations`; live network process management is still
+    future work.
+12. Add inspectable runtime memory documents and CLI inspection commands. ✅
+13. Add desktop inspection for runtime runs, artifacts, events, and memory. ✅
+14. Add defrag, docs validation, and provider conformance checks to CI. ✅
+15. Add shared workflow template library plus CLI inspection commands. ✅
+16. Add deterministic approval PDP and durable approval request types. ✅
+17. Add independent verifier contract and first local policy verifier. ✅
+
+The design principle is simple: Boatman owns workflow, tools, memory, approvals,
+artifacts, and quality gates. Providers own model inference. Everything else is
+an adapter boundary.

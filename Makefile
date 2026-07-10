@@ -1,4 +1,4 @@
-.PHONY: help build-cli build-desktop build-all test-cli test-desktop test-all clean dev install
+.PHONY: help build-cli build-frontend build-desktop build-all test-cli test-shared test-harness test-desktop test-desktop-runtime test-frontend test-all quality clean dev install
 
 help: ## Show this help message
 	@echo 'Usage: make [target]'
@@ -11,7 +11,11 @@ build-cli: ## Build the CLI (boatman binary)
 	cd cli && go build -o boatman ./cmd/boatman
 	@echo "✓ CLI built at cli/boatman"
 
-build-desktop: build-cli ## Build the desktop app (requires CLI)
+build-frontend: ## Build the desktop frontend
+	@echo "Building desktop frontend..."
+	cd desktop/frontend && npm run build
+
+build-desktop: build-cli build-frontend ## Build the desktop app (requires CLI and frontend dist)
 	@echo "Building desktop app..."
 	cd desktop && wails build
 	@echo "✓ Desktop app built at desktop/build/"
@@ -22,15 +26,29 @@ test-cli: ## Run CLI tests
 	@echo "Running CLI tests..."
 	cd cli && go test ./...
 
+test-shared: ## Run shared package tests
+	@echo "Running shared tests..."
+	cd shared && go test ./...
+
+test-harness: ## Run harness tests
+	@echo "Running harness tests..."
+	cd harness && go test ./...
+
 test-desktop: ## Run desktop Go tests
 	@echo "Running desktop Go tests..."
 	cd desktop && go test ./...
 
+test-desktop-runtime: ## Run desktop runtime/session tests (root package requires frontend dist)
+	@echo "Running desktop runtime tests..."
+	cd desktop && go test . ./agent/... ./boatmanmode ./mcp
+
 test-frontend: ## Run desktop frontend tests
 	@echo "Running desktop frontend tests..."
-	cd desktop/frontend && npm test
+	cd desktop/frontend && npm run test:run
 
-test-all: test-cli test-desktop ## Run all tests
+test-all: test-cli test-shared test-harness test-desktop ## Run all tests
+
+quality: test-cli test-shared test-harness test-frontend build-frontend test-desktop-runtime docs-check defrag ## Run runtime/provider quality gates
 
 clean: ## Clean build artifacts
 	@echo "Cleaning build artifacts..."
@@ -64,6 +82,14 @@ lint: ## Run linters
 	@echo "Running linters..."
 	cd cli && golangci-lint run || true
 	cd desktop && golangci-lint run || true
+
+defrag: ## Scan for agent-generated fragmentation patterns
+	@echo "Scanning for fragmentation..."
+	./scripts/agent-defrag
+
+docs-check: ## Validate runtime/provider documentation coverage
+	@echo "Checking architecture docs..."
+	./scripts/agent-docs-check
 
 deps: ## Download dependencies
 	@echo "Downloading dependencies..."

@@ -584,6 +584,76 @@ export namespace main {
 	        this.untracked = source["untracked"];
 	    }
 	}
+	export class MemoryDocumentSummary {
+	    id: string;
+	    scope?: string;
+	    title?: string;
+	    bodyPreview?: string;
+	    provenance?: string;
+	    sourceRunId?: string;
+	    metadata?: Record<string, string>;
+	    generatedAt?: string;
+	    updatedAt?: string;
+	    expiresAt?: string;
+	    expired?: boolean;
+	    path?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new MemoryDocumentSummary(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.scope = source["scope"];
+	        this.title = source["title"];
+	        this.bodyPreview = source["bodyPreview"];
+	        this.provenance = source["provenance"];
+	        this.sourceRunId = source["sourceRunId"];
+	        this.metadata = source["metadata"];
+	        this.generatedAt = source["generatedAt"];
+	        this.updatedAt = source["updatedAt"];
+	        this.expiresAt = source["expiresAt"];
+	        this.expired = source["expired"];
+	        this.path = source["path"];
+	    }
+	}
+	export class MemoryDocumentDetail {
+	    id: string;
+	    scope?: string;
+	    title?: string;
+	    bodyPreview?: string;
+	    provenance?: string;
+	    sourceRunId?: string;
+	    metadata?: Record<string, string>;
+	    generatedAt?: string;
+	    updatedAt?: string;
+	    expiresAt?: string;
+	    expired?: boolean;
+	    path?: string;
+	    body?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new MemoryDocumentDetail(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.scope = source["scope"];
+	        this.title = source["title"];
+	        this.bodyPreview = source["bodyPreview"];
+	        this.provenance = source["provenance"];
+	        this.sourceRunId = source["sourceRunId"];
+	        this.metadata = source["metadata"];
+	        this.generatedAt = source["generatedAt"];
+	        this.updatedAt = source["updatedAt"];
+	        this.expiresAt = source["expiresAt"];
+	        this.expired = source["expired"];
+	        this.path = source["path"];
+	        this.body = source["body"];
+	    }
+	}
 	export class MessagePage {
 	    messages: agent.Message[];
 	    total: number;
@@ -604,6 +674,190 @@ export namespace main {
 	        this.hasMore = source["hasMore"];
 	    }
 	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class RuntimeArtifactSummary {
+	    kind: string;
+	    path?: string;
+	    url?: string;
+	    diff?: string;
+	    message?: string;
+	    phaseId?: string;
+	    taskId?: string;
+	    eventType?: string;
+	    firstSeenAt?: string;
+	    lastSeenAt?: string;
+	    eventCount: number;
+
+	    static createFrom(source: any = {}) {
+	        return new RuntimeArtifactSummary(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.kind = source["kind"];
+	        this.path = source["path"];
+	        this.url = source["url"];
+	        this.diff = source["diff"];
+	        this.message = source["message"];
+	        this.phaseId = source["phaseId"];
+	        this.taskId = source["taskId"];
+	        this.eventType = source["eventType"];
+	        this.firstSeenAt = source["firstSeenAt"];
+	        this.lastSeenAt = source["lastSeenAt"];
+	        this.eventCount = source["eventCount"];
+	    }
+	}
+	export class RuntimeEventSummary {
+	    type: string;
+	    status?: string;
+	    role?: string;
+	    provider?: string;
+	    model?: string;
+	    phaseId?: string;
+	    taskId?: string;
+	    name?: string;
+	    message?: string;
+	    timestamp?: string;
+	    toolName?: string;
+	    toolError?: boolean;
+	    artifactKind?: string;
+	    artifactPath?: string;
+	    artifactUrl?: string;
+	    rawPreview?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new RuntimeEventSummary(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.type = source["type"];
+	        this.status = source["status"];
+	        this.role = source["role"];
+	        this.provider = source["provider"];
+	        this.model = source["model"];
+	        this.phaseId = source["phaseId"];
+	        this.taskId = source["taskId"];
+	        this.name = source["name"];
+	        this.message = source["message"];
+	        this.timestamp = source["timestamp"];
+	        this.toolName = source["toolName"];
+	        this.toolError = source["toolError"];
+	        this.artifactKind = source["artifactKind"];
+	        this.artifactPath = source["artifactPath"];
+	        this.artifactUrl = source["artifactUrl"];
+	        this.rawPreview = source["rawPreview"];
+	    }
+	}
+	export class RuntimeRunSummary {
+	    runId: string;
+	    provider?: string;
+	    model?: string;
+	    role?: string;
+	    profile?: string;
+	    workDir?: string;
+	    status?: string;
+	    startedAt?: string;
+	    updatedAt?: string;
+	    endedAt?: string;
+	    eventCount: number;
+	    artifactCount?: number;
+
+	    static createFrom(source: any = {}) {
+	        return new RuntimeRunSummary(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.runId = source["runId"];
+	        this.provider = source["provider"];
+	        this.model = source["model"];
+	        this.role = source["role"];
+	        this.profile = source["profile"];
+	        this.workDir = source["workDir"];
+	        this.status = source["status"];
+	        this.startedAt = source["startedAt"];
+	        this.updatedAt = source["updatedAt"];
+	        this.endedAt = source["endedAt"];
+	        this.eventCount = source["eventCount"];
+	        this.artifactCount = source["artifactCount"];
+	    }
+	}
+	export class RuntimeRequestSummary {
+	    provider?: string;
+	    model?: string;
+	    role?: string;
+	    profile?: string;
+	    workDir?: string;
+	    approvalPolicy?: string;
+	    reasoningEffort?: string;
+	    background?: boolean;
+	    messageCount: number;
+	    toolNames?: string[];
+	    mcpServerLabels?: string[];
+	    outputSchema?: string;
+	    instructionsPreview?: string;
+	    firstMessagePreview?: string;
+	    metadata?: Record<string, string>;
+
+	    static createFrom(source: any = {}) {
+	        return new RuntimeRequestSummary(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.provider = source["provider"];
+	        this.model = source["model"];
+	        this.role = source["role"];
+	        this.profile = source["profile"];
+	        this.workDir = source["workDir"];
+	        this.approvalPolicy = source["approvalPolicy"];
+	        this.reasoningEffort = source["reasoningEffort"];
+	        this.background = source["background"];
+	        this.messageCount = source["messageCount"];
+	        this.toolNames = source["toolNames"];
+	        this.mcpServerLabels = source["mcpServerLabels"];
+	        this.outputSchema = source["outputSchema"];
+	        this.instructionsPreview = source["instructionsPreview"];
+	        this.firstMessagePreview = source["firstMessagePreview"];
+	        this.metadata = source["metadata"];
+	    }
+	}
+	export class RuntimeRunDetail {
+	    metadata: RuntimeRunSummary;
+	    request?: RuntimeRequestSummary;
+	    events: RuntimeEventSummary[];
+	    artifacts: RuntimeArtifactSummary[];
+
+	    static createFrom(source: any = {}) {
+	        return new RuntimeRunDetail(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.metadata = this.convertValues(source["metadata"], RuntimeRunSummary);
+	        this.request = this.convertValues(source["request"], RuntimeRequestSummary);
+	        this.events = this.convertValues(source["events"], RuntimeEventSummary);
+	        this.artifacts = this.convertValues(source["artifacts"], RuntimeArtifactSummary);
+	    }
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -678,7 +932,31 @@ export namespace main {
 }
 
 export namespace mcp {
-	
+
+	export class IntegrationStatus {
+	    name: string;
+	    state: string;
+	    message?: string;
+	    missingEnv?: string[];
+	    // Go type: time
+	    lastChecked: any;
+	    metadata?: Record<string, string>;
+
+	    static createFrom(source: any = {}) {
+	        return new IntegrationStatus(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.state = source["state"];
+	        this.message = source["message"];
+	        this.missingEnv = source["missingEnv"];
+	        this.lastChecked = source["lastChecked"];
+	        this.metadata = source["metadata"];
+	    }
+	}
+
 	export class Server {
 	    name: string;
 	    description?: string;
@@ -1012,4 +1290,3 @@ export namespace triage {
 	}
 
 }
-

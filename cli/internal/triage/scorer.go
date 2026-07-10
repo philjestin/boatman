@@ -9,9 +9,10 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/philjestin/boatmanmode/internal/claude"
+	agentruntime "github.com/philjestin/boatman-ecosystem/shared/agentruntime"
 	"github.com/philjestin/boatmanmode/internal/config"
 	"github.com/philjestin/boatmanmode/internal/cost"
+	runtimeproviders "github.com/philjestin/boatmanmode/internal/providers"
 )
 
 const scorerSystemPrompt = `You are a ticket triage evaluator for a software engineering team. You score development tickets on seven rubric dimensions to determine if they are suitable for autonomous AI execution.
@@ -37,39 +38,51 @@ Respond with ONLY a JSON object. No markdown fencing, no explanation before or a
 
 {"clarity": <int>, "codeLocality": <int>, "patternMatch": <int>, "validationStrength": <int>, "dependencyRisk": <int>, "productAmbiguity": <int>, "blastRadius": <int>, "uncertainAxes": ["<dimension names where you were least certain>"], "reasons": ["<1 sentence per dimension explaining the score>"]}`
 
-// Scorer uses Claude to score tickets on 7 rubric dimensions.
+// Scorer uses the configured runtime provider to score tickets on 7 rubric dimensions.
 type Scorer struct {
-	claudeClient *claude.Client
-	model        string
-	cfg          *config.Config
+	provider agentruntime.Provider
+	model    string
+	cfg      *config.Config
+	runText  func(context.Context, agentruntime.Provider, agentruntime.RunRequest) (string, *cost.Usage, error)
 
 	// OnTicketScored is called after each ticket is scored in ScoreBatch.
 	// The int parameters are the zero-based index and total count.
 	OnTicketScored func(result ScoredTicket, index, total int)
 }
 
-// NewScorer creates a new Scorer that uses Claude for rubric evaluation.
+// NewScorer creates a new Scorer for rubric evaluation.
 func NewScorer(cfg *config.Config) *Scorer {
-	client := claude.New()
-	client.Model = cfg.Claude.Models.Scorer
-	client.EnablePromptCaching = cfg.Claude.EnablePromptCaching
-	client.SkipPermissions = true
-	client.EnableTools = false
+	provider := runtimeproviders.MustFromConfig(cfg, agentruntime.RoleScorer, "triage-scorer")
+	return newScorerWithProvider(cfg, provider)
+}
 
+func newScorerWithProvider(cfg *config.Config, provider agentruntime.Provider) *Scorer {
 	return &Scorer{
-		claudeClient: client,
-		model:        cfg.Claude.Models.Scorer,
-		cfg:          cfg,
+		provider: provider,
+		model:    cfg.Claude.Models.Scorer,
+		cfg:      cfg,
+		runText:  runtimeproviders.RunText,
 	}
 }
 
-// Score evaluates a single ticket against the 7-dimension rubric using Claude.
+// Score evaluates a single ticket against the 7-dimension rubric.
 func (s *Scorer) Score(ctx context.Context, ticket NormalizedTicket) (*ScorerResponse, *cost.Usage, error) {
 	userPrompt := buildUserPrompt(ticket)
 
-	response, usage, err := s.claudeClient.Message(ctx, scorerSystemPrompt, userPrompt)
+	response, usage, err := s.runText(ctx, s.provider, agentruntime.RunRequest{
+		Role:         agentruntime.RoleScorer,
+		Profile:      "triage-scorer",
+		Provider:     s.provider.Name(),
+		Model:        s.model,
+		Instructions: scorerSystemPrompt,
+		Messages: []agentruntime.Message{
+			{Role: "user", Content: userPrompt},
+		},
+		OutputSchema:   scorerOutputSchema(),
+		ApprovalPolicy: agentruntime.ApprovalSuggest,
+	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("scorer Claude call failed for %s: %w", ticket.TicketID, err)
+		return nil, nil, fmt.Errorf("scorer provider call failed for %s: %w", ticket.TicketID, err)
 	}
 
 	scored, err := parseScoreResponse(response)
@@ -84,6 +97,46 @@ func (s *Scorer) Score(ctx context.Context, ticket NormalizedTicket) (*ScorerRes
 	}
 
 	return scored, usage, nil
+}
+
+func scorerOutputSchema() *agentruntime.OutputSchema {
+	return &agentruntime.OutputSchema{
+		Name:        "triage_scorer_response",
+		Description: "Seven-dimension AI-readiness rubric score for a Linear ticket.",
+		Strict:      true,
+		Schema: json.RawMessage(`{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "clarity",
+    "codeLocality",
+    "patternMatch",
+    "validationStrength",
+    "dependencyRisk",
+    "productAmbiguity",
+    "blastRadius",
+    "uncertainAxes",
+    "reasons"
+  ],
+  "properties": {
+    "clarity": {"type": "integer", "minimum": 0, "maximum": 5},
+    "codeLocality": {"type": "integer", "minimum": 0, "maximum": 5},
+    "patternMatch": {"type": "integer", "minimum": 0, "maximum": 5},
+    "validationStrength": {"type": "integer", "minimum": 0, "maximum": 5},
+    "dependencyRisk": {"type": "integer", "minimum": 0, "maximum": 5},
+    "productAmbiguity": {"type": "integer", "minimum": 0, "maximum": 5},
+    "blastRadius": {"type": "integer", "minimum": 0, "maximum": 5},
+    "uncertainAxes": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "reasons": {
+      "type": "array",
+      "items": {"type": "string"}
+    }
+  }
+}`),
+	}
 }
 
 // ScoredTicket pairs a ticket with its scoring result.

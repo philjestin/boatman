@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -9,6 +10,8 @@ import (
 	"strings"
 
 	"github.com/philjestin/boatman-ecosystem/harness/scaffold"
+	scaffoldclaude "github.com/philjestin/boatman-ecosystem/harness/scaffold/agent/providers/claudecli"
+	agentruntime "github.com/philjestin/boatman-ecosystem/shared/agentruntime"
 )
 
 // EnhanceConfig configures the Claude enhancement agent.
@@ -24,6 +27,9 @@ type EnhanceConfig struct {
 
 	// Model is the Claude model to use (default: claude-sonnet-4-20250514).
 	Model string
+
+	// ModelProvider is the runtime provider adapter to use.
+	ModelProvider string
 }
 
 // Enhance uses the Claude CLI to replace stub implementations with real
@@ -35,6 +41,9 @@ type EnhanceConfig struct {
 func Enhance(ctx context.Context, cfg EnhanceConfig) error {
 	if cfg.Model == "" {
 		cfg.Model = "claude-sonnet-4-20250514"
+	}
+	if cfg.ModelProvider == "" {
+		cfg.ModelProvider = "claude-cli"
 	}
 	if cfg.Provider == "" {
 		cfg.Provider = scaffold.ProviderGeneric
@@ -65,8 +74,9 @@ func Enhance(ctx context.Context, cfg EnhanceConfig) error {
 		}
 
 		prompt := rp.buildPrompt(&cfg, string(stubCode))
+		req := buildEnhanceRunRequest(cfg, rp.filename, prompt)
 
-		result, err := runClaude(ctx, cfg.Model, prompt)
+		result, err := runClaude(ctx, req)
 		if err != nil {
 			return fmt.Errorf("enhance %s: %w", rp.filename, err)
 		}
@@ -94,24 +104,57 @@ func Enhance(ctx context.Context, cfg EnhanceConfig) error {
 	return nil
 }
 
-// runClaude shells out to the claude CLI with the given prompt.
-func runClaude(ctx context.Context, model, prompt string) (string, error) {
-	cmd := exec.CommandContext(ctx, "claude",
-		"-p",
-		"--output-format", "text",
-		"--model", model,
-		prompt,
-	)
+func buildEnhanceRunRequest(cfg EnhanceConfig, filename, prompt string) agentruntime.RunRequest {
+	return agentruntime.RunRequest{
+		RunID:    "scaffold-enhance-" + strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename)),
+		Role:     agentruntime.RoleExecutor,
+		Profile:  "harness-scaffold-enhancer",
+		Provider: cfg.ModelProvider,
+		Model:    cfg.Model,
+		WorkDir:  cfg.ProjectDir,
+		Messages: []agentruntime.Message{
+			{Role: "user", Content: prompt},
+		},
+		OutputSchema: &agentruntime.OutputSchema{
+			Name:        "enhanced_source_file",
+			Description: "Complete source file contents with no markdown fences.",
+			Strict:      false,
+			Schema:      []byte(`{"type":"string"}`),
+		},
+		ApprovalPolicy: agentruntime.ApprovalSuggest,
+		Metadata: map[string]string{
+			"outputFormat":   "text",
+			"targetProvider": string(cfg.Provider),
+			"projectLang":    string(cfg.ProjectLang),
+			"filename":       filename,
+		},
+	}
+}
 
-	output, err := cmd.Output()
+// runClaude adapts a runtime request to the current Claude CLI implementation.
+func runClaude(ctx context.Context, req agentruntime.RunRequest) (string, error) {
+	if req.Provider != "" && req.Provider != "claude-cli" {
+		return "", fmt.Errorf("provider %q is not supported by scaffold enhancer", req.Provider)
+	}
+
+	stream, err := scaffoldclaude.New().StartRun(ctx, req)
 	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			return "", fmt.Errorf("claude exited with code %d: %s", exitErr.ExitCode(), string(exitErr.Stderr))
-		}
 		return "", err
 	}
 
-	return strings.TrimSpace(string(output)), nil
+	var response string
+	for event := range stream {
+		switch event.Type {
+		case agentruntime.EventMessageCompleted:
+			response += event.Message
+		case agentruntime.EventRunFailed:
+			if event.Message != "" {
+				return response, errors.New(event.Message)
+			}
+			return response, errors.New("scaffold enhancement provider failed")
+		}
+	}
+	return strings.TrimSpace(response), nil
 }
 
 // verifyBuild runs go build in the project directory.

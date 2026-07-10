@@ -1,6 +1,7 @@
 {
   "index": "Overview",
   "monorepo": "Monorepo Structure",
+  "runtime-platform": "Runtime Platform",
   "event-protocol": "Event Protocol",
   "agent-coordination": "Agent Coordination",
   "integration-layer": "Integration Layer"

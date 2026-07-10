@@ -1,6 +1,6 @@
 # Boatman Desktop
 
-Boatman Desktop is a native desktop application built with Wails (Go + React) that provides a rich GUI for interacting with Claude AI on your codebase, with specialized **Firefighter Mode** for production incident investigation.
+Boatman Desktop is a native desktop application built with Wails (Go + React) that provides a rich GUI for interacting with AI agents on your codebase, with specialized **Firefighter Mode** for production incident investigation and a Runtime inspector for provider-neutral runs and memory.
 
 ## Features
 
@@ -11,6 +11,7 @@ Boatman Desktop is a native desktop application built with Wails (Go + React) th
 - **Sub-Agents**: Spawns specialized agents for complex multi-step tasks
 - **Project Management**: Open and manage multiple coding projects
 - **Task Tracking**: View and monitor tasks created by the agent
+- **Runtime Requests**: Sessions are built through Boatman's provider-neutral runtime so provider features can evolve behind adapters
 
 ### Firefighter Mode
 - **Linear Integration**: Monitors triage queue for production incidents
@@ -23,6 +24,12 @@ Boatman Desktop is a native desktop application built with Wails (Go + React) th
 - **One-Click Execution**: Execute Linear tickets through BoatmanMode's full pipeline
 - **Live Progress**: Real-time tracking of planning, execution, review, and refactoring
 - **Event-Driven**: Structured JSON events streamed from CLI to desktop UI
+
+### Runtime Inspector
+- **Run History**: Browse project-local `.boatman/runs` records
+- **Event Timeline**: Inspect normalized runtime events such as phases, tool calls, usage, memory loads, integration state, and artifacts
+- **Artifact Manifest**: See durable outputs recorded by each run
+- **Inspectable Memory**: Read `.boatman/memory` Markdown documents with provenance, source run, scope, and expiration
 
 ### MCP Integration
 - **Extensible**: Connect to any MCP-compatible tool or service
@@ -48,6 +55,7 @@ desktop/
 │   │   │   ├── logs/      # Agent logs panel
 │   │   │   ├── onboarding/  # First-run setup
 │   │   │   ├── project/   # Project management
+│   │   │   ├── runtime/   # Runtime run and memory inspector
 │   │   │   ├── search/    # Search interface
 │   │   │   ├── session/   # Session management
 │   │   │   ├── settings/  # Settings modal
@@ -63,6 +71,7 @@ desktop/
 ├── git/                   # Git integration (Go)
 ├── mcp/                   # MCP server management (Go)
 ├── project/               # Project and workspace management (Go)
+├── runtime_inspection.go  # Wails methods for run store and memory docs
 ├── app.go                 # Main application logic
 └── main.go                # Application entry point
 ```
@@ -88,7 +97,10 @@ A: Currently macOS (M1/M2/M3). Windows/Linux support planned.
 A: Boatman Desktop is free. You pay for Claude API usage.
 
 **Q: Is my code secure?**
-A: Code is sent to Claude API following Anthropic's privacy policy. Use Google Cloud for private VPC.
+A: Model calls are routed through the configured provider adapter. Code and prompts are sent according to that provider's policy. Use Google Cloud or your approved provider setup for private environments.
+
+**Q: What does the Runtime tab show?**
+A: It reads project-local `.boatman/runs` and `.boatman/memory` files. It does not need a database and does not call external services just to inspect recorded runs or memory.
 
 **Q: Can I use it offline?**
 A: No, requires internet for Claude API and MCP servers.

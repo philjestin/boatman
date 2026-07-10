@@ -43,6 +43,14 @@ claude:
     preflight: claude-haiku-4
     test_runner: claude-haiku-4
 
+# Runtime provider routing
+runtime:
+  default_provider: claude-cli
+  role_providers:
+    reviewer: claude-cli
+  profile_providers:
+    triage-scorer: openai-responses
+
 # Coordinator settings
 coordinator:
   message_buffer_size: 1000
@@ -81,8 +89,14 @@ memory_dir: ~/.boatman/memory
 | `ANTHROPIC_VERTEX_PROJECT_ID` | GCP project ID | If using Vertex |
 | `ANTHROPIC_API_KEY` | Anthropic API key | If using direct API |
 | `BOATMAN_DEBUG` | Set to `1` for debug output | No |
+| `BOATMAN_PROVIDER` | Default runtime provider override | No |
+| `BOATMAN_RUNTIME_EVENTS` | Set to `1` to emit normalized runtime events alongside legacy events | No |
+| `BOATMAN_RUNTIME_STORE` | Set to `0` to disable default project-local recording, or `1` to force recording in older paths | No |
+| `BOATMAN_RUNTIME_STORE_DIR` | Custom runtime run store directory | No |
 | `BOATMAN_CHECKPOINT_DIR` | Custom checkpoint directory | No |
 | `BOATMAN_MEMORY_DIR` | Custom memory directory | No |
+| `OPENAI_API_KEY` | OpenAI API key for the OpenAI Responses provider | If using OpenAI |
+| `OPENAI_MODEL` | Default model for the OpenAI Responses provider when not set by the request | If using OpenAI without per-run model |
 | `LINEAR_API_URL` | Override Linear API URL (for testing) | No |
 
 ---
@@ -138,6 +152,84 @@ claude:
 ```
 
 If a model field is omitted, the Claude CLI's default model is used.
+
+---
+
+## Runtime Provider Routing
+
+Boatman workflows build provider-neutral runtime requests, then route those
+requests to a provider adapter. The default adapter is `claude-cli`.
+
+```yaml
+runtime:
+  default_provider: claude-cli
+  role_providers:
+    planner: claude-cli
+    reviewer: claude-cli
+  profile_providers:
+    triage-scorer: openai-responses
+    triage-planner: claude-cli
+```
+
+Profile routes are the narrowest match and take precedence over role routes.
+Role routes take precedence over `runtime.default_provider`.
+
+Inspect compiled-in providers:
+
+```bash
+boatman providers
+boatman providers --json
+boatman providers check
+```
+
+### OpenAI Responses
+
+The `openai-responses` adapter supports text output, structured output schemas,
+remote MCP descriptors, hosted tool descriptors, raw response preservation, and
+broker-backed local function calls.
+
+```bash
+export OPENAI_API_KEY=sk-...
+export OPENAI_MODEL=<model-name>
+boatman providers check
+```
+
+Use provider routing to opt individual roles or profiles into OpenAI while the
+rest of the workflow stays on Claude CLI.
+
+---
+
+## Runtime Store And Memory
+
+Recorded runtime runs are plain files:
+
+```text
+.boatman/runs/<run-id>/
+  metadata.json
+  request.json
+  events.ndjson
+  artifacts.json
+```
+
+Project-scoped provider runs record per project by default:
+
+```bash
+boatman work --prompt "Update documentation"
+```
+
+Or write to a fixed location:
+
+```bash
+export BOATMAN_RUNTIME_STORE_DIR=/tmp/boatman-runs
+```
+
+Memory documents are Markdown files under `.boatman/memory` or
+`BOATMAN_MEMORY_DIR`. They include frontmatter for scope, provenance, source
+run, generated time, updated time, and optional expiration.
+
+Provider calls load non-expired memory documents automatically unless
+`BOATMAN_MEMORY=0` is set. Loaded documents are prepended to the provider
+instructions and recorded as `memory.loaded` events.
 
 ---
 

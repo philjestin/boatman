@@ -150,6 +150,10 @@ export function GetGitStatus(arg1) {
   return window['go']['main']['App']['GetGitStatus'](arg1);
 }
 
+export function GetIntegrationStatuses() {
+  return window['go']['main']['App']['GetIntegrationStatuses']();
+}
+
 export function GetKeepCompletedAgents() {
   return window['go']['main']['App']['GetKeepCompletedAgents']();
 }
@@ -164,6 +168,10 @@ export function GetMCPServerNames() {
 
 export function GetMCPServers() {
   return window['go']['main']['App']['GetMCPServers']();
+}
+
+export function GetMemoryDocument(arg1, arg2) {
+  return window['go']['main']['App']['GetMemoryDocument'](arg1, arg2);
 }
 
 export function GetMaxAgentsPerSession() {
@@ -196,6 +204,10 @@ export function GetProject(arg1) {
 
 export function GetRecentProjects(arg1) {
   return window['go']['main']['App']['GetRecentProjects'](arg1);
+}
+
+export function GetRuntimeRun(arg1, arg2) {
+  return window['go']['main']['App']['GetRuntimeRun'](arg1, arg2);
 }
 
 export function GetSessionInfo(arg1) {
@@ -280,6 +292,14 @@ export function ListHarnesses() {
 
 export function ListProjects() {
   return window['go']['main']['App']['ListProjects']();
+}
+
+export function ListMemoryDocuments(arg1) {
+  return window['go']['main']['App']['ListMemoryDocuments'](arg1);
+}
+
+export function ListRuntimeRuns(arg1) {
+  return window['go']['main']['App']['ListRuntimeRuns'](arg1);
 }
 
 export function ListSignals() {
