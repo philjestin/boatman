@@ -7,7 +7,9 @@ import (
 )
 
 // Planner implements runner.Planner using {{.ProviderMeta.Name}}.
-type Planner struct{}
+type Planner struct {
+	Model string
+}
 
 // Plan implements runner.Planner. It analyzes the request and produces
 // a structured plan with steps and relevant files.

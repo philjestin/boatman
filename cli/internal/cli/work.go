@@ -53,6 +53,9 @@ func init() {
 	workCmd.Flags().String("review-skill", "peer-review", "Claude skill/agent to use for code review")
 	workCmd.Flags().StringArray("extra-review-skill", nil, "Additional Claude review skill/agent to run after the primary review")
 	workCmd.Flags().Bool("keep-draft", false, "Leave the final pull request as a draft after successful review")
+	workCmd.Flags().String("plan-model", "", "Model to use for planning (/plan)")
+	workCmd.Flags().String("implementation-model", "", "Model to use for code changes and refactor work")
+	workCmd.Flags().String("skill-model", "", "Model to use for review and skill execution")
 
 	// New input mode flags
 	workCmd.Flags().Bool("prompt", false, "Treat argument as inline prompt text")
@@ -83,6 +86,7 @@ func runWork(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
+	applyWorkModelFlags(cmd, cfg)
 
 	// Validate and parse input mode
 	t, err := parseTaskInput(cmd, args, cfg)
@@ -140,6 +144,20 @@ func runWork(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+func applyWorkModelFlags(cmd *cobra.Command, cfg *config.Config) {
+	if value, _ := cmd.Flags().GetString("plan-model"); strings.TrimSpace(value) != "" {
+		cfg.Claude.Models.Planner = strings.TrimSpace(value)
+	}
+	if value, _ := cmd.Flags().GetString("implementation-model"); strings.TrimSpace(value) != "" {
+		model := strings.TrimSpace(value)
+		cfg.Claude.Models.Executor = model
+		cfg.Claude.Models.Refactor = model
+	}
+	if value, _ := cmd.Flags().GetString("skill-model"); strings.TrimSpace(value) != "" {
+		cfg.Claude.Models.Reviewer = strings.TrimSpace(value)
+	}
 }
 
 // parseTaskInput determines the input mode and creates the appropriate Task.

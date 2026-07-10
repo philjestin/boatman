@@ -36,6 +36,7 @@ Boatman is an AI-powered autonomous development system that:
 - **Creates draft PRs as safety checkpoints** so work is preserved even if later stages fail
 - **Supports resume** — pick up a failed execution from the review/refactor stage without re-doing the work
 - **Routes model calls through provider adapters** so Claude CLI, OpenAI Responses, and future providers can be adopted per workflow role
+- **Routes phase-specific models** for routine and harness work, including `/plan`, implementation/refactor, and skill execution models with dropdown/default fallbacks
 - **Models workflows as provider-neutral templates** with explicit stages, gates, previews, skips, and validation loops
 - **Runs repeatable project routines** from `.boatman/routines.json` or `.boatman/routines/*.json`, including the built-in Datadog GraphQL slow-query investigation, with desktop runs opening a continuable session and automatically routing high-confidence findings into draft-PR remediation loops
 - **Evaluates side-effecting actions through approval policy rules** before humans, chat clients, or future services render durable approvals

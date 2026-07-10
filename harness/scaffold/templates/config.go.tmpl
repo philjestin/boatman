@@ -1,5 +1,10 @@
 package main
 
+import (
+	"os"
+	"strings"
+)
+
 // AppConfig holds runtime configuration for this agent.
 type AppConfig struct {
 	// MaxIterations is the maximum number of review/refactor cycles.
@@ -10,14 +15,37 @@ type AppConfig struct {
 
 	// ReviewCriteria is an optional description of what the reviewer should focus on.
 	ReviewCriteria string
+
+	// Model is the default model for every role when a role-specific model is not set.
+	Model string
+
+	// PlanModel is used by the optional planner.
+	PlanModel string
+
+	// ImplementationModel is used by Execute and Refactor.
+	ImplementationModel string
+
+	// SkillsModel is used by skill/review execution.
+	SkillsModel string
 }
 
 // LoadConfig returns the application configuration.
-// TODO: Load from environment variables, config file, or CLI flags.
 func LoadConfig() AppConfig {
+	defaultModel := strings.TrimSpace(os.Getenv("HARNESS_MODEL"))
 	return AppConfig{
-		MaxIterations:  {{.MaxIterations}},
-		ProjectLang:    "{{.ProjectLang}}",
-		ReviewCriteria: "{{.ReviewCriteria}}",
+		MaxIterations:       {{.MaxIterations}},
+		ProjectLang:         "{{.ProjectLang}}",
+		ReviewCriteria:      "{{.ReviewCriteria}}",
+		Model:               defaultModel,
+		PlanModel:           modelOrDefault("HARNESS_PLAN_MODEL", defaultModel),
+		ImplementationModel: modelOrDefault("HARNESS_IMPLEMENTATION_MODEL", defaultModel),
+		SkillsModel:         modelOrDefault("HARNESS_SKILLS_MODEL", defaultModel),
 	}
+}
+
+func modelOrDefault(envKey, fallback string) string {
+	if value := strings.TrimSpace(os.Getenv(envKey)); value != "" {
+		return value
+	}
+	return fallback
 }

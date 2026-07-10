@@ -144,6 +144,7 @@ func (a *App) runRoutineRemediationCandidate(ctx context.Context, built *builtRo
 		KeepDraft:         true,
 		ReviewSkill:       "peer-review",
 		ExtraReviewSkills: []string{"lydia-code-review"},
+		Models:            built.models,
 		Title:             title,
 		BranchName:        branchName,
 		SuppressWailsEmit: true,

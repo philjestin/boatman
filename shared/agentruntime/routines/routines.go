@@ -43,21 +43,22 @@ type Output struct {
 
 // Routine is a saved, repeatable run definition.
 type Routine struct {
-	ID               string            `json:"id"`
-	Extends          string            `json:"extends,omitempty"`
-	Name             string            `json:"name"`
-	Description      string            `json:"description,omitempty"`
-	Schedule         string            `json:"schedule,omitempty"`
-	WorkflowTemplate string            `json:"workflowTemplate,omitempty"`
-	Role             agentruntime.Role `json:"role"`
-	Profile          string            `json:"profile"`
-	Integrations     []string          `json:"integrations,omitempty"`
-	Parameters       []Parameter       `json:"parameters,omitempty"`
-	Defaults         map[string]string `json:"defaults,omitempty"`
-	Output           Output            `json:"output"`
-	Instructions     string            `json:"instructions,omitempty"`
-	PromptTemplate   string            `json:"promptTemplate,omitempty"`
-	Metadata         map[string]string `json:"metadata,omitempty"`
+	ID               string                    `json:"id"`
+	Extends          string                    `json:"extends,omitempty"`
+	Name             string                    `json:"name"`
+	Description      string                    `json:"description,omitempty"`
+	Schedule         string                    `json:"schedule,omitempty"`
+	WorkflowTemplate string                    `json:"workflowTemplate,omitempty"`
+	Role             agentruntime.Role         `json:"role"`
+	Profile          string                    `json:"profile"`
+	Models           agentruntime.ModelProfile `json:"models,omitempty"`
+	Integrations     []string                  `json:"integrations,omitempty"`
+	Parameters       []Parameter               `json:"parameters,omitempty"`
+	Defaults         map[string]string         `json:"defaults,omitempty"`
+	Output           Output                    `json:"output"`
+	Instructions     string                    `json:"instructions,omitempty"`
+	PromptTemplate   string                    `json:"promptTemplate,omitempty"`
+	Metadata         map[string]string         `json:"metadata,omitempty"`
 }
 
 // Library stores routines by ID.
@@ -255,6 +256,7 @@ func Normalize(routine Routine) Routine {
 	if strings.TrimSpace(routine.Profile) == "" && routine.ID != "" {
 		routine.Profile = "routine." + routine.ID
 	}
+	routine.Models = normalizeModelProfile(routine.Models)
 	if strings.TrimSpace(routine.Output.Format) == "" {
 		routine.Output.Format = "markdown"
 	}
@@ -551,6 +553,7 @@ func mergeRoutine(base Routine, override Routine) Routine {
 	if override.Profile != "" {
 		out.Profile = override.Profile
 	}
+	out.Models = mergeModelProfiles(out.Models, override.Models)
 	if override.Integrations != nil {
 		out.Integrations = append([]string(nil), override.Integrations...)
 	}
@@ -623,6 +626,7 @@ func parseDuration(value string) (time.Duration, error) {
 }
 
 func cloneRoutine(routine Routine) Routine {
+	routine.Models = normalizeModelProfile(routine.Models)
 	routine.Integrations = append([]string(nil), routine.Integrations...)
 	routine.Parameters = append([]Parameter(nil), routine.Parameters...)
 	routine.Defaults = cloneStringMap(routine.Defaults)
@@ -637,6 +641,29 @@ func cloneStringMap(values map[string]string) map[string]string {
 	out := make(map[string]string, len(values))
 	for key, value := range values {
 		out[key] = value
+	}
+	return out
+}
+
+func normalizeModelProfile(models agentruntime.ModelProfile) agentruntime.ModelProfile {
+	return agentruntime.ModelProfile{
+		Plan:           strings.TrimSpace(models.Plan),
+		Implementation: strings.TrimSpace(models.Implementation),
+		Skills:         strings.TrimSpace(models.Skills),
+	}
+}
+
+func mergeModelProfiles(base, override agentruntime.ModelProfile) agentruntime.ModelProfile {
+	out := normalizeModelProfile(base)
+	override = normalizeModelProfile(override)
+	if override.Plan != "" {
+		out.Plan = override.Plan
+	}
+	if override.Implementation != "" {
+		out.Implementation = override.Implementation
+	}
+	if override.Skills != "" {
+		out.Skills = override.Skills
 	}
 	return out
 }

@@ -24,6 +24,7 @@ import type {
   DesktopRoutine,
   DatadogMCPAuthResult,
   IntegrationStatus,
+  ModelProfile,
   RoutineDryRunResult,
   RoutineRunResult,
   RoutineRunRequest,
@@ -48,6 +49,7 @@ export function RoutineView({ projectPath, onOpenSettings, onRoutineSessionOpen 
   const [selectedRoutineId, setSelectedRoutineId] = useState(DEFAULT_ROUTINE_ID);
   const [values, setValues] = useState<Record<string, string>>({});
   const [model, setModel] = useState('');
+  const [modelProfile, setModelProfile] = useState<ModelProfile>({});
   const [dryRun, setDryRun] = useState<RoutineDryRunResult | null>(null);
   const [result, setResult] = useState<RoutineRunResult | null>(null);
   const [runState, setRunState] = useState<RunState>('idle');
@@ -91,9 +93,11 @@ export function RoutineView({ projectPath, onOpenSettings, onRoutineSessionOpen 
   useEffect(() => {
     if (!selectedRoutine) {
       setValues({});
+      setModelProfile({});
       return;
     }
     setValues(defaultValuesForRoutine(selectedRoutine));
+    setModelProfile(selectedRoutine.models || {});
   }, [selectedRoutine]);
 
   const selectedStatuses = result?.integrations || dryRun?.integrations || [];
@@ -106,6 +110,7 @@ export function RoutineView({ projectPath, onOpenSettings, onRoutineSessionOpen 
     routineId: selectedRoutine?.id || selectedRoutineId,
     projectPath: projectPath || '',
     model: model.trim(),
+    models: compactModelProfile(modelProfile),
     values: routineValues(selectedRoutine, values),
   });
 
@@ -259,7 +264,7 @@ export function RoutineView({ projectPath, onOpenSettings, onRoutineSessionOpen 
               />
             )}
 
-            <Field label="Model">
+            <Field label="Default Model">
               <input
                 value={model}
                 onChange={(event) => setModel(event.target.value)}
@@ -267,6 +272,11 @@ export function RoutineView({ projectPath, onOpenSettings, onRoutineSessionOpen 
                 className={INPUT_CLASS}
               />
             </Field>
+
+            <ModelRoutingFields
+              models={modelProfile}
+              onChange={setModelProfile}
+            />
 
             {selectedRoutine && (
               <IntegrationsPanel
@@ -383,6 +393,47 @@ function RoutineParameters({
           />
         </Field>
       ))}
+    </div>
+  );
+}
+
+function ModelRoutingFields({
+  models,
+  onChange,
+}: {
+  models: ModelProfile;
+  onChange: (models: ModelProfile) => void;
+}) {
+  const update = (key: keyof ModelProfile, value: string) => {
+    onChange({ ...models, [key]: value });
+  };
+
+  return (
+    <div className="grid grid-cols-1 gap-3">
+      <Field label="/plan Model">
+        <input
+          value={models.plan || ''}
+          onChange={(event) => update('plan', event.target.value)}
+          placeholder="default model"
+          className={INPUT_CLASS}
+        />
+      </Field>
+      <Field label="Implementation Model">
+        <input
+          value={models.implementation || ''}
+          onChange={(event) => update('implementation', event.target.value)}
+          placeholder="default model"
+          className={INPUT_CLASS}
+        />
+      </Field>
+      <Field label="Skills Model">
+        <input
+          value={models.skills || ''}
+          onChange={(event) => update('skills', event.target.value)}
+          placeholder="default model"
+          className={INPUT_CLASS}
+        />
+      </Field>
     </div>
   );
 }
@@ -680,6 +731,14 @@ function routineValues(routine: DesktopRoutine | null, values: Record<string, st
     }
   }
   return out;
+}
+
+function compactModelProfile(models: ModelProfile): ModelProfile | undefined {
+  const out: ModelProfile = {};
+  if ((models.plan || '').trim()) out.plan = (models.plan || '').trim();
+  if ((models.implementation || '').trim()) out.implementation = (models.implementation || '').trim();
+  if ((models.skills || '').trim()) out.skills = (models.skills || '').trim();
+  return out.plan || out.implementation || out.skills ? out : undefined;
 }
 
 function parameterLabel(name: string): string {

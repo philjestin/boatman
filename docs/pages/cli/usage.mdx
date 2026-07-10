@@ -47,6 +47,9 @@ boatman work ENG-123 --review-skill my-review  # Use custom review skill
 | `--review-skill` | Claude skill for code review | `peer-review` |
 | `--extra-review-skill` | Additional review skill, repeatable | — |
 | `--keep-draft` | Leave the successful PR as a draft | `false` |
+| `--plan-model` | Model for `/plan` and planning | config/default |
+| `--implementation-model` | Model for code changes and refactor work | config/default |
+| `--skill-model` | Model for review and skill execution | config/default |
 | `--resume` | Resume interrupted workflow from checkpoint | `false` |
 
 ---
@@ -161,11 +164,19 @@ Project routines can extend built-ins and set project defaults:
         "graph_area": "employer",
         "service": "employer-graphql",
         "top_n": "10"
+      },
+      "models": {
+        "plan": "claude-opus-4-6",
+        "implementation": "claude-sonnet-4-5",
+        "skills": "claude-sonnet-4-5"
       }
     }
   ]
 }
 ```
+
+Routine `models` fields are optional. Empty `plan`, `implementation`, or
+`skills` values fall back to the model selected for the run.
 
 ```bash
 boatman routines
@@ -206,7 +217,7 @@ Useful flags:
 boatman routines run datadog-gql-slow-queries --graph-area employer --report-out /tmp/report.md
 boatman routines run datadog-gql-slow-queries --graph-area employer --provider claude-cli --model sonnet
 boatman routines run datadog-gql-slow-queries --graph-area employer --param lookback=7d
-boatman work --prompt "Fix slow resolver" --keep-draft --extra-review-skill lydia-code-review
+boatman work --prompt "Fix slow resolver" --keep-draft --extra-review-skill lydia-code-review --plan-model opus --implementation-model sonnet --skill-model sonnet
 ```
 
 ---

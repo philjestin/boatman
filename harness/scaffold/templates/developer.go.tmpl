@@ -10,6 +10,7 @@ import (
 // Developer implements runner.Developer using {{.ProviderMeta.Name}}.
 type Developer struct {
 	WorkDir string
+	Model   string
 }
 
 // Execute implements runner.Developer. It receives the request and an optional

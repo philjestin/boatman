@@ -157,6 +157,7 @@ type ClaudeConfig struct {
     Models struct {
         Planner  string // Model for planning (default: uses Claude default)
         Executor string // Model for execution (default: uses Claude default)
+        Reviewer string // Model for review and skill execution (default: uses Claude default)
         Refactor string // Model for refactoring (default: uses Claude default)
     }
     EnablePromptCaching bool // Enable prompt caching (default: true)

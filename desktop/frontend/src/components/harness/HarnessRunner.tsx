@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { ArrowLeft, Play, FolderOpen, Plus, Trash2 } from 'lucide-react';
-import type { HarnessInfo, RunRequest, HarnessRunState } from '../../types';
+import type { HarnessInfo, ModelProfile, RunRequest, HarnessRunState } from '../../types';
 import { HarnessList } from './HarnessList';
 import { HarnessRunOutput } from './HarnessRunOutput';
 import { SelectFolder } from '../../../wailsjs/go/main/App';
@@ -31,6 +31,8 @@ export function HarnessRunner({
   const [workDir, setWorkDir] = useState('');
   const [taskTitle, setTaskTitle] = useState('');
   const [taskDescription, setTaskDescription] = useState('');
+  const [model, setModel] = useState('');
+  const [modelProfile, setModelProfile] = useState<ModelProfile>({});
   const [envVars, setEnvVars] = useState<{ key: string; value: string }[]>([]);
 
   // Load harnesses on mount
@@ -88,6 +90,8 @@ export function HarnessRunner({
       workDir,
       taskTitle,
       taskDescription,
+      model: model.trim(),
+      models: compactModelProfile(modelProfile),
       envVars: envMap,
     });
   };
@@ -186,6 +190,34 @@ export function HarnessRunner({
             />
           </div>
 
+          {/* Model routing */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <ModelField
+              label="Default Model"
+              value={model}
+              onChange={setModel}
+              placeholder="default"
+            />
+            <ModelField
+              label="/plan Model"
+              value={modelProfile.plan || ''}
+              onChange={(value) => setModelProfile((current) => ({ ...current, plan: value }))}
+              placeholder="default model"
+            />
+            <ModelField
+              label="Implementation Model"
+              value={modelProfile.implementation || ''}
+              onChange={(value) => setModelProfile((current) => ({ ...current, implementation: value }))}
+              placeholder="default model"
+            />
+            <ModelField
+              label="Skills Model"
+              value={modelProfile.skills || ''}
+              onChange={(value) => setModelProfile((current) => ({ ...current, skills: value }))}
+              placeholder="default model"
+            />
+          </div>
+
           {/* Environment variables */}
           <div>
             <div className="flex items-center justify-between mb-2">
@@ -253,4 +285,37 @@ export function HarnessRunner({
       />
     </div>
   );
+}
+
+function ModelField({
+  label,
+  value,
+  onChange,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+}) {
+  return (
+    <div>
+      <label className="block text-sm font-medium text-slate-300 mb-2">{label}</label>
+      <input
+        type="text"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+        className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-md text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+      />
+    </div>
+  );
+}
+
+function compactModelProfile(models: ModelProfile): ModelProfile | undefined {
+  const out: ModelProfile = {};
+  if ((models.plan || '').trim()) out.plan = (models.plan || '').trim();
+  if ((models.implementation || '').trim()) out.implementation = (models.implementation || '').trim();
+  if ((models.skills || '').trim()) out.skills = (models.skills || '').trim();
+  return out.plan || out.implementation || out.skills ? out : undefined;
 }

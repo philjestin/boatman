@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	agentruntime "github.com/philjestin/boatman-ecosystem/shared/agentruntime"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -124,6 +125,7 @@ type StreamExecutionOptions struct {
 	KeepDraft         bool
 	ReviewSkill       string
 	ExtraReviewSkills []string
+	Models            agentruntime.ModelProfile
 	Title             string
 	BranchName        string
 	SuppressWailsEmit bool
@@ -312,6 +314,15 @@ func boatmanWorkArgs(input string, mode string, opts StreamExecutionOptions) []s
 		if strings.TrimSpace(skill) != "" {
 			args = append(args, "--extra-review-skill", strings.TrimSpace(skill))
 		}
+	}
+	if model := strings.TrimSpace(opts.Models.Plan); model != "" {
+		args = append(args, "--plan-model", model)
+	}
+	if model := strings.TrimSpace(opts.Models.Implementation); model != "" {
+		args = append(args, "--implementation-model", model)
+	}
+	if model := strings.TrimSpace(opts.Models.Skills); model != "" {
+		args = append(args, "--skill-model", model)
 	}
 	if opts.Title != "" && mode != "ticket" {
 		args = append(args, "--title", opts.Title)

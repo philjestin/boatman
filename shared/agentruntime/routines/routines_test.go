@@ -113,6 +113,11 @@ func TestProjectLibraryLoadsExtendingRoutineDefaults(t *testing.T) {
         "graph_area": "employer",
         "service": "employer-graphql",
         "top_n": "10"
+      },
+      "models": {
+        "plan": "opus",
+        "implementation": "sonnet",
+        "skills": "haiku"
       }
     }
   ]
@@ -131,6 +136,9 @@ func TestProjectLibraryLoadsExtendingRoutineDefaults(t *testing.T) {
 	}
 	if routine.Profile != "routine.daily-employer-gql" || routine.Output.DefaultPath != filepath.Join(".boatman", "routines", "daily-employer-gql") {
 		t.Fatalf("routine defaults not normalized: %#v", routine)
+	}
+	if routine.Models.Plan != "opus" || routine.Models.Implementation != "sonnet" || routine.Models.Skills != "haiku" {
+		t.Fatalf("routine models = %#v, want project overrides", routine.Models)
 	}
 	values, err := Values(routine, nil)
 	if err != nil {

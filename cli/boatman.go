@@ -43,6 +43,7 @@ type ClaudeConfig struct {
 	Models struct {
 		Planner  string // Model for planning
 		Executor string // Model for execution
+		Reviewer string // Model for review and skill execution
 		Refactor string // Model for refactoring
 	}
 	EnablePromptCaching bool // Enable prompt caching (default: true)
@@ -117,6 +118,7 @@ func NewAgent(cfg *Config) (*Agent, error) {
 	// Copy model configuration
 	internalCfg.Claude.Models.Planner = cfg.Claude.Models.Planner
 	internalCfg.Claude.Models.Executor = cfg.Claude.Models.Executor
+	internalCfg.Claude.Models.Reviewer = cfg.Claude.Models.Reviewer
 	internalCfg.Claude.Models.Refactor = cfg.Claude.Models.Refactor
 
 	a, err := agent.New(internalCfg)

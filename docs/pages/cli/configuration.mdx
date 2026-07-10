@@ -162,6 +162,27 @@ claude:
 
 If a model field is omitted, the Claude CLI's default model is used.
 
+For one-off work runs, you can override the common phases directly:
+
+```bash
+boatman work --prompt "Fix slow resolver" \
+  --plan-model claude-opus-4-6 \
+  --implementation-model claude-sonnet-4-5 \
+  --skill-model claude-sonnet-4-5
+```
+
+Routine definitions use the provider-neutral shape:
+
+```json
+{
+  "models": {
+    "plan": "claude-opus-4-6",
+    "implementation": "claude-sonnet-4-5",
+    "skills": "claude-sonnet-4-5"
+  }
+}
+```
+
 ---
 
 ## Runtime Provider Routing

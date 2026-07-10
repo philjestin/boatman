@@ -5,6 +5,7 @@ package agentruntime
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"time"
 )
 
@@ -70,6 +71,45 @@ const (
 	RoleIntegration Role = "integration"
 	RoleRoutine     Role = "routine"
 )
+
+// ModelProfile describes phase-specific model routing for multi-step agent
+// workflows. Empty fields are resolved by callers from their selected default
+// model.
+type ModelProfile struct {
+	// Plan is used for planning phases such as /plan.
+	Plan string `json:"plan,omitempty"`
+	// Implementation is used for code changes and remediation/refactor work.
+	Implementation string `json:"implementation,omitempty"`
+	// Skills is used for skill-backed review or other skill execution phases.
+	Skills string `json:"skills,omitempty"`
+}
+
+// WithDefault returns a copy with empty phase fields filled by defaultModel.
+func (m ModelProfile) WithDefault(defaultModel string) ModelProfile {
+	defaultModel = strings.TrimSpace(defaultModel)
+	out := ModelProfile{
+		Plan:           strings.TrimSpace(m.Plan),
+		Implementation: strings.TrimSpace(m.Implementation),
+		Skills:         strings.TrimSpace(m.Skills),
+	}
+	if out.Plan == "" {
+		out.Plan = defaultModel
+	}
+	if out.Implementation == "" {
+		out.Implementation = defaultModel
+	}
+	if out.Skills == "" {
+		out.Skills = defaultModel
+	}
+	return out
+}
+
+// IsZero reports whether no model overrides are set.
+func (m ModelProfile) IsZero() bool {
+	return strings.TrimSpace(m.Plan) == "" &&
+		strings.TrimSpace(m.Implementation) == "" &&
+		strings.TrimSpace(m.Skills) == ""
+}
 
 // Event is the normalized runtime stream item. It intentionally keeps provider
 // details in optional fields so CLI, desktop, and future services can consume a

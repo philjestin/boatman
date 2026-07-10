@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"reflect"
 	"testing"
+
+	agentruntime "github.com/philjestin/boatman-ecosystem/shared/agentruntime"
 )
 
 func TestIsRuntimeEventType(t *testing.T) {
@@ -102,8 +104,13 @@ func TestBoatmanWorkArgsIncludesAutomationOptions(t *testing.T) {
 		KeepDraft:         true,
 		ReviewSkill:       "peer-review",
 		ExtraReviewSkills: []string{"lydia-code-review", ""},
-		Title:             "Fix slow GQL",
-		BranchName:        "routine/fix-slow-gql",
+		Models: agentruntime.ModelProfile{
+			Plan:           "opus",
+			Implementation: "sonnet",
+			Skills:         "haiku",
+		},
+		Title:      "Fix slow GQL",
+		BranchName: "routine/fix-slow-gql",
 	})
 	want := []string{
 		"work", "--prompt", "fix slow gql",
@@ -112,6 +119,9 @@ func TestBoatmanWorkArgsIncludesAutomationOptions(t *testing.T) {
 		"--keep-draft",
 		"--review-skill", "peer-review",
 		"--extra-review-skill", "lydia-code-review",
+		"--plan-model", "opus",
+		"--implementation-model", "sonnet",
+		"--skill-model", "haiku",
 		"--title", "Fix slow GQL",
 		"--branch-name", "routine/fix-slow-gql",
 	}

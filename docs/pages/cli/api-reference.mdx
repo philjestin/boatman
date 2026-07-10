@@ -103,13 +103,21 @@ type ClaudeConfig struct {
     Models struct {
         Planner    string  // Model for planning
         Executor   string  // Model for execution
-        Reviewer   string  // Model for review
+        Reviewer   string  // Model for review and skill execution
         Refactor   string  // Model for refactoring
         Preflight  string  // Model for preflight validation
         TestRunner string  // Model for test parsing
     }
 }
 ```
+
+`boatman work` can override common phase models per run:
+
+| Flag | Internal model slot |
+|------|---------------------|
+| `--plan-model` | `Claude.Models.Planner` |
+| `--implementation-model` | `Claude.Models.Executor` and `Claude.Models.Refactor` |
+| `--skill-model` | `Claude.Models.Reviewer` |
 
 ### ReviewConfig
 

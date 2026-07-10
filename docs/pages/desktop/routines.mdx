@@ -31,6 +31,11 @@ set project-specific defaults:
         "graph_area": "employer",
         "service": "employer-graphql",
         "top_n": "10"
+      },
+      "models": {
+        "plan": "claude-opus-4-6",
+        "implementation": "claude-sonnet-4-5",
+        "skills": "claude-sonnet-4-5"
       }
     }
   ]
@@ -39,6 +44,18 @@ set project-specific defaults:
 
 The Routines tab renders inputs from the selected routine's `parameters`, so a
 project can add new routines without changing the desktop frontend.
+
+## Model Routing
+
+Routines may define a `models` profile with phase-specific overrides:
+
+- `plan`: model for `/plan` and planning phases
+- `implementation`: model for code changes and refactor work
+- `skills`: model for review skills and other skill execution
+
+Any empty field falls back to the model selected in the Routines tab. The
+Datadog remediation loop passes the resolved profile into each child
+BoatmanMode run.
 
 ## Datadog GraphQL Slow Queries
 

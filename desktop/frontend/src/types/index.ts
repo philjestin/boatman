@@ -227,6 +227,12 @@ export interface IntegrationStatus {
 
 export type RoutineParameterType = 'string' | 'integer' | 'duration';
 
+export interface ModelProfile {
+  plan?: string;
+  implementation?: string;
+  skills?: string;
+}
+
 export interface RoutineParameter {
   name: string;
   type: RoutineParameterType;
@@ -248,6 +254,7 @@ export interface DesktopRoutine {
   workflowTemplate?: string;
   role: string;
   profile: string;
+  models?: ModelProfile;
   integrations?: string[];
   parameters?: RoutineParameter[];
   output: RoutineOutput;
@@ -260,6 +267,7 @@ export interface RoutineRunRequest {
   values?: Record<string, string>;
   provider?: string;
   model?: string;
+  models?: ModelProfile;
   runId?: string;
   reportOut?: string;
 }
@@ -284,6 +292,7 @@ export interface RoutineDryRunResult {
   routine: DesktopRoutine;
   values: Record<string, string>;
   request: RoutineRequestPreview;
+  models?: ModelProfile;
   integrations?: IntegrationStatus[];
   reportPath?: string;
   command?: string;
@@ -295,6 +304,7 @@ export interface RoutineRunResult {
   sessionId?: string;
   provider: string;
   model?: string;
+  models?: ModelProfile;
   values?: Record<string, string>;
   reportPath?: string;
   integrations?: IntegrationStatus[];
@@ -783,6 +793,8 @@ export interface RunRequest {
   workDir: string;
   taskTitle: string;
   taskDescription: string;
+  model?: string;
+  models?: ModelProfile;
   envVars: Record<string, string>;
 }
 
