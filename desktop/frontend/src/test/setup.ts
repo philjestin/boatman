@@ -87,6 +87,11 @@ vi.mock('../../wailsjs/go/main/App', () => ({
   GetRuntimeRun: vi.fn().mockResolvedValue(null),
   ListMemoryDocuments: vi.fn().mockResolvedValue([]),
   GetMemoryDocument: vi.fn().mockResolvedValue(null),
+  AuthenticateDatadogMCP: vi.fn().mockResolvedValue({
+    mcpName: 'plugin:datadog:datadog-mcp',
+    command: 'claude mcp login plugin:datadog:datadog-mcp',
+    message: 'Datadog MCP authentication completed',
+  }),
   ListProjectRoutines: vi.fn().mockResolvedValue([]),
   ListRoutines: vi.fn().mockResolvedValue([]),
   DryRunRoutine: vi.fn().mockResolvedValue(null),

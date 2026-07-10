@@ -584,6 +584,24 @@ export namespace main {
 	        this.untracked = source["untracked"];
 	    }
 	}
+	export class DatadogMCPAuthResult {
+	    mcpName: string;
+	    command: string;
+	    message?: string;
+	    output?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new DatadogMCPAuthResult(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.mcpName = source["mcpName"];
+	        this.command = source["command"];
+	        this.message = source["message"];
+	        this.output = source["output"];
+	    }
+	}
 	export class RoutineOutput {
 	    format: string;
 	    defaultPath?: string;

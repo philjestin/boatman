@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { RoutineView } from './RoutineView';
 import {
+  AuthenticateDatadogMCP,
   DryRunRoutine,
   ListProjectRoutines,
   ListRoutines,
@@ -124,5 +125,17 @@ describe('RoutineView', () => {
     });
     expect(await screen.findByText('Report')).toBeInTheDocument();
     expect(screen.getByText(/p95 latency regressed/i)).toBeInTheDocument();
+  });
+
+  it('opens Datadog MCP authentication from the integration panel', async () => {
+    const user = userEvent.setup();
+    render(<RoutineView projectPath="/repo" />);
+
+    await screen.findByRole('heading', { name: 'Datadog GraphQL Slow Queries' });
+    await user.click(screen.getByRole('button', { name: /Authenticate/i }));
+
+    await waitFor(() => {
+      expect(AuthenticateDatadogMCP).toHaveBeenCalled();
+    });
   });
 });

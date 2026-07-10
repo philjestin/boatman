@@ -16,6 +16,8 @@ export function AddSessionTag(arg1:string,arg2:string):Promise<void>;
 
 export function ApproveAgentAction(arg1:string,arg2:string):Promise<void>;
 
+export function AuthenticateDatadogMCP():Promise<main.DatadogMCPAuthResult>;
+
 export function AutoDistillBrains():Promise<Array<services.AutoDistillResult>>;
 
 export function CheckClaudeCLI():Promise<boolean>;

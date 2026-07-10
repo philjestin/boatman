@@ -6,6 +6,7 @@ import {
   Clock,
   DatabaseZap,
   FileText,
+  KeyRound,
   Loader2,
   Play,
   RefreshCw,
@@ -13,6 +14,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import {
+  AuthenticateDatadogMCP,
   DryRunRoutine,
   ListProjectRoutines,
   ListRoutines,
@@ -44,6 +46,7 @@ export function RoutineView({ projectPath, onOpenSettings }: RoutineViewProps) {
   const [dryRun, setDryRun] = useState<RoutineDryRunResult | null>(null);
   const [result, setResult] = useState<RoutineRunResult | null>(null);
   const [runState, setRunState] = useState<RunState>('idle');
+  const [authenticatingDatadog, setAuthenticatingDatadog] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -136,6 +139,23 @@ export function RoutineView({ projectPath, onOpenSettings }: RoutineViewProps) {
     }
   };
 
+  const handleAuthenticateDatadog = async () => {
+    setAuthenticatingDatadog(true);
+    setError(null);
+    try {
+      await AuthenticateDatadogMCP();
+      if (projectPath && selectedRoutine && !hasMissingRequired) {
+        const response = await DryRunRoutine(buildRequest());
+        setDryRun(response as unknown as RoutineDryRunResult);
+        setResult(null);
+      }
+    } catch (err) {
+      setError(errorMessage(err, 'Datadog MCP authentication failed'));
+    } finally {
+      setAuthenticatingDatadog(false);
+    }
+  };
+
   return (
     <div className="flex flex-col h-full bg-slate-900">
       <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700">
@@ -204,6 +224,8 @@ export function RoutineView({ projectPath, onOpenSettings }: RoutineViewProps) {
                 routine={selectedRoutine}
                 statuses={selectedStatuses}
                 onOpenSettings={onOpenSettings}
+                onAuthenticateDatadog={handleAuthenticateDatadog}
+                authenticatingDatadog={authenticatingDatadog}
               />
             )}
 
@@ -320,10 +342,14 @@ function IntegrationsPanel({
   routine,
   statuses,
   onOpenSettings,
+  onAuthenticateDatadog,
+  authenticatingDatadog,
 }: {
   routine: DesktopRoutine;
   statuses: IntegrationStatus[];
   onOpenSettings?: () => void;
+  onAuthenticateDatadog?: () => void;
+  authenticatingDatadog?: boolean;
 }) {
   const statusByName = new Map(statuses.map((status) => [status.name, status]));
   const integrations = routine.integrations || [];
@@ -355,12 +381,26 @@ function IntegrationsPanel({
             const state = status?.state || 'not_checked';
             const isReady = state === 'connected' || state === 'ready';
             const missingEnv = status?.missingEnv || [];
+            const canAuthenticate = name === 'datadog' && !isReady && onAuthenticateDatadog;
             return (
               <div key={name} className="border border-slate-800 rounded-md p-2 bg-slate-900/60">
-                <div className="flex items-center gap-2 min-w-0">
-                  {isReady ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : <AlertCircle className="w-4 h-4 text-amber-400" />}
-                  <span className="text-sm text-slate-200">{name}</span>
-                  <StatusBadge status={state} />
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    {isReady ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : <AlertCircle className="w-4 h-4 text-amber-400" />}
+                    <span className="text-sm text-slate-200">{name}</span>
+                    <StatusBadge status={state} />
+                  </div>
+                  {canAuthenticate && (
+                    <button
+                      type="button"
+                      onClick={onAuthenticateDatadog}
+                      disabled={authenticatingDatadog}
+                      className="inline-flex items-center gap-1.5 px-2 py-1 text-xs text-teal-200 border border-teal-700 rounded-md hover:bg-teal-950/40 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {authenticatingDatadog ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <KeyRound className="w-3.5 h-3.5" />}
+                      {authenticatingDatadog ? 'Opening' : 'Authenticate'}
+                    </button>
+                  )}
                 </div>
                 {missingEnv.length > 0 && (
                   <div className="mt-2 text-xs text-amber-200">

@@ -53,18 +53,20 @@ operations for a graph area, and returns a Markdown report with:
 
 ## Setup
 
-1. Open **Settings > Firefighter**.
-2. Add `Datadog API Key`, `Datadog App Key`, and optionally `Datadog Site`.
-3. Open a project.
-4. Open the **Routines** tab.
-5. Enter graph area, top N, lookback, environment, and optional service.
-6. Click **Check** to verify Datadog configuration.
+1. Install and enable the Datadog Claude Code plugin:
+   `claude /plugin install datadog@handshake-marketplace`.
+2. Open a project.
+3. Open the **Routines** tab.
+4. Click **Check**. If Datadog is not authenticated, click **Authenticate**.
+5. Complete the Datadog MCP browser auth flow opened by Claude Code.
+6. Enter graph area, top N, lookback, environment, and optional service.
 7. Click **Run Routine**.
 
-The desktop app passes Datadog credentials to the local MCP subprocess as
-process environment. Required secret values are not serialized into
-`request.json`; recorded requests keep only non-secret MCP metadata such as
-`DD_SITE` and the `datadog` label.
+Desktop prefers Claude Code's Datadog plugin MCP server
+`plugin:datadog:datadog-mcp`, so Datadog OAuth credentials stay in Claude's MCP
+auth store and are not serialized into Boatman runtime request JSON. If the
+plugin is unavailable, Boatman can still fall back to API-key MCP configuration
+from `Datadog API Key`, `Datadog App Key`, and optional `Datadog Site`.
 
 ## Output
 

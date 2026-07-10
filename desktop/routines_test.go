@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -41,6 +42,65 @@ func TestDesktopRoutineIntegrationRefsUsesPreferencesAndSanitizesSecrets(t *test
 	}
 	if secretEnv["DD_API_KEY"] != "secret-api" || secretEnv["DD_APP_KEY"] != "secret-app" {
 		t.Fatalf("secretEnv = %#v, want Datadog keys for process env", secretEnv)
+	}
+}
+
+func TestDesktopRoutineIntegrationRefsUsesClaudeManagedDatadog(t *testing.T) {
+	t.Setenv("DD_API_KEY", "")
+	t.Setenv("DD_APP_KEY", "")
+	t.Setenv("DD_SITE", "")
+	withClaudeMCPCommand(t, func(_ context.Context, args ...string) (string, error) {
+		if len(args) == 3 && args[0] == "mcp" && args[1] == "get" && args[2] == datadogClaudeMCPName {
+			return `plugin:datadog:datadog-mcp:
+  Scope: Dynamic config (from command line)
+  Status: ✓ Connected
+  Type: http
+  URL: https://mcp.datadoghq.com/api/unstable/mcp-server/mcp`, nil
+		}
+		return "", errors.New("unexpected command")
+	})
+
+	routine, _ := routines.DefaultLibrary().Get(routines.DatadogGQLSlowQueriesID)
+	statuses, refs, secretEnv, err := desktopRoutineIntegrationRefs(context.Background(), routine, config.UserPreferences{}, false)
+	if err != nil {
+		t.Fatalf("desktopRoutineIntegrationRefs error: %v", err)
+	}
+	if len(statuses) != 1 || statuses[0].State != integrations.StateConnected {
+		t.Fatalf("statuses = %#v, want connected Claude-managed datadog", statuses)
+	}
+	if statuses[0].Metadata["auth_method"] != "claude_mcp" || statuses[0].Metadata["mcp_name"] != datadogClaudeMCPName {
+		t.Fatalf("metadata = %#v, want Claude MCP auth metadata", statuses[0].Metadata)
+	}
+	if len(refs) != 0 {
+		t.Fatalf("refs = %#v, want no explicit MCP ref when Claude plugin owns Datadog MCP", refs)
+	}
+	if secretEnv != nil {
+		t.Fatalf("secretEnv = %#v, want nil", secretEnv)
+	}
+}
+
+func TestAuthenticateDatadogMCPRunsClaudeLogin(t *testing.T) {
+	var gotArgs []string
+	withClaudeMCPCommand(t, func(_ context.Context, args ...string) (string, error) {
+		gotArgs = append([]string(nil), args...)
+		return "Logged in", nil
+	})
+
+	result, err := (&App{}).AuthenticateDatadogMCP()
+	if err != nil {
+		t.Fatalf("AuthenticateDatadogMCP error: %v", err)
+	}
+	want := []string{"mcp", "login", datadogClaudeMCPName}
+	if len(gotArgs) != len(want) {
+		t.Fatalf("args = %#v, want %#v", gotArgs, want)
+	}
+	for i := range want {
+		if gotArgs[i] != want[i] {
+			t.Fatalf("args = %#v, want %#v", gotArgs, want)
+		}
+	}
+	if result.MCPName != datadogClaudeMCPName || result.Output != "Logged in" {
+		t.Fatalf("result = %#v", result)
 	}
 }
 
@@ -96,6 +156,9 @@ func TestDesktopRoutineDryRunAllowsMissingDatadogConfig(t *testing.T) {
 	t.Setenv("DD_API_KEY", "")
 	t.Setenv("DD_APP_KEY", "")
 	t.Setenv("DD_SITE", "")
+	withClaudeMCPCommand(t, func(_ context.Context, args ...string) (string, error) {
+		return `No MCP server named "plugin:datadog:datadog-mcp". Configured servers:`, errors.New("not found")
+	})
 
 	routine, _ := routines.DefaultLibrary().Get(routines.DatadogGQLSlowQueriesID)
 	statuses, refs, _, err := desktopRoutineIntegrationRefs(context.Background(), routine, config.UserPreferences{}, true)
@@ -113,6 +176,15 @@ func TestDesktopRoutineDryRunAllowsMissingDatadogConfig(t *testing.T) {
 	if err == nil {
 		t.Fatal("non-dry run should fail when Datadog config is missing")
 	}
+}
+
+func withClaudeMCPCommand(t *testing.T, fn func(context.Context, ...string) (string, error)) {
+	t.Helper()
+	original := runClaudeMCPCommand
+	runClaudeMCPCommand = fn
+	t.Cleanup(func() {
+		runClaudeMCPCommand = original
+	})
 }
 
 func TestRoutineStreamCollectorUsesNormalizedEvents(t *testing.T) {
