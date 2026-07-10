@@ -130,7 +130,7 @@ func (a *App) runRoutineRemediationCandidate(ctx context.Context, built *builtRo
 	var streamBuilder strings.Builder
 	var streamMsgID string
 	onMessage := func(role, content string) {
-		if role == "provider.raw" || role == "claude_stream" {
+		if role == "provider.raw" {
 			session.ProcessExternalStreamLine(content, &streamBuilder, &streamMsgID)
 			return
 		}
