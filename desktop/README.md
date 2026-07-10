@@ -64,7 +64,7 @@ See [TRIAGE.md](./TRIAGE.md) for full documentation.
 ### ✨ Routines
 - **Project Routine Library**: Load built-ins plus `.boatman/routines.json` and `.boatman/routines/*.json` from the active project
 - **Datadog GraphQL Slow Queries**: Run the saved slow-query investigation from the desktop app
-- **Datadog MCP Auth**: Open Claude Code's Datadog MCP browser auth flow from the Routines tab
+- **Datadog MCP Auth**: Open Claude Code's Datadog MCP auth flow in an interactive terminal from the Routines tab
 - **Dry-Run Checks**: Verify Datadog readiness and prompt shape before model execution
 - **Markdown Reports**: Save daily investigation output under project-local `.boatman/routines`
 

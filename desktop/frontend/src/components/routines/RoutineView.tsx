@@ -22,6 +22,7 @@ import {
 } from '../../../wailsjs/go/main/App';
 import type {
   DesktopRoutine,
+  DatadogMCPAuthResult,
   IntegrationStatus,
   RoutineDryRunResult,
   RoutineRunResult,
@@ -48,12 +49,14 @@ export function RoutineView({ projectPath, onOpenSettings }: RoutineViewProps) {
   const [runState, setRunState] = useState<RunState>('idle');
   const [authenticatingDatadog, setAuthenticatingDatadog] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
     setDryRun(null);
     setResult(null);
     setRunState('idle');
+    setNotice(null);
     const list = projectPath ? ListProjectRoutines(projectPath) : ListRoutines();
     list
       .then((items) => {
@@ -109,6 +112,7 @@ export function RoutineView({ projectPath, onOpenSettings }: RoutineViewProps) {
     }
     setRunState('checking');
     setError(null);
+    setNotice(null);
     setResult(null);
     try {
       const response = await DryRunRoutine(buildRequest());
@@ -127,6 +131,7 @@ export function RoutineView({ projectPath, onOpenSettings }: RoutineViewProps) {
     }
     setRunState('running');
     setError(null);
+    setNotice(null);
     setResult(null);
     try {
       const response = await RunRoutine(buildRequest());
@@ -142,11 +147,13 @@ export function RoutineView({ projectPath, onOpenSettings }: RoutineViewProps) {
   const handleAuthenticateDatadog = async () => {
     setAuthenticatingDatadog(true);
     setError(null);
+    setNotice(null);
     try {
-      await AuthenticateDatadogMCP();
-      if (projectPath && selectedRoutine && !hasMissingRequired) {
-        const response = await DryRunRoutine(buildRequest());
-        setDryRun(response as unknown as RoutineDryRunResult);
+      const response = (await AuthenticateDatadogMCP()) as unknown as DatadogMCPAuthResult;
+      setNotice(response.message || 'Datadog MCP auth opened. Complete the Claude auth flow, then click Check.');
+      if (!response.interactive && projectPath && selectedRoutine && !hasMissingRequired) {
+        const dryRunResponse = await DryRunRoutine(buildRequest());
+        setDryRun(dryRunResponse as unknown as RoutineDryRunResult);
         setResult(null);
       }
     } catch (err) {
@@ -185,6 +192,12 @@ export function RoutineView({ projectPath, onOpenSettings }: RoutineViewProps) {
           <span>{error}</span>
         </div>
       )}
+      {notice && (
+        <div className="flex items-center gap-2 px-4 py-2 bg-teal-950/40 border-b border-teal-900/60 text-xs text-teal-100">
+          <CheckCircle2 className="w-3.5 h-3.5 text-teal-300 flex-shrink-0" />
+          <span>{notice}</span>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 xl:grid-cols-[420px_1fr] flex-1 min-h-0">
         <div className="border-b xl:border-b-0 xl:border-r border-slate-800 overflow-y-auto">
@@ -197,6 +210,7 @@ export function RoutineView({ projectPath, onOpenSettings }: RoutineViewProps) {
                 setDryRun(null);
                 setResult(null);
                 setError(null);
+                setNotice(null);
               }}
             />
 

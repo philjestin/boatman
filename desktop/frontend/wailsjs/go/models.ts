@@ -589,6 +589,8 @@ export namespace main {
 	    command: string;
 	    message?: string;
 	    output?: string;
+	    interactive: boolean;
+	    launched: boolean;
 
 	    static createFrom(source: any = {}) {
 	        return new DatadogMCPAuthResult(source);
@@ -600,6 +602,8 @@ export namespace main {
 	        this.command = source["command"];
 	        this.message = source["message"];
 	        this.output = source["output"];
+	        this.interactive = source["interactive"];
+	        this.launched = source["launched"];
 	    }
 	}
 	export class RoutineOutput {
