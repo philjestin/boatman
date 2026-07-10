@@ -7,6 +7,7 @@ import {
   StopHarness as StopHarnessBinding,
   SelectHarnessFolder,
 } from '../../wailsjs/go/main/App';
+import { harnessui } from '../../wailsjs/go/models';
 import { EventsOn, EventsOff } from '../../wailsjs/runtime/runtime';
 
 export function useHarness() {
@@ -99,7 +100,7 @@ export function useHarness() {
     });
 
     try {
-      await RunHarnessBinding(runId, req);
+      await RunHarnessBinding(runId, harnessui.RunRequest.createFrom(req));
     } catch (err) {
       setRunState((prev) => ({
         ...prev,

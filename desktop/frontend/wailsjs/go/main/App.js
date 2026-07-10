@@ -178,10 +178,6 @@ export function GetMCPServers() {
   return window['go']['main']['App']['GetMCPServers']();
 }
 
-export function GetMemoryDocument(arg1, arg2) {
-  return window['go']['main']['App']['GetMemoryDocument'](arg1, arg2);
-}
-
 export function GetMaxAgentsPerSession() {
   return window['go']['main']['App']['GetMaxAgentsPerSession']();
 }
@@ -196,6 +192,10 @@ export function GetMaxSessionAgeDays() {
 
 export function GetMaxTotalSessions() {
   return window['go']['main']['App']['GetMaxTotalSessions']();
+}
+
+export function GetMemoryDocument(arg1, arg2) {
+  return window['go']['main']['App']['GetMemoryDocument'](arg1, arg2);
 }
 
 export function GetOktaAccessToken(arg1, arg2, arg3) {
@@ -298,16 +298,16 @@ export function ListHarnesses() {
   return window['go']['main']['App']['ListHarnesses']();
 }
 
-export function ListProjects() {
-  return window['go']['main']['App']['ListProjects']();
-}
-
 export function ListMemoryDocuments(arg1) {
   return window['go']['main']['App']['ListMemoryDocuments'](arg1);
 }
 
 export function ListProjectRoutines(arg1) {
   return window['go']['main']['App']['ListProjectRoutines'](arg1);
+}
+
+export function ListProjects() {
+  return window['go']['main']['App']['ListProjects']();
 }
 
 export function ListRoutines() {
@@ -366,12 +366,12 @@ export function ResumeBoatmanModeExecution(arg1) {
   return window['go']['main']['App']['ResumeBoatmanModeExecution'](arg1);
 }
 
-export function RunRoutine(arg1) {
-  return window['go']['main']['App']['RunRoutine'](arg1);
-}
-
 export function RunHarness(arg1, arg2) {
   return window['go']['main']['App']['RunHarness'](arg1, arg2);
+}
+
+export function RunRoutine(arg1) {
+  return window['go']['main']['App']['RunRoutine'](arg1);
 }
 
 export function ScaffoldHarness(arg1) {
