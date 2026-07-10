@@ -28,6 +28,7 @@ import { useDiff } from './hooks/useDiff';
 import { useStore } from './store';
 import { Activity, ListTodo, MessageSquare, FileCode, Hammer, Brain, Sparkles } from 'lucide-react';
 import { ListAgentSessions, SetSessionFavorite, AddSessionTag, RemoveSessionTag } from '../wailsjs/go/main/App';
+import { EventsOff, EventsOn } from '../wailsjs/runtime/runtime';
 import type { Task, TriageOptions } from './types';
 
 type TabView = 'chat' | 'tasks' | 'diff' | 'harness' | 'brain' | 'runtime' | 'routines';
@@ -137,6 +138,24 @@ function App() {
     }
   }, [error, setError]);
 
+  // Routine runs are created by the backend while the Routines tab is still
+  // open. When that happens, move the user into the newly-created chat session.
+  useEffect(() => {
+    const handleSessionCreated = (info: { id?: string; mode?: string }) => {
+      if (info?.mode === 'routine') {
+        setActiveTab('chat');
+      }
+    };
+    const unsubscribe = EventsOn('agent:session', handleSessionCreated);
+    return () => {
+      if (typeof unsubscribe === 'function') {
+        unsubscribe();
+      } else {
+        EventsOff('agent:session');
+      }
+    };
+  }, []);
+
   // Check firefighter monitoring status when session changes
   useEffect(() => {
     const checkMonitoring = async () => {
@@ -225,6 +244,15 @@ function App() {
   // Handle project open
   const handleOpenProject = async () => {
     await selectAndOpenProject();
+  };
+
+  const handleSelectSession = async (sessionId: string) => {
+    await selectSession(sessionId);
+    setActiveTab('chat');
+  };
+
+  const handleRoutineSessionOpen = async (sessionId: string) => {
+    await handleSelectSession(sessionId);
   };
 
   // Handle stop session
@@ -377,7 +405,7 @@ function App() {
       <SearchModal
         isOpen={isSearchOpen}
         onClose={closeSearch}
-        onSelectSession={selectSession}
+        onSelectSession={handleSelectSession}
         onSearch={performSearch}
         availableTags={availableTags}
         availableProjects={availableProjects}
@@ -443,7 +471,7 @@ function App() {
           sessions={sessions}
           activeSessionId={activeSession?.id ?? null}
           activeProjectId={activeProject?.id ?? null}
-          onSessionSelect={selectSession}
+          onSessionSelect={handleSelectSession}
           onProjectSelect={selectProject}
           onDeleteSession={deleteSession}
           onDeleteAllSessions={async () => {
@@ -628,6 +656,7 @@ function App() {
               <RoutineView
                 projectPath={activeProject?.path}
                 onOpenSettings={() => setSettingsOpen(true)}
+                onRoutineSessionOpen={handleRoutineSessionOpen}
               />
             )}
           </div>

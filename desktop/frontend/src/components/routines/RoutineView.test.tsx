@@ -76,6 +76,7 @@ describe('RoutineView', () => {
     vi.mocked(RunRoutine).mockResolvedValue({
       routineId: 'datadog-gql-slow-queries',
       runId: 'run-1',
+      sessionId: 'run-1',
       provider: 'claude-cli',
       model: 'sonnet',
       values: { graph_area: 'employer' },
@@ -119,7 +120,8 @@ describe('RoutineView', () => {
 
   it('runs the routine and renders the report', async () => {
     const user = userEvent.setup();
-    render(<RoutineView projectPath="/repo" />);
+    const onRoutineSessionOpen = vi.fn();
+    render(<RoutineView projectPath="/repo" onRoutineSessionOpen={onRoutineSessionOpen} />);
 
     await screen.findByRole('heading', { name: 'Datadog GraphQL Slow Queries' });
     await user.type(screen.getByLabelText(/Graph Area/i), 'employer');
@@ -131,6 +133,7 @@ describe('RoutineView', () => {
         projectPath: '/repo',
       }));
     });
+    expect(onRoutineSessionOpen).toHaveBeenCalledWith('run-1');
     expect(await screen.findByText('Report')).toBeInTheDocument();
     expect(screen.getByText(/p95 latency regressed/i)).toBeInTheDocument();
   });
