@@ -87,4 +87,7 @@ vi.mock('../../wailsjs/go/main/App', () => ({
   GetRuntimeRun: vi.fn().mockResolvedValue(null),
   ListMemoryDocuments: vi.fn().mockResolvedValue([]),
   GetMemoryDocument: vi.fn().mockResolvedValue(null),
+  ListRoutines: vi.fn().mockResolvedValue([]),
+  DryRunRoutine: vi.fn().mockResolvedValue(null),
+  RunRoutine: vi.fn().mockResolvedValue(null),
 }));

@@ -584,6 +584,236 @@ export namespace main {
 	        this.untracked = source["untracked"];
 	    }
 	}
+	export class RoutineOutput {
+	    format: string;
+	    defaultPath?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new RoutineOutput(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.format = source["format"];
+	        this.defaultPath = source["defaultPath"];
+	    }
+	}
+	export class RoutineParameter {
+	    name: string;
+	    type: string;
+	    description?: string;
+	    default?: string;
+	    required?: boolean;
+
+	    static createFrom(source: any = {}) {
+	        return new RoutineParameter(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.type = source["type"];
+	        this.description = source["description"];
+	        this.default = source["default"];
+	        this.required = source["required"];
+	    }
+	}
+	export class DesktopRoutine {
+	    id: string;
+	    name: string;
+	    description?: string;
+	    schedule?: string;
+	    workflowTemplate?: string;
+	    role: string;
+	    profile: string;
+	    integrations?: string[];
+	    parameters?: RoutineParameter[];
+	    output: RoutineOutput;
+	    metadata?: Record<string, string>;
+
+	    static createFrom(source: any = {}) {
+	        return new DesktopRoutine(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.description = source["description"];
+	        this.schedule = source["schedule"];
+	        this.workflowTemplate = source["workflowTemplate"];
+	        this.role = source["role"];
+	        this.profile = source["profile"];
+	        this.integrations = source["integrations"];
+	        this.parameters = this.convertValues(source["parameters"], RoutineParameter);
+	        this.output = this.convertValues(source["output"], RoutineOutput);
+	        this.metadata = source["metadata"];
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class RoutineRunRequest {
+	    routineId: string;
+	    projectPath: string;
+	    values?: Record<string, string>;
+	    provider?: string;
+	    model?: string;
+	    runId?: string;
+	    reportOut?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new RoutineRunRequest(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.routineId = source["routineId"];
+	        this.projectPath = source["projectPath"];
+	        this.values = source["values"];
+	        this.provider = source["provider"];
+	        this.model = source["model"];
+	        this.runId = source["runId"];
+	        this.reportOut = source["reportOut"];
+	    }
+	}
+	export class RoutineRequestPreview {
+	    runId: string;
+	    provider: string;
+	    model?: string;
+	    role: string;
+	    profile?: string;
+	    workDir?: string;
+	    approvalPolicy?: string;
+	    reasoningEffort?: string;
+	    mcpServerLabels?: string[];
+	    metadata?: Record<string, string>;
+	    instructionsPreview?: string;
+	    firstMessagePreview?: string;
+	    firstMessageCharacterCount?: number;
+
+	    static createFrom(source: any = {}) {
+	        return new RoutineRequestPreview(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.runId = source["runId"];
+	        this.provider = source["provider"];
+	        this.model = source["model"];
+	        this.role = source["role"];
+	        this.profile = source["profile"];
+	        this.workDir = source["workDir"];
+	        this.approvalPolicy = source["approvalPolicy"];
+	        this.reasoningEffort = source["reasoningEffort"];
+	        this.mcpServerLabels = source["mcpServerLabels"];
+	        this.metadata = source["metadata"];
+	        this.instructionsPreview = source["instructionsPreview"];
+	        this.firstMessagePreview = source["firstMessagePreview"];
+	        this.firstMessageCharacterCount = source["firstMessageCharacterCount"];
+	    }
+	}
+	export class RoutineDryRunResult {
+	    routine: DesktopRoutine;
+	    values: Record<string, string>;
+	    request: RoutineRequestPreview;
+	    integrations?: mcp.IntegrationStatus[];
+	    reportPath?: string;
+	    command?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new RoutineDryRunResult(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.routine = this.convertValues(source["routine"], DesktopRoutine);
+	        this.values = source["values"];
+	        this.request = this.convertValues(source["request"], RoutineRequestPreview);
+	        this.integrations = this.convertValues(source["integrations"], mcp.IntegrationStatus);
+	        this.reportPath = source["reportPath"];
+	        this.command = source["command"];
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class RoutineRunResult {
+	    routineId: string;
+	    runId: string;
+	    provider: string;
+	    model?: string;
+	    values?: Record<string, string>;
+	    reportPath?: string;
+	    integrations?: mcp.IntegrationStatus[];
+	    usage?: any;
+	    report?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new RoutineRunResult(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.routineId = source["routineId"];
+	        this.runId = source["runId"];
+	        this.provider = source["provider"];
+	        this.model = source["model"];
+	        this.values = source["values"];
+	        this.reportPath = source["reportPath"];
+	        this.integrations = this.convertValues(source["integrations"], mcp.IntegrationStatus);
+	        this.usage = source["usage"];
+	        this.report = source["report"];
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class MemoryDocumentSummary {
 	    id: string;
 	    scope?: string;

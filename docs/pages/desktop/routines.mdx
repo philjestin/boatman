@@ -1,0 +1,45 @@
+# Routines
+
+The Desktop Routines tab runs saved, parameterized investigations against the
+active project. Routine runs are recorded in the project runtime store and can
+also write Markdown reports under `.boatman/routines`.
+
+## Datadog GraphQL Slow Queries
+
+The first built-in routine is `datadog-gql-slow-queries`.
+
+It connects the model to Datadog MCP, investigates the slowest GraphQL
+operations for a graph area, and returns a Markdown report with:
+
+- executive summary
+- Datadog query assumptions
+- top slow operations table
+- clustered likely causes
+- suggested fixes and validation checks
+- follow-up questions or missing telemetry
+
+## Setup
+
+1. Open **Settings > Firefighter**.
+2. Add `Datadog API Key`, `Datadog App Key`, and optionally `Datadog Site`.
+3. Open a project.
+4. Open the **Routines** tab.
+5. Enter graph area, top N, lookback, environment, and optional service.
+6. Click **Check** to verify Datadog configuration.
+7. Click **Run Routine**.
+
+The desktop app passes Datadog credentials to the local MCP subprocess as
+process environment. Required secret values are not serialized into
+`request.json`; recorded requests keep only non-secret MCP metadata such as
+`DD_SITE` and the `datadog` label.
+
+## Output
+
+Routine reports are written to:
+
+```text
+<project>/.boatman/routines/datadog-gql-slow-queries/<run-id>.md
+```
+
+The same run is also visible in the **Runtime** tab because routine executions
+use the provider-neutral runtime recorder.

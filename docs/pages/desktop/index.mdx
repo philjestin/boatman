@@ -1,6 +1,6 @@
 # Boatman Desktop
 
-Boatman Desktop is a native desktop application built with Wails (Go + React) that provides a rich GUI for interacting with AI agents on your codebase, with specialized **Firefighter Mode** for production incident investigation and a Runtime inspector for provider-neutral runs and memory.
+Boatman Desktop is a native desktop application built with Wails (Go + React) that provides a rich GUI for interacting with AI agents on your codebase, with specialized **Firefighter Mode** for production incident investigation, repeatable Routines, and a Runtime inspector for provider-neutral runs and memory.
 
 ## Features
 
@@ -31,6 +31,11 @@ Boatman Desktop is a native desktop application built with Wails (Go + React) th
 - **Artifact Manifest**: See durable outputs recorded by each run
 - **Inspectable Memory**: Read `.boatman/memory` Markdown documents with provenance, source run, scope, and expiration
 
+### Routines
+- **Datadog GraphQL Slow Queries**: Run a saved Datadog MCP investigation from the desktop app
+- **Dry-Run Preview**: Check integration readiness and request shape before invoking a model
+- **Markdown Reports**: Save routine output under project-local `.boatman/routines`
+
 ### MCP Integration
 - **Extensible**: Connect to any MCP-compatible tool or service
 - **Built-in Servers**: GitHub, Datadog, Bugsnag, Linear, Slack
@@ -56,6 +61,7 @@ desktop/
 │   │   │   ├── onboarding/  # First-run setup
 │   │   │   ├── project/   # Project management
 │   │   │   ├── runtime/   # Runtime run and memory inspector
+│   │   │   ├── routines/  # Repeatable routine UI
 │   │   │   ├── search/    # Search interface
 │   │   │   ├── session/   # Session management
 │   │   │   ├── settings/  # Settings modal

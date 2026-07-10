@@ -69,18 +69,34 @@ func TestCommandEnv(t *testing.T) {
 	anthropic := commandEnv([]string{"PATH=/bin"}, map[string]string{
 		"authMethod":      "anthropic-api",
 		"anthropicApiKey": "secret",
-	})
+	}, map[string]string{"DD_API_KEY": "datadog"})
 	if !containsEnv(anthropic, "ANTHROPIC_API_KEY=secret") {
 		t.Fatalf("anthropic env = %v, want API key", anthropic)
+	}
+	if !containsEnv(anthropic, "DD_API_KEY=datadog") {
+		t.Fatalf("anthropic env = %v, want extra env", anthropic)
 	}
 
 	gcp := commandEnv([]string{"PATH=/bin"}, map[string]string{
 		"authMethod":   "google-cloud",
 		"gcpProjectId": "project",
 		"gcpRegion":    "us-central1",
-	})
+	}, nil)
 	if !containsEnv(gcp, "CLOUD_ML_PROJECT_ID=project") || !containsEnv(gcp, "CLOUD_ML_REGION=us-central1") {
 		t.Fatalf("gcp env = %v, want project and region", gcp)
+	}
+}
+
+func TestNormalizedClaudeEvents(t *testing.T) {
+	events := normalizedClaudeEvents(`{"type":"result","result":"final report","total_cost_usd":0.25,"usage":{"input_tokens":10,"output_tokens":20,"cache_read_input_tokens":3}}`)
+	if len(events) != 2 {
+		t.Fatalf("events len = %d, want message and usage", len(events))
+	}
+	if events[0].Type != agentruntime.EventMessageCompleted || events[0].Message != "final report" {
+		t.Fatalf("first event = %#v, want completed message", events[0])
+	}
+	if events[1].Type != agentruntime.EventUsageUpdated || events[1].Usage == nil || events[1].Usage.InputTokens != 10 || events[1].Usage.OutputTokens != 20 || events[1].Usage.CacheReadTokens != 3 || events[1].Usage.TotalCostUSD != 0.25 {
+		t.Fatalf("second event = %#v, want parsed usage", events[1])
 	}
 }
 

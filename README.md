@@ -119,6 +119,7 @@ A cross-platform desktop application built with Wails that provides a GUI for th
 - **Firefighter mode** for production incident investigation
 - **Agent logs panel** for real-time visibility into AI actions
 - **Runtime tab** for inspecting `.boatman/runs` events, artifacts, and `.boatman/memory` documents
+- **Routines tab** for running saved Datadog investigations from the desktop app
 - **Integration health** for MCP-backed services before starting incident or autonomous workflows
 - **Onboarding wizard** for first-time setup
 - **MCP server management** via UI dialog
