@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	goruntime "runtime"
 	"sort"
 	"strings"
 	"time"
@@ -28,6 +29,18 @@ var runClaudeMCPCommand = func(ctx context.Context, args ...string) (string, err
 	cmd := exec.CommandContext(ctx, "claude", args...)
 	out, err := cmd.CombinedOutput()
 	return string(out), err
+}
+
+var launchClaudeMCPLogin = func(ctx context.Context, mcpName string) (string, error) {
+	command := terminalDatadogMCPLoginCommand(mcpName)
+	switch goruntime.GOOS {
+	case "darwin":
+		return launchMacTerminal(ctx, command)
+	case "windows":
+		return launchWindowsTerminal(ctx, "claude mcp login "+mcpName)
+	default:
+		return launchLinuxTerminal(ctx, command)
+	}
 }
 
 // DesktopRoutine is the compact routine definition rendered by the frontend.
@@ -113,10 +126,12 @@ type RoutineRunResult struct {
 
 // DatadogMCPAuthResult describes a Claude-managed Datadog MCP auth attempt.
 type DatadogMCPAuthResult struct {
-	MCPName string `json:"mcpName"`
-	Command string `json:"command"`
-	Message string `json:"message,omitempty"`
-	Output  string `json:"output,omitempty"`
+	MCPName     string `json:"mcpName"`
+	Command     string `json:"command"`
+	Message     string `json:"message,omitempty"`
+	Output      string `json:"output,omitempty"`
+	Interactive bool   `json:"interactive"`
+	Launched    bool   `json:"launched"`
 }
 
 type builtRoutineRun struct {
@@ -129,22 +144,24 @@ type builtRoutineRun struct {
 	providerName string
 }
 
-// AuthenticateDatadogMCP opens Claude Code's browser OAuth flow for the
-// Datadog plugin MCP server.
+// AuthenticateDatadogMCP opens Claude Code's Datadog MCP auth flow in an
+// interactive terminal because Claude's OAuth login requires a TTY.
 func (a *App) AuthenticateDatadogMCP() (*DatadogMCPAuthResult, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	result := &DatadogMCPAuthResult{
-		MCPName: datadogClaudeMCPName,
-		Command: "claude mcp login " + datadogClaudeMCPName,
+		MCPName:     datadogClaudeMCPName,
+		Command:     "claude mcp login " + datadogClaudeMCPName,
+		Interactive: true,
 	}
-	output, err := runClaudeMCPCommand(ctx, "mcp", "login", datadogClaudeMCPName)
+	output, err := launchClaudeMCPLogin(ctx, datadogClaudeMCPName)
 	result.Output = strings.TrimSpace(output)
 	if err != nil {
-		return result, fmt.Errorf("failed to authenticate Datadog MCP with Claude Code: %w%s", err, commandOutputSuffix(output))
+		return result, fmt.Errorf("failed to open interactive Datadog MCP authentication: %w%s", err, commandOutputSuffix(output))
 	}
-	result.Message = "Datadog MCP authentication completed"
+	result.Launched = true
+	result.Message = "Datadog MCP auth opened in an interactive terminal. Complete the browser flow, then click Check."
 	return result, nil
 }
 
@@ -432,6 +449,84 @@ func claudeManagedDatadogStatus(ctx context.Context) (mcp.IntegrationStatus, boo
 	status.State = integrations.StateReady
 	status.Message = "Datadog MCP is available through Claude Code"
 	return status, true
+}
+
+func terminalDatadogMCPLoginCommand(mcpName string) string {
+	login := "claude mcp login " + shellQuote(mcpName)
+	success := shellQuote("Boatman: Datadog MCP auth finished. Return to Boatman and click Check.")
+	failure := shellQuote("Boatman: Datadog MCP auth did not finish. Fix the issue above, then run Authenticate again.")
+	keepOpen := shellQuote("Boatman: this terminal will stay open so you can inspect the auth output.")
+	return fmt.Sprintf("%s; status=$?; echo; if [ $status -eq 0 ]; then echo %s; else echo %s; fi; echo %s; exec \"${SHELL:-/bin/sh}\" -l", login, success, failure, keepOpen)
+}
+
+func launchMacTerminal(ctx context.Context, command string) (string, error) {
+	script, err := os.CreateTemp("", "boatman-datadog-mcp-auth-*.command")
+	if err != nil {
+		return "", err
+	}
+	path := script.Name()
+	body := "#!/bin/zsh -l\n" + command + "\n"
+	if _, err := script.WriteString(body); err != nil {
+		_ = script.Close()
+		return "", err
+	}
+	if err := script.Close(); err != nil {
+		return "", err
+	}
+	if err := os.Chmod(path, 0700); err != nil {
+		return "", err
+	}
+	cmd := exec.CommandContext(ctx, "open", "-a", "Terminal", path)
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
+
+func launchWindowsTerminal(ctx context.Context, command string) (string, error) {
+	cmd := exec.CommandContext(ctx, "cmd", "/C", "start", "Boatman Datadog MCP Auth", "cmd", "/K", command)
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
+
+func launchLinuxTerminal(ctx context.Context, command string) (string, error) {
+	type terminalLauncher struct {
+		name string
+		args []string
+	}
+	launchers := []terminalLauncher{
+		{name: "x-terminal-emulator", args: []string{"-e", userShell(), "-lc", command}},
+		{name: "gnome-terminal", args: []string{"--", userShell(), "-lc", command}},
+		{name: "konsole", args: []string{"-e", userShell(), "-lc", command}},
+		{name: "xfce4-terminal", args: []string{"-e", userShell(), "-lc", command}},
+		{name: "alacritty", args: []string{"-e", userShell(), "-lc", command}},
+		{name: "kitty", args: []string{userShell(), "-lc", command}},
+		{name: "xterm", args: []string{"-e", userShell(), "-lc", command}},
+	}
+	for _, launcher := range launchers {
+		path, err := exec.LookPath(launcher.name)
+		if err != nil {
+			continue
+		}
+		cmd := exec.CommandContext(ctx, path, launcher.args...)
+		if err := cmd.Start(); err != nil {
+			return "", err
+		}
+		return "", cmd.Process.Release()
+	}
+	return "", fmt.Errorf("no supported terminal emulator found")
+}
+
+func userShell() string {
+	if shell := strings.TrimSpace(os.Getenv("SHELL")); shell != "" {
+		return shell
+	}
+	return "/bin/sh"
+}
+
+func shellQuote(value string) string {
+	if value == "" {
+		return "''"
+	}
+	return "'" + strings.ReplaceAll(value, "'", `'\''`) + "'"
 }
 
 func desktopEnvForIntegration(item integrations.Integration, prefs config.UserPreferences) map[string]string {

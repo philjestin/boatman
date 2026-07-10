@@ -32,8 +32,16 @@ const routine = {
 
 describe('RoutineView', () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     vi.mocked(ListProjectRoutines).mockResolvedValue([routine] as any);
     vi.mocked(ListRoutines).mockResolvedValue([routine] as any);
+    vi.mocked(AuthenticateDatadogMCP).mockResolvedValue({
+      mcpName: 'plugin:datadog:datadog-mcp',
+      command: 'claude mcp login plugin:datadog:datadog-mcp',
+      message: 'Datadog MCP auth opened in an interactive terminal. Complete the browser flow, then click Check.',
+      interactive: true,
+      launched: true,
+    } as any);
     vi.mocked(DryRunRoutine).mockResolvedValue({
       routine,
       values: {
@@ -137,5 +145,7 @@ describe('RoutineView', () => {
     await waitFor(() => {
       expect(AuthenticateDatadogMCP).toHaveBeenCalled();
     });
+    expect(await screen.findByText(/auth opened in an interactive terminal/i)).toBeInTheDocument();
+    expect(DryRunRoutine).not.toHaveBeenCalled();
   });
 });

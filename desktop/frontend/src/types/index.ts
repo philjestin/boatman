@@ -312,6 +312,8 @@ export interface DatadogMCPAuthResult {
   command: string;
   message?: string;
   output?: string;
+  interactive: boolean;
+  launched: boolean;
 }
 
 export interface UserPreferences {
