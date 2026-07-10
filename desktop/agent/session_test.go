@@ -184,6 +184,41 @@ func TestHandleRuntimeMessageEvents(t *testing.T) {
 	}
 }
 
+func TestFinalizeMessageAfterTrimEmitsFinalizedMessage(t *testing.T) {
+	session := NewSession("runtime-session", "/repo")
+	session.SetTrimSettings(1000, false)
+
+	session.mu.Lock()
+	for i := 0; i < 1000; i++ {
+		session.Messages = append(session.Messages, Message{
+			ID:        fmt.Sprintf("old-%d", i),
+			Role:      "assistant",
+			Content:   "old",
+			Timestamp: time.Now(),
+		})
+	}
+	session.mu.Unlock()
+
+	messageID := session.createStreamingMessage()
+	var emitted Message
+	session.SetMessageHandler(func(msg Message) {
+		emitted = msg
+	})
+
+	session.finalizeMessage(messageID, "final content")
+
+	if emitted.ID != messageID || emitted.Content != "final content" {
+		t.Fatalf("emitted = %#v, want finalized streaming message", emitted)
+	}
+	messages := session.GetMessages()
+	if len(messages) != 1000 {
+		t.Fatalf("len(messages) = %d, want 1000 after trim", len(messages))
+	}
+	if messages[len(messages)-1].ID != messageID || messages[len(messages)-1].Content != "final content" {
+		t.Fatalf("last message = %#v, want finalized streaming message", messages[len(messages)-1])
+	}
+}
+
 func TestHandleRuntimeToolCallAndResult(t *testing.T) {
 	session := NewSession("runtime-tools", "/repo")
 

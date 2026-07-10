@@ -127,7 +127,9 @@ func DefaultRoutines() []Routine {
 			Instructions: strings.TrimSpace(`
 You are Boatman running a repeatable performance investigation routine.
 
-Use the Datadog MCP integration as the source of truth for telemetry. Do not make code changes, create tickets, or write to external systems. Read only observability data and produce a Markdown report that another engineer can act on.
+Use the Datadog MCP integration as the source of truth for telemetry. Start with read-only observability discovery. Only move into code changes when Datadog evidence points to a credible code or schema fix with enough confidence to act.
+
+When implementing, isolate all changes in a new git worktree based on latest main. Do not dirty the current checkout. Do not push, open a pull request, or write to external systems unless the user explicitly asks; prepare a PR-ready branch and report exactly what changed.
 
 Be explicit about confidence. If telemetry is missing, stale, sampled, or ambiguous, say so and list the Datadog query or span evidence you attempted to inspect.
 `),
@@ -137,6 +139,15 @@ Investigate the top {{top_n}} slowest GraphQL operations for graph area "{{graph
 {{service_filter}}
 
 Use Datadog MCP to inspect APM traces, GraphQL operation names, span/resource names, latency percentiles, request volume, error rate, downstream DB/cache/external spans, and recent deploy or regression signals. Prefer p95/p99 plus volume over one-off maximum latency. When possible, include Datadog links or exact query dimensions.
+
+After telemetry discovery:
+
+1. If no high-confidence actionable code/schema fix is found, stop after the report and clearly state what evidence is missing.
+2. If there is a credible fix, use /plan to investigate implementation options and choose the smallest safe remediation.
+3. Refresh latest main, then create a git worktree from latest main for the remediation branch. Prefer git fetch origin main followed by a worktree based on origin/main; fall back to local main only if the remote is unavailable. Put the worktree under .boatman/worktrees/<run-id>-<short-fix-name> when the run ID is visible; otherwise use .boatman/worktrees/routine-<short-fix-name>.
+4. Implement the selected fix in that worktree.
+5. Run targeted validation for the touched area plus any repo-required formatting or tests.
+6. Use both /peer-review and /lydia-code-review to get PR-style feedback on the worktree diff, then address actionable feedback and rerun relevant checks.
 
 Return a Markdown report with these sections:
 
@@ -150,11 +161,19 @@ Return a Markdown report with these sections:
    - dominant slow spans
    - first-seen or regression signal
 4. Clustered likely causes
-5. Suggested fixes
+5. Remediation plan and decision
    - code or schema area to inspect
    - expected impact
    - validation query/check
-6. Follow-up questions and missing telemetry
+6. Worktree and implementation summary
+   - worktree path
+   - branch/base
+   - changed files
+   - validation commands and results
+7. Review feedback
+   - /peer-review findings and actions taken
+   - /lydia-code-review findings and actions taken
+8. Follow-up questions, missing telemetry, and remaining risk
 
 Do not invent numbers. If Datadog does not expose a metric, mark it as unavailable and explain the closest evidence you found.
 `),

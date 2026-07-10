@@ -1392,6 +1392,7 @@ func (s *Session) finalizeMessage(messageID string, content string) {
 			s.Messages[i].Content = content
 			s.Messages[i].Timestamp = time.Now()
 			s.UpdatedAt = time.Now()
+			finalized := s.Messages[i]
 
 			fmt.Printf("[finalizeMessage] Finalized message ID=%s with content (len=%d): %s...\n",
 				messageID, len(content), truncateString(content, 100))
@@ -1400,7 +1401,7 @@ func (s *Session) finalizeMessage(messageID string, content string) {
 			_ = s.TrimMessagesIfNeeded(s.maxMessages, s.archive)
 
 			if s.onMessage != nil {
-				s.onMessage(s.Messages[i])
+				s.onMessage(finalized)
 			}
 			return
 		}
