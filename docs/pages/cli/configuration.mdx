@@ -48,8 +48,10 @@ runtime:
   default_provider: claude-cli
   role_providers:
     reviewer: claude-cli
+    routine: claude-cli
   profile_providers:
     triage-scorer: openai-responses
+    routine.datadog-gql-slow-queries: claude-cli
 
 # Coordinator settings
 coordinator:
@@ -95,6 +97,9 @@ memory_dir: ~/.boatman/memory
 | `BOATMAN_RUNTIME_STORE_DIR` | Custom runtime run store directory | No |
 | `BOATMAN_CHECKPOINT_DIR` | Custom checkpoint directory | No |
 | `BOATMAN_MEMORY_DIR` | Custom memory directory | No |
+| `DD_API_KEY` | Datadog API key for Datadog MCP routines | For Datadog routines |
+| `DD_APP_KEY` | Datadog app key for Datadog MCP routines | For Datadog routines |
+| `DD_SITE` | Datadog site, defaults to `datadoghq.com` | No |
 | `OPENAI_API_KEY` | OpenAI API key for the OpenAI Responses provider | If using OpenAI |
 | `OPENAI_MODEL` | Default model for the OpenAI Responses provider when not set by the request | If using OpenAI without per-run model |
 | `LINEAR_API_URL` | Override Linear API URL (for testing) | No |

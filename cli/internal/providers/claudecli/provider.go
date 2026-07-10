@@ -10,6 +10,7 @@ import (
 	"time"
 
 	agentruntime "github.com/philjestin/boatman-ecosystem/shared/agentruntime"
+	"github.com/philjestin/boatman-ecosystem/shared/agentruntime/mcpconfig"
 	"github.com/philjestin/boatmanmode/internal/claude"
 	"github.com/philjestin/boatmanmode/internal/cost"
 )
@@ -197,8 +198,19 @@ func (p *Provider) invokeClaude(ctx context.Context, req agentruntime.RunRequest
 	if req.Tools != nil {
 		client.EnableTools = true
 		client.AllowedTools = toolNames(req.Tools)
+	} else if len(req.MCPServers) > 0 {
+		client.EnableTools = true
 	} else {
 		client.EnableTools = false
+	}
+	if len(req.MCPServers) > 0 {
+		config, err := mcpconfig.ClaudeJSON(req.MCPServers)
+		if err != nil {
+			return "", nil, err
+		}
+		if config != "" {
+			client.MCPConfigs = []string{config}
+		}
 	}
 
 	return client.Message(ctx, req.Instructions, promptFromMessages(req.Messages))

@@ -49,13 +49,16 @@ func TestBuildArgs(t *testing.T) {
 		},
 		ApprovalPolicy: agentruntime.ApprovalAutoEdit,
 		Reasoning:      &agentruntime.ReasoningOptions{Effort: "high"},
+		MCPServers: []agentruntime.MCPServerRef{
+			{Label: "datadog", Command: "npx", Args: []string{"-y", "@datadog/mcp-server"}},
+		},
 		Metadata: map[string]string{
 			"conversationId": "abc123",
 		},
 	})
 
 	argString := strings.Join(args, "\x00")
-	for _, want := range []string{"-p", "hello", "--output-format", "stream-json", "--verbose", "--system-prompt", "Be concise", "-r", "abc123", "--model", "sonnet", "--effort", "high", "--allowedTools", "Edit,Write"} {
+	for _, want := range []string{"-p", "hello", "--output-format", "stream-json", "--verbose", "--system-prompt", "Be concise", "-r", "abc123", "--model", "sonnet", "--effort", "high", "--mcp-config", "datadog", "--allowedTools", "Edit,Write"} {
 		if !strings.Contains(argString, want) {
 			t.Fatalf("args = %v, missing %q", args, want)
 		}

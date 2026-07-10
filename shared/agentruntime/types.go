@@ -68,6 +68,7 @@ const (
 	RoleFirefight   Role = "firefight"
 	RoleMemory      Role = "memory"
 	RoleIntegration Role = "integration"
+	RoleRoutine     Role = "routine"
 )
 
 // Event is the normalized runtime stream item. It intentionally keeps provider

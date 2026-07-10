@@ -66,6 +66,9 @@ type Client struct {
 	// If false, tools are explicitly disabled with --tools "".
 	EnableTools bool
 
+	// MCPConfigs are Claude Code --mcp-config JSON strings or file paths.
+	MCPConfigs []string
+
 	// SkipPermissions automatically approves all tool uses without user confirmation.
 	// WARNING: This is a security risk - only enable for trusted, non-interactive environments.
 	SkipPermissions bool
@@ -198,6 +201,7 @@ func (c *Client) messageTmux(ctx context.Context, systemPrompt, userPrompt strin
 	opts := tmux.ClaudeOptions{
 		Model:               c.Model,
 		EnablePromptCaching: c.EnablePromptCaching,
+		MCPConfigs:          append([]string(nil), c.MCPConfigs...),
 	}
 	return c.TmuxManager.RunClaudeStreamingWithOptions(ctx, sess, systemPrompt, userPrompt, opts)
 }
@@ -237,37 +241,7 @@ type streamResult struct {
 
 // doStreamingRequest performs a single streaming request to Claude.
 func (c *Client) doStreamingRequest(ctx context.Context, systemPrompt, userPrompt string) (string, *cost.Usage, error) {
-	args := []string{
-		"-p",
-		"--output-format", "stream-json",
-		"--verbose",
-	}
-
-	// Auto-approve tool uses if configured (WARNING: security risk)
-	if c.SkipPermissions {
-		args = append(args, "--dangerously-skip-permissions")
-	}
-
-	// Handle tool permissions
-	if !c.EnableTools {
-		// Explicitly disable tools for backward compatibility
-		args = append(args, "--tools", "")
-	} else if len(c.AllowedTools) > 0 {
-		// Restrict to specific tools
-		args = append(args, "--tools", strings.Join(c.AllowedTools, ","))
-	}
-	// If EnableTools is true and AllowedTools is nil, omit --tools flag entirely (allows all tools)
-
-	// Add model selection if specified
-	if c.Model != "" {
-		args = append(args, "--model", c.Model)
-	}
-	if c.Agent != "" {
-		args = append(args, "--agent", c.Agent)
-	}
-	if c.Effort != "" {
-		args = append(args, "--effort", c.Effort)
-	}
+	args := c.streamingArgs()
 
 	// Note: Prompt caching is automatically handled by Claude CLI when using system prompts
 	// No explicit flag needed in current version (2.1.39+)
@@ -456,6 +430,46 @@ func (c *Client) doStreamingRequest(ctx context.Context, systemPrompt, userPromp
 	}
 
 	return fullResponse.String(), resultUsage, nil
+}
+
+func (c *Client) streamingArgs() []string {
+	args := []string{
+		"-p",
+		"--output-format", "stream-json",
+		"--verbose",
+	}
+
+	// Auto-approve tool uses if configured (WARNING: security risk)
+	if c.SkipPermissions {
+		args = append(args, "--dangerously-skip-permissions")
+	}
+
+	// Handle tool permissions
+	if !c.EnableTools {
+		// Explicitly disable tools for backward compatibility
+		args = append(args, "--tools", "")
+	} else if len(c.AllowedTools) > 0 {
+		// Restrict to specific tools
+		args = append(args, "--tools", strings.Join(c.AllowedTools, ","))
+	}
+	// If EnableTools is true and AllowedTools is nil, omit --tools flag entirely (allows all tools)
+
+	// Add model selection if specified
+	if c.Model != "" {
+		args = append(args, "--model", c.Model)
+	}
+	if c.Agent != "" {
+		args = append(args, "--agent", c.Agent)
+	}
+	if c.Effort != "" {
+		args = append(args, "--effort", c.Effort)
+	}
+	for _, config := range c.MCPConfigs {
+		if strings.TrimSpace(config) != "" {
+			args = append(args, "--mcp-config", config)
+		}
+	}
+	return args
 }
 
 // messageNonStreaming sends a message without streaming.

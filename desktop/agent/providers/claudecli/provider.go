@@ -12,6 +12,7 @@ import (
 	"time"
 
 	agentruntime "github.com/philjestin/boatman-ecosystem/shared/agentruntime"
+	"github.com/philjestin/boatman-ecosystem/shared/agentruntime/mcpconfig"
 )
 
 const providerName = "claude-cli"
@@ -241,6 +242,11 @@ func BuildArgs(req agentruntime.RunRequest) []string {
 	}
 	if req.Reasoning != nil && req.Reasoning.Effort != "" {
 		args = append(args, "--effort", req.Reasoning.Effort)
+	}
+	if len(req.MCPServers) > 0 {
+		if config, err := mcpconfig.ClaudeJSON(req.MCPServers); err == nil && config != "" {
+			args = append(args, "--mcp-config", config)
+		}
 	}
 
 	switch req.ApprovalPolicy {
