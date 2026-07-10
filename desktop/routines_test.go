@@ -79,27 +79,21 @@ func TestDesktopRoutineIntegrationRefsUsesClaudeManagedDatadog(t *testing.T) {
 	}
 }
 
-func TestAuthenticateDatadogMCPRunsClaudeLogin(t *testing.T) {
-	var gotArgs []string
-	withClaudeMCPCommand(t, func(_ context.Context, args ...string) (string, error) {
-		gotArgs = append([]string(nil), args...)
-		return "Logged in", nil
+func TestAuthenticateDatadogMCPOpensInteractiveLogin(t *testing.T) {
+	var gotName string
+	withClaudeMCPLoginLauncher(t, func(_ context.Context, mcpName string) (string, error) {
+		gotName = mcpName
+		return "opened", nil
 	})
 
 	result, err := (&App{}).AuthenticateDatadogMCP()
 	if err != nil {
 		t.Fatalf("AuthenticateDatadogMCP error: %v", err)
 	}
-	want := []string{"mcp", "login", datadogClaudeMCPName}
-	if len(gotArgs) != len(want) {
-		t.Fatalf("args = %#v, want %#v", gotArgs, want)
+	if gotName != datadogClaudeMCPName {
+		t.Fatalf("mcpName = %q, want %q", gotName, datadogClaudeMCPName)
 	}
-	for i := range want {
-		if gotArgs[i] != want[i] {
-			t.Fatalf("args = %#v, want %#v", gotArgs, want)
-		}
-	}
-	if result.MCPName != datadogClaudeMCPName || result.Output != "Logged in" {
+	if result.MCPName != datadogClaudeMCPName || result.Output != "opened" || !result.Interactive || !result.Launched {
 		t.Fatalf("result = %#v", result)
 	}
 }
@@ -184,6 +178,15 @@ func withClaudeMCPCommand(t *testing.T, fn func(context.Context, ...string) (str
 	runClaudeMCPCommand = fn
 	t.Cleanup(func() {
 		runClaudeMCPCommand = original
+	})
+}
+
+func withClaudeMCPLoginLauncher(t *testing.T, fn func(context.Context, string) (string, error)) {
+	t.Helper()
+	original := launchClaudeMCPLogin
+	launchClaudeMCPLogin = fn
+	t.Cleanup(func() {
+		launchClaudeMCPLogin = original
 	})
 }
 
