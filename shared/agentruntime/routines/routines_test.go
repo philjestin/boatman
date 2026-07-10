@@ -55,7 +55,7 @@ func TestRenderPrompt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RenderPrompt error: %v", err)
 	}
-	for _, want := range []string{"top 5", "employer", "12h", "employer-graphql", "Markdown report"} {
+	for _, want := range []string{"top 5", "employer", "12h", "employer-graphql", "Markdown report", "/plan", "git worktree", "/peer-review", "/lydia-code-review"} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("prompt should contain %q:\n%s", want, prompt)
 		}

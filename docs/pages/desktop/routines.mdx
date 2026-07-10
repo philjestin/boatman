@@ -51,8 +51,16 @@ operations for a graph area, and returns a Markdown report with:
 - Datadog query assumptions
 - top slow operations table
 - clustered likely causes
-- suggested fixes and validation checks
+- remediation plan and validation checks
+- worktree, branch, changed-file, and test summary when Boatman finds a credible fix
+- `/peer-review` and `/lydia-code-review` feedback and the actions Boatman took
 - follow-up questions or missing telemetry
+
+When telemetry points to a high-confidence code or schema remediation, the
+routine asks Claude Code to use `/plan`, create a fresh git worktree from latest
+main, implement the smallest safe fix, run targeted validation, request both
+review passes, and address actionable feedback. If the evidence is too weak, it
+stops after the investigation report and explains what is missing.
 
 ## Setup
 
