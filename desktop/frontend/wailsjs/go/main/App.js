@@ -14,6 +14,10 @@ export function ApproveAgentAction(arg1, arg2) {
   return window['go']['main']['App']['ApproveAgentAction'](arg1, arg2);
 }
 
+export function AuthenticateDatadogMCP() {
+  return window['go']['main']['App']['AuthenticateDatadogMCP']();
+}
+
 export function AutoDistillBrains() {
   return window['go']['main']['App']['AutoDistillBrains']();
 }

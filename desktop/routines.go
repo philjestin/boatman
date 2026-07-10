@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -20,6 +21,14 @@ import (
 	"github.com/philjestin/boatman-ecosystem/shared/agentruntime/runprep"
 	"github.com/philjestin/boatman-ecosystem/shared/agentruntime/runstore"
 )
+
+const datadogClaudeMCPName = "plugin:datadog:datadog-mcp"
+
+var runClaudeMCPCommand = func(ctx context.Context, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, "claude", args...)
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
 
 // DesktopRoutine is the compact routine definition rendered by the frontend.
 type DesktopRoutine struct {
@@ -102,6 +111,14 @@ type RoutineRunResult struct {
 	Report       string                  `json:"report,omitempty"`
 }
 
+// DatadogMCPAuthResult describes a Claude-managed Datadog MCP auth attempt.
+type DatadogMCPAuthResult struct {
+	MCPName string `json:"mcpName"`
+	Command string `json:"command"`
+	Message string `json:"message,omitempty"`
+	Output  string `json:"output,omitempty"`
+}
+
 type builtRoutineRun struct {
 	routine      routines.Routine
 	values       map[string]string
@@ -110,6 +127,25 @@ type builtRoutineRun struct {
 	secretEnv    map[string]string
 	reportPath   string
 	providerName string
+}
+
+// AuthenticateDatadogMCP opens Claude Code's browser OAuth flow for the
+// Datadog plugin MCP server.
+func (a *App) AuthenticateDatadogMCP() (*DatadogMCPAuthResult, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+
+	result := &DatadogMCPAuthResult{
+		MCPName: datadogClaudeMCPName,
+		Command: "claude mcp login " + datadogClaudeMCPName,
+	}
+	output, err := runClaudeMCPCommand(ctx, "mcp", "login", datadogClaudeMCPName)
+	result.Output = strings.TrimSpace(output)
+	if err != nil {
+		return result, fmt.Errorf("failed to authenticate Datadog MCP with Claude Code: %w%s", err, commandOutputSuffix(output))
+	}
+	result.Message = "Datadog MCP authentication completed"
+	return result, nil
 }
 
 // ListRoutines returns Boatman's built-in repeatable routines.
@@ -299,6 +335,18 @@ func desktopRoutineIntegrationRefs(ctx context.Context, routine routines.Routine
 		if !ok {
 			return nil, nil, nil, fmt.Errorf("routine %q references unknown integration %q", routine.ID, name)
 		}
+		if item.Name == "datadog" && !desktopHasDatadogAPIKeys(prefs) {
+			if status, ok := claudeManagedDatadogStatus(ctx); ok {
+				statuses = append(statuses, status)
+				if status.State == integrations.StateReady || status.State == integrations.StateConnected {
+					continue
+				}
+				if dryRun {
+					continue
+				}
+				return statuses, nil, nil, fmt.Errorf("routine %q Datadog MCP is not authenticated; click Authenticate in the Routines tab or run %q", routine.ID, "claude mcp login "+datadogClaudeMCPName)
+			}
+		}
 		env := desktopEnvForIntegration(item, prefs)
 		conn, err := manager.Connect(ctx, item.Name, integrations.ResolveOptions{
 			Enabled: true,
@@ -335,6 +383,57 @@ func desktopRoutineIntegrationRefs(ctx context.Context, routine routines.Routine
 	return statuses, refs, secretEnv, nil
 }
 
+func desktopHasDatadogAPIKeys(prefs config.UserPreferences) bool {
+	apiKey := strings.TrimSpace(prefs.DatadogAPIKey)
+	if apiKey == "" {
+		apiKey = strings.TrimSpace(os.Getenv("DD_API_KEY"))
+	}
+	appKey := strings.TrimSpace(prefs.DatadogAppKey)
+	if appKey == "" {
+		appKey = strings.TrimSpace(os.Getenv("DD_APP_KEY"))
+	}
+	return apiKey != "" && appKey != ""
+}
+
+func claudeManagedDatadogStatus(ctx context.Context) (mcp.IntegrationStatus, bool) {
+	output, err := runClaudeMCPCommand(ctx, "mcp", "get", datadogClaudeMCPName)
+	text := strings.TrimSpace(output)
+	lower := strings.ToLower(text)
+	if err != nil && strings.Contains(lower, "no mcp server") {
+		return mcp.IntegrationStatus{}, false
+	}
+	if err != nil && text == "" {
+		return mcp.IntegrationStatus{}, false
+	}
+	status := mcp.IntegrationStatus{
+		Name:        "datadog",
+		State:       integrations.StateNeedsConfiguration,
+		Message:     "Datadog MCP is installed but needs Claude MCP authentication",
+		LastChecked: time.Now().UTC(),
+		Metadata: map[string]string{
+			"auth_method": "claude_mcp",
+			"mcp_name":    datadogClaudeMCPName,
+		},
+	}
+	if strings.Contains(lower, "status:") && (strings.Contains(lower, "connected") || strings.Contains(lower, "✓") || strings.Contains(lower, "✔")) {
+		status.State = integrations.StateConnected
+		status.Message = "Datadog MCP is authenticated through Claude Code"
+		return status, true
+	}
+	if strings.Contains(lower, "failed to connect") {
+		return status, true
+	}
+	if err != nil {
+		status.State = integrations.StateFailed
+		status.Message = "failed to inspect Claude Datadog MCP status"
+		status.Metadata["error"] = strings.TrimSpace(err.Error())
+		return status, true
+	}
+	status.State = integrations.StateReady
+	status.Message = "Datadog MCP is available through Claude Code"
+	return status, true
+}
+
 func desktopEnvForIntegration(item integrations.Integration, prefs config.UserPreferences) map[string]string {
 	env := map[string]string{}
 	switch item.Name {
@@ -351,6 +450,13 @@ func desktopEnvForIntegration(item integrations.Integration, prefs config.UserPr
 		setFirstNonEmpty(env, "SLACK_TEAM_ID", os.Getenv("SLACK_TEAM_ID"))
 	}
 	return env
+}
+
+func commandOutputSuffix(output string) string {
+	if strings.TrimSpace(output) == "" {
+		return ""
+	}
+	return ": " + strings.TrimSpace(output)
 }
 
 func setFirstNonEmpty(env map[string]string, key string, values ...string) {

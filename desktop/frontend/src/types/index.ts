@@ -307,6 +307,13 @@ export interface RoutineRunResult {
   report?: string;
 }
 
+export interface DatadogMCPAuthResult {
+  mcpName: string;
+  command: string;
+  message?: string;
+  output?: string;
+}
+
 export interface UserPreferences {
   apiKey: string;
   authMethod: AuthMethod;

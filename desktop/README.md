@@ -50,7 +50,7 @@ See [TRIAGE.md](./TRIAGE.md) for full documentation.
 ### 🔌 MCP Integration
 - **Extensible**: Connect to any MCP-compatible tool or service
 - **Built-in Servers**: GitHub, Datadog, Bugsnag, Linear, Slack, and more
-- **OAuth Support**: Authenticate via Okta SSO for enterprise integrations
+- **OAuth Support**: Authenticate Datadog through Claude Code MCP auth and Okta SSO for enterprise integrations
 - **Custom Servers**: Build your own MCP servers for specialized workflows
 - **MCP Server Dialog**: Easy configuration and management of MCP servers via UI
 - **Integration Health**: Shows whether built-in services are ready, disabled, degraded, or missing configuration
@@ -64,6 +64,7 @@ See [TRIAGE.md](./TRIAGE.md) for full documentation.
 ### ✨ Routines
 - **Project Routine Library**: Load built-ins plus `.boatman/routines.json` and `.boatman/routines/*.json` from the active project
 - **Datadog GraphQL Slow Queries**: Run the saved slow-query investigation from the desktop app
+- **Datadog MCP Auth**: Open Claude Code's Datadog MCP browser auth flow from the Routines tab
 - **Dry-Run Checks**: Verify Datadog readiness and prompt shape before model execution
 - **Markdown Reports**: Save daily investigation output under project-local `.boatman/routines`
 
