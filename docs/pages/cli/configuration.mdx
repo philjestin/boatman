@@ -261,6 +261,11 @@ Provider calls load non-expired memory documents automatically unless
 `BOATMAN_MEMORY=0` is set. Loaded documents are prepended to the provider
 instructions and recorded as `memory.loaded` events.
 
+When `brain.enabled` is true, BoatmanMode also records usage into
+`.boatman/knowledge/graph.json`. Planning records candidate files, execution
+records changed files, review/refactor loops record knowledge-gap signals, and
+auto-distillation records generated brains back into the graph.
+
 ---
 
 ## Review Configuration

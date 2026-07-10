@@ -12,6 +12,7 @@ Boatman Desktop stores all data locally on your machine. No cloud sync is used u
 | `~/.boatman/memory/` | Per-project learning data (used by CLI pipeline) |
 | `~/.claude/claude_mcp_config.json` | MCP server configurations |
 | `<project>/.boatman/runs/` | Provider-neutral runtime run records |
+| `<project>/.boatman/knowledge/graph.json` | Project-local task/file/domain/signal/brain graph |
 | `<project>/.boatman/memory/` | Inspectable runtime memory Markdown documents |
 | `<project>/.boatman/routines/` | Markdown reports from repeatable routines |
 
@@ -113,6 +114,25 @@ Routine runs write Markdown reports under:
 
 The Datadog GraphQL slow-query routine uses the same provider-neutral runtime
 recorder, so each report also has a corresponding run in `.boatman/runs`.
+
+---
+
+## Knowledge Graph
+
+BoatmanMode runs update a project-local graph at:
+
+```text
+<project>/.boatman/knowledge/graph.json
+```
+
+The graph records stable nodes for tasks, domains, files, detected knowledge-gap
+signals, and generated brains. Edges capture relationships such as planned
+files, changed files, emitted signals, domain membership, and brains distilled
+from a domain.
+
+This graph is written automatically by the brain collector during planning,
+execution, review/refactor, and auto-distillation. It is plain JSON so users can
+inspect or version it with project knowledge.
 
 ---
 

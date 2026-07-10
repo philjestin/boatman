@@ -42,6 +42,7 @@ Boatman is an AI-powered autonomous development system that:
 - **Evaluates side-effecting actions through approval policy rules** before humans, chat clients, or future services render durable approvals
 - **Runs independent verifier checks** so code review, runtime recordings, and future central-plane quality gates share one contract
 - **Records inspectable runtime runs** with normalized events, original requests, artifacts, usage, raw provider payloads, integration status, and memory-load events
+- **Builds a project-local knowledge graph** under `.boatman/knowledge/graph.json` from tasks, planned files, changed files, review signals, and generated brains
 - **Stores memory as Markdown files** under `.boatman/memory`, so users can inspect exactly what context future sessions may load
 - Integrates with Linear, GitHub, and provides both CLI and desktop GUI interfaces
 
@@ -255,6 +256,7 @@ The CLI and desktop are tightly coupled:
 - ✅ **Provider adapters** for Claude CLI and OpenAI Responses, with role/profile routing
 - ✅ **Tool broker** for local Read, Write, Edit, Bash, Grep, and Glob tools with approval policy enforcement
 - ✅ **Run store** for `metadata.json`, `request.json`, `events.ndjson`, and `artifacts.json`
+- ✅ **Self-building brain graph** for task/file/domain/signal/brain relationships under `.boatman/knowledge/graph.json`
 - ✅ **Inspectable memory docs** as Markdown under `.boatman/memory`, loaded into provider runs with `memory.loaded` events
 - ✅ **Integration catalog and health checks** for Datadog, Bugsnag, Linear, and Slack
 - ✅ **Desktop Runtime tab** for browsing run requests, event summaries, artifacts, filtered event streams, and memory documents
