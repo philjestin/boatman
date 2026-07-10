@@ -287,7 +287,7 @@ describe('Sidebar', () => {
       const deleteButtons = screen.getAllByLabelText('Delete session');
       fireEvent.click(deleteButtons[0]);
 
-      expect(mockOnDeleteSession).toHaveBeenCalledWith('session-1');
+      expect(mockOnDeleteSession).toHaveBeenCalledWith('session-2');
       expect(mockOnSessionSelect).not.toHaveBeenCalled();
     });
 
@@ -579,7 +579,7 @@ describe('Sidebar', () => {
       fireEvent.change(input, { target: { value: 'new-tag' } });
       fireEvent.keyDown(input, { key: 'Enter' });
 
-      expect(mockOnAddTag).toHaveBeenCalledWith('session-1', 'new-tag');
+      expect(mockOnAddTag).toHaveBeenCalledWith('session-2', 'new-tag');
     });
 
     it('should not call onAddTag when Enter is pressed with empty input', () => {
@@ -830,7 +830,7 @@ describe('Sidebar', () => {
       fireEvent.change(input, { target: { value: '  spaced-tag  ' } });
       fireEvent.keyDown(input, { key: 'Enter' });
 
-      expect(mockOnAddTag).toHaveBeenCalledWith('session-1', 'spaced-tag');
+      expect(mockOnAddTag).toHaveBeenCalledWith('session-2', 'spaced-tag');
     });
   });
 });

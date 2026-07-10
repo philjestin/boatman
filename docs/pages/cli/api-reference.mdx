@@ -65,12 +65,28 @@ type Config struct {
 
     // Sub-configs
     Claude      ClaudeConfig
+    Runtime     RuntimeConfig
     Review      ReviewConfig
     Coordinator CoordinatorConfig
     Retry       RetryConfig
     TokenBudget TokenBudgetConfig
 }
 ```
+
+### RuntimeConfig
+
+```go
+type RuntimeConfig struct {
+    DefaultProvider  string            // Default provider, usually "claude-cli"
+    RoleProviders    map[string]string // e.g. planner -> claude-cli
+    ProfileProviders map[string]string // e.g. triage-scorer -> openai-responses
+}
+
+func (r RuntimeConfig) ProviderFor(role, profile string) string
+```
+
+Profile routes take precedence over role routes. Role routes take precedence
+over `DefaultProvider`.
 
 ### ClaudeConfig
 
@@ -177,6 +193,107 @@ func TaskCreated(id, name, description string)
 func TaskUpdated(id, status string)
 func Progress(message string)
 ```
+
+### Runtime Events
+
+The normalized runtime event contract lives in
+`github.com/philjestin/boatman-ecosystem/shared/agentruntime`.
+
+```go
+type Event struct {
+    Version   int
+    Type      EventType
+    RunID     string
+    PhaseID   string
+    TaskID    string
+    Provider  string
+    Model     string
+    Role      Role
+    Name      string
+    Status    Status
+    Message   string
+    Usage     *Usage
+    Tool      *ToolEvent
+    Artifact  *ArtifactEvent
+    Schema    *SchemaEvent
+    Raw       json.RawMessage
+    Data      map[string]any
+    Timestamp time.Time
+}
+```
+
+Key event types include:
+
+| Event | Purpose |
+|-------|---------|
+| `run.started` / `run.completed` / `run.failed` | Run lifecycle |
+| `phase.started` / `phase.completed` | Workflow phase lifecycle |
+| `message.delta` / `message.completed` | Provider output |
+| `tool.call` / `tool.result` | Local or hosted tool activity |
+| `usage.updated` | Token and cost usage |
+| `schema.result` | Structured output validation |
+| `artifact.changed` | Durable output tracking |
+| `memory.loaded` | Runtime memory context loaded |
+| `integration.state` | Integration health or configuration state |
+
+Set `BOATMAN_RUNTIME_EVENTS=1` to emit runtime events alongside legacy CLI
+events during migration.
+
+---
+
+## Runtime Inspection Commands
+
+### Providers
+
+```bash
+boatman providers
+boatman providers --json
+boatman providers check
+```
+
+### Integrations
+
+```bash
+boatman integrations
+boatman integrations --json
+boatman integrations check [name...]
+boatman integrations check --emit-events
+```
+
+### Runs
+
+```bash
+boatman runs list
+boatman runs show <run-id>
+boatman runs request <run-id>
+boatman runs artifacts <run-id>
+```
+
+Flags:
+
+| Flag | Commands | Purpose |
+|------|----------|---------|
+| `--store-dir` | `runs *` | Override runtime run store directory |
+| `--json` | `runs show/request/artifacts` | Print machine-readable JSON |
+
+### Memory
+
+```bash
+boatman memory list
+boatman memory show <id>
+boatman memory context [id...]
+```
+
+Flags:
+
+| Flag | Commands | Purpose |
+|------|----------|---------|
+| `--memory-dir` | `memory *` | Override memory document directory |
+| `--json` | `memory list/show` | Print machine-readable JSON |
+| `--include-expired=false` | `memory list` | Hide expired documents |
+| `--max-bytes` | `memory context` | Limit rendered context size |
+| `--emit-event` | `memory context` | Print a normalized `memory.loaded` event |
+| `--run-id` | `memory context` | Run ID for emitted memory events |
 
 ---
 

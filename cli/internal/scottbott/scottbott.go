@@ -7,14 +7,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/philjestin/boatman-ecosystem/harness/review"
+	agentruntime "github.com/philjestin/boatman-ecosystem/shared/agentruntime"
 	"github.com/philjestin/boatmanmode/internal/config"
 	"github.com/philjestin/boatmanmode/internal/cost"
+	"github.com/philjestin/boatmanmode/internal/events"
+	runtimeproviders "github.com/philjestin/boatmanmode/internal/providers"
 )
 
 // ReviewResult represents the outcome of a code review.
@@ -65,45 +67,26 @@ type ScottBott struct {
 	outputDir           string
 	skill               string
 	model               string
+	effort              string
 	enablePromptCaching bool
+	provider            agentruntime.Provider
+	runText             func(context.Context, agentruntime.Provider, agentruntime.RunRequest, func(agentruntime.Event)) (string, *cost.Usage, error)
 	cfg                 *config.Config
 }
 
 // New creates a new ScottBott instance.
 func New(cfg *config.Config) *ScottBott {
-	return &ScottBott{
-		sessionName:         "reviewer",
-		outputDir:           filepath.Join(os.TempDir(), "boatman-sessions"),
-		skill:               cfg.ReviewSkill,
-		model:               cfg.Claude.Models.Reviewer,
-		enablePromptCaching: cfg.Claude.EnablePromptCaching,
-		cfg:                 cfg,
-	}
+	return newScottBottWithProvider("", "reviewer", cfg.ReviewSkill, cfg, defaultProvider(cfg))
 }
 
 // NewForIteration creates a ScottBott for a specific review iteration.
 func NewForIteration(iteration int, cfg *config.Config) *ScottBott {
-	return &ScottBott{
-		sessionName:         fmt.Sprintf("reviewer-%d", iteration),
-		outputDir:           filepath.Join(os.TempDir(), "boatman-sessions"),
-		skill:               cfg.ReviewSkill,
-		model:               cfg.Claude.Models.Reviewer,
-		enablePromptCaching: cfg.Claude.EnablePromptCaching,
-		cfg:                 cfg,
-	}
+	return newScottBottWithProvider("", fmt.Sprintf("reviewer-%d", iteration), cfg.ReviewSkill, cfg, defaultProvider(cfg))
 }
 
 // NewWithWorkDir creates a ScottBott that runs in a specific directory.
 func NewWithWorkDir(workDir string, iteration int, cfg *config.Config) *ScottBott {
-	return &ScottBott{
-		workDir:             workDir,
-		sessionName:         fmt.Sprintf("reviewer-%d", iteration),
-		outputDir:           filepath.Join(os.TempDir(), "boatman-sessions"),
-		skill:               cfg.ReviewSkill,
-		model:               cfg.Claude.Models.Reviewer,
-		enablePromptCaching: cfg.Claude.EnablePromptCaching,
-		cfg:                 cfg,
-	}
+	return newScottBottWithProvider(workDir, fmt.Sprintf("reviewer-%d", iteration), cfg.ReviewSkill, cfg, defaultProvider(cfg))
 }
 
 // NewWithSkill creates a ScottBott with a specific skill/agent for review.
@@ -111,23 +94,33 @@ func NewWithSkill(workDir string, iteration int, skill string, cfg *config.Confi
 	if skill == "" {
 		skill = "peer-review"
 	}
+	return newScottBottWithProvider(workDir, fmt.Sprintf("reviewer-%d", iteration), skill, cfg, defaultProvider(cfg))
+}
+
+func defaultProvider(cfg *config.Config) agentruntime.Provider {
+	return runtimeproviders.MustFromConfig(cfg, agentruntime.RoleReviewer, "reviewer")
+}
+
+func newScottBottWithProvider(workDir, sessionName, skill string, cfg *config.Config, provider agentruntime.Provider) *ScottBott {
 	return &ScottBott{
 		workDir:             workDir,
-		sessionName:         fmt.Sprintf("reviewer-%d", iteration),
+		sessionName:         sessionName,
 		outputDir:           filepath.Join(os.TempDir(), "boatman-sessions"),
 		skill:               skill,
 		model:               cfg.Claude.Models.Reviewer,
+		effort:              cfg.Claude.Effort,
 		enablePromptCaching: cfg.Claude.EnablePromptCaching,
+		provider:            provider,
+		runText:             runtimeproviders.RunTextWithEvents,
 		cfg:                 cfg,
 	}
 }
 
-// Review performs a code review using the peer-review Claude skill.
-// Note: Usage data is not available when using the skill/agent mode as it uses text output.
+// Review performs a code review using the configured peer-review skill.
 func (s *ScottBott) Review(ctx context.Context, ticketContext, diff string) (*ReviewResult, *cost.Usage, error) {
 	os.MkdirAll(s.outputDir, 0755)
 
-	// Write the review prompt to a file
+	// Write the review prompt to a file for debugging.
 	promptFile := filepath.Join(s.outputDir, fmt.Sprintf("%s-prompt.txt", s.sessionName))
 	prompt := formatReviewPrompt(ticketContext, diff)
 	if err := os.WriteFile(promptFile, []byte(prompt), 0644); err != nil {
@@ -142,37 +135,7 @@ func (s *ScottBott) Review(ctx context.Context, ticketContext, diff string) (*Re
 	fmt.Printf("   🔍 Invoking %s skill...\n", s.skill)
 
 	start := time.Now()
-
-	// Invoke Claude with the configured review agent/skill
-	// The skill should exist in the repo's .claude/ directory
-	args := []string{
-		"-p",
-		"--agent", s.skill,
-		"--output-format", "text",
-	}
-
-	// Add model if specified
-	if s.model != "" {
-		args = append(args, "--model", s.model)
-	}
-	if s.cfg != nil && s.cfg.Claude.Effort != "" {
-		args = append(args, "--effort", s.cfg.Claude.Effort)
-	}
-
-	// Note: Prompt caching is automatically handled by Claude CLI when using system prompts
-	// No explicit flag needed in current version (2.1.39+)
-
-	cmd := exec.CommandContext(ctx, "claude", args...)
-
-	// Pipe the prompt via stdin
-	promptContent, _ := os.ReadFile(promptFile)
-	cmd.Stdin = strings.NewReader(string(promptContent))
-
-	if s.workDir != "" {
-		cmd.Dir = s.workDir
-	}
-
-	output, err := cmd.Output()
+	response, usage, err := s.runReviewProvider(ctx, "", prompt, true)
 	elapsed := time.Since(start)
 
 	if err != nil {
@@ -184,13 +147,11 @@ func (s *ScottBott) Review(ctx context.Context, ticketContext, diff string) (*Re
 	fmt.Printf("   ⏱️  Review completed in %s\n", elapsed.Round(time.Second))
 
 	// Save output for debugging
-	os.WriteFile(outputFile, output, 0644)
+	os.WriteFile(outputFile, []byte(response), 0644)
 
 	// Parse the response
-	response := strings.TrimSpace(string(output))
-	result, err := s.parseReviewResponse(response)
-	// Text output format doesn't include usage data
-	return result, nil, err
+	result, err := s.parseReviewResponse(strings.TrimSpace(response))
+	return result, usage, err
 }
 
 // reviewWithFallback uses a system prompt if peer-review skill isn't available.
@@ -212,43 +173,99 @@ Pass if: no critical issues, ≤2 major issues, code meets requirements.`
 
 	prompt := formatReviewPrompt(ticketContext, diff)
 
-	promptFile := filepath.Join(s.outputDir, fmt.Sprintf("%s-fallback-prompt.txt", s.sessionName))
-	sysFile := filepath.Join(s.outputDir, fmt.Sprintf("%s-fallback-system.txt", s.sessionName))
-
-	os.WriteFile(promptFile, []byte(prompt), 0644)
-	os.WriteFile(sysFile, []byte(systemPrompt), 0644)
-	defer os.Remove(promptFile)
-	defer os.Remove(sysFile)
-
 	start := time.Now()
-
-	args := []string{
-		"-p",
-		"--output-format", "text",
-		"--system-prompt", systemPrompt,
-	}
-	if s.cfg != nil && s.cfg.Claude.Effort != "" {
-		args = append(args, "--effort", s.cfg.Claude.Effort)
-	}
-	cmd := exec.CommandContext(ctx, "claude", args...)
-	cmd.Stdin = strings.NewReader(prompt)
-
-	if s.workDir != "" {
-		cmd.Dir = s.workDir
-	}
-
-	output, err := cmd.CombinedOutput()
+	response, usage, err := s.runReviewProvider(ctx, systemPrompt, prompt, false)
 	elapsed := time.Since(start)
 
 	if err != nil {
-		return nil, nil, fmt.Errorf("review failed: %w\nOutput: %s", err, string(output))
+		return nil, nil, fmt.Errorf("review failed: %w", err)
 	}
 
 	fmt.Printf("   ⏱️  Review completed in %s\n", elapsed.Round(time.Second))
 
-	result, err := s.parseReviewResponse(strings.TrimSpace(string(output)))
-	// Text output format doesn't include usage data
-	return result, nil, err
+	result, err := s.parseReviewResponse(strings.TrimSpace(response))
+	return result, usage, err
+}
+
+func (s *ScottBott) runReviewProvider(ctx context.Context, systemPrompt, prompt string, useSkill bool) (string, *cost.Usage, error) {
+	metadata := map[string]string{
+		"phaseId": s.sessionName,
+	}
+	profile := "reviewer"
+	if s.enablePromptCaching {
+		metadata["enablePromptCaching"] = "true"
+	}
+	if useSkill && s.skill != "" {
+		metadata["claudeAgent"] = s.skill
+		metadata["outputFormat"] = "text"
+		profile = s.skill
+	}
+
+	return s.runText(ctx, s.provider, agentruntime.RunRequest{
+		RunID:        s.sessionName,
+		Role:         agentruntime.RoleReviewer,
+		Profile:      profile,
+		Provider:     s.provider.Name(),
+		Model:        s.model,
+		WorkDir:      s.workDir,
+		Instructions: systemPrompt,
+		Messages: []agentruntime.Message{
+			{Role: "user", Content: prompt},
+		},
+		OutputSchema:   reviewOutputSchema(),
+		ApprovalPolicy: agentruntime.ApprovalSuggest,
+		Reasoning: &agentruntime.ReasoningOptions{
+			Effort: s.effort,
+		},
+		Metadata: metadata,
+	}, func(event agentruntime.Event) {
+		if event.Type != agentruntime.EventProviderRaw {
+			return
+		}
+		if len(event.Raw) > 0 {
+			events.ProviderRaw(s.sessionName, event.Provider, string(event.Raw))
+		} else if event.Message != "" {
+			events.ProviderRaw(s.sessionName, event.Provider, event.Message)
+		}
+	})
+}
+
+func reviewOutputSchema() *agentruntime.OutputSchema {
+	return &agentruntime.OutputSchema{
+		Name:        "review_result",
+		Description: "Peer review result for a Boatman work pipeline change.",
+		Strict:      true,
+		Schema: json.RawMessage(`{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["passed", "score", "summary", "issues", "praise", "guidance"],
+  "properties": {
+    "passed": {"type": "boolean"},
+    "score": {"type": "integer"},
+    "summary": {"type": "string"},
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["severity", "file", "line", "description", "suggestion"],
+        "properties": {
+          "severity": {"type": "string"},
+          "file": {"type": "string"},
+          "line": {"type": "integer"},
+          "description": {"type": "string"},
+          "suggestion": {"type": "string"}
+        }
+      }
+    },
+    "praise": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "guidance": {"type": "string"}
+  }
+}`),
+	}
 }
 
 // formatReviewPrompt creates the prompt for code review.

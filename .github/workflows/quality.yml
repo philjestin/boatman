@@ -1,0 +1,71 @@
+name: Quality Gates
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  runtime:
+    name: Runtime and Provider Checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.1'
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: desktop/frontend/package-lock.json
+
+      - name: CLI tests
+        run: |
+          cd cli
+          go test ./...
+
+      - name: Shared runtime tests
+        run: |
+          cd shared
+          go test ./...
+
+      - name: Harness tests
+        run: |
+          cd harness
+          go test ./...
+
+      - name: Frontend dependencies
+        run: |
+          cd desktop/frontend
+          npm ci
+
+      - name: Frontend tests
+        run: |
+          cd desktop/frontend
+          npm run test:run
+
+      - name: Frontend build
+        run: |
+          cd desktop/frontend
+          npm run build
+
+      - name: Desktop runtime tests
+        run: |
+          cd desktop
+          go test . ./agent/... ./boatmanmode ./mcp
+
+      - name: Docs gate
+        run: ./scripts/agent-docs-check
+
+      - name: Defrag gate
+        run: ./scripts/agent-defrag --strict

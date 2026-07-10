@@ -4,10 +4,13 @@ package config
 import (
 	"errors"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/spf13/viper"
 )
+
+const DefaultRuntimeProvider = "claude-cli"
 
 // Config holds all configuration for the boatman agent.
 type Config struct {
@@ -32,6 +35,9 @@ type Config struct {
 	// Claude settings
 	Claude ClaudeConfig
 
+	// Runtime settings
+	Runtime RuntimeConfig
+
 	// Token budgets
 	TokenBudget TokenBudgetConfig
 
@@ -46,6 +52,34 @@ type Config struct {
 
 	// EnableTools enables Claude CLI tool capabilities for agents
 	EnableTools bool
+}
+
+// RuntimeConfig holds provider routing settings.
+type RuntimeConfig struct {
+	// DefaultProvider is the provider used when no role or profile override matches.
+	DefaultProvider string
+
+	// RoleProviders maps runtime roles such as planner, executor, reviewer, or scorer
+	// to provider IDs.
+	RoleProviders map[string]string
+
+	// ProfileProviders maps narrower workflow profiles such as triage-planner or
+	// refactor to provider IDs. Profile matches take precedence over role matches.
+	ProfileProviders map[string]string
+}
+
+// ProviderFor returns the configured provider for a workflow role/profile.
+func (r RuntimeConfig) ProviderFor(role, profile string) string {
+	if provider := lookupProvider(r.ProfileProviders, profile); provider != "" {
+		return provider
+	}
+	if provider := lookupProvider(r.RoleProviders, role); provider != "" {
+		return provider
+	}
+	if provider := strings.TrimSpace(r.DefaultProvider); provider != "" {
+		return provider
+	}
+	return DefaultRuntimeProvider
 }
 
 // BrainConfig holds brain domain knowledge settings.
@@ -184,7 +218,25 @@ type TokenBudgetConfig struct {
 
 // Load reads configuration from viper and environment variables.
 func Load() (*Config, error) {
-	cfg := &Config{
+	cfg := loadValues()
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+
+	return cfg, nil
+}
+
+// LoadRuntime reads provider/runtime configuration without requiring external
+// service credentials. Use it for local inspection commands that do not call
+// Linear or model APIs.
+func LoadRuntime() (*Config, error) {
+	cfg := loadValues()
+	cfg.ensureRuntimeDefaults()
+	return cfg, nil
+}
+
+func loadValues() *Config {
+	return &Config{
 		LinearKey:     getEnvOrViper("LINEAR_API_KEY", "linear_key"),
 		MaxIterations: getIntOrDefault("max_iterations", 5), // Increased from 3 to 5
 		BaseBranch:    getStringOrDefault("base_branch", "main"),
@@ -194,10 +246,10 @@ func Load() (*Config, error) {
 		EnableTools:   getBoolOrDefault("enable_tools", true),
 
 		Review: ReviewConfig{
-			MaxCriticalIssues:         getIntOrDefault("review.max_critical_issues", 1),    // Allow 1 critical (was 0)
-			MaxMajorIssues:            getIntOrDefault("review.max_major_issues", 3),       // Allow 3 major (was 2)
+			MaxCriticalIssues:         getIntOrDefault("review.max_critical_issues", 1),          // Allow 1 critical (was 0)
+			MaxMajorIssues:            getIntOrDefault("review.max_major_issues", 3),             // Allow 3 major (was 2)
 			MinVerificationConfidence: getIntOrDefault("review.min_verification_confidence", 50), // 50% confidence threshold
-			StrictParsing:             getBoolOrDefault("review.strict_parsing", false),    // Relaxed by default
+			StrictParsing:             getBoolOrDefault("review.strict_parsing", false),          // Relaxed by default
 		},
 
 		Coordinator: CoordinatorConfig{
@@ -217,16 +269,22 @@ func Load() (*Config, error) {
 			LargePromptThreshold: getIntOrDefault("claude.large_prompt_threshold", 100000),
 			Timeout:              getDurationOrDefault("claude.timeout", 0),
 			EnablePromptCaching:  getBoolOrDefault("claude.enable_prompt_caching", false),
-			Effort:              getStringOrDefault("claude.effort", ""),
+			Effort:               getStringOrDefault("claude.effort", ""),
 			Models: ModelConfig{
-				Planner:    getStringOrDefault("claude.models.planner", ""),    // Empty = use CLI default
-				Executor:   getStringOrDefault("claude.models.executor", ""),   // Empty = use CLI default
-				Reviewer:   getStringOrDefault("claude.models.reviewer", ""),   // Empty = use CLI default
-				Refactor:   getStringOrDefault("claude.models.refactor", ""),   // Empty = use CLI default
-				Preflight:  getStringOrDefault("claude.models.preflight", ""),  // Empty = use CLI default
+				Planner:    getStringOrDefault("claude.models.planner", ""),     // Empty = use CLI default
+				Executor:   getStringOrDefault("claude.models.executor", ""),    // Empty = use CLI default
+				Reviewer:   getStringOrDefault("claude.models.reviewer", ""),    // Empty = use CLI default
+				Refactor:   getStringOrDefault("claude.models.refactor", ""),    // Empty = use CLI default
+				Preflight:  getStringOrDefault("claude.models.preflight", ""),   // Empty = use CLI default
 				TestRunner: getStringOrDefault("claude.models.test_runner", ""), // Empty = use CLI default
 				Scorer:     getStringOrDefault("claude.models.scorer", ""),      // Empty = use CLI default
 			},
+		},
+
+		Runtime: RuntimeConfig{
+			DefaultProvider:  getEnvOrViper("BOATMAN_PROVIDER", "runtime.default_provider"),
+			RoleProviders:    normalizeProviderMap(viper.GetStringMapString("runtime.role_providers")),
+			ProfileProviders: normalizeProviderMap(viper.GetStringMapString("runtime.profile_providers")),
 		},
 
 		TokenBudget: TokenBudgetConfig{
@@ -249,12 +307,6 @@ func Load() (*Config, error) {
 			PostComments:   getBoolOrDefault("triage.post_comments", false),
 		},
 	}
-
-	if err := cfg.Validate(); err != nil {
-		return nil, err
-	}
-
-	return cfg, nil
 }
 
 // Validate checks that required configuration is present.
@@ -262,7 +314,44 @@ func (c *Config) Validate() error {
 	if c.LinearKey == "" {
 		return errors.New("linear API key is required (set LINEAR_API_KEY or --linear-key)")
 	}
+	c.ensureRuntimeDefaults()
 	return nil
+}
+
+func (c *Config) ensureRuntimeDefaults() {
+	if strings.TrimSpace(c.Runtime.DefaultProvider) == "" {
+		c.Runtime.DefaultProvider = DefaultRuntimeProvider
+	}
+}
+
+func lookupProvider(providers map[string]string, key string) string {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return ""
+	}
+	if provider := strings.TrimSpace(providers[key]); provider != "" {
+		return provider
+	}
+	return ""
+}
+
+func normalizeProviderMap(values map[string]string) map[string]string {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(values))
+	for key, value := range values {
+		key = strings.TrimSpace(key)
+		value = strings.TrimSpace(value)
+		if key == "" || value == "" {
+			continue
+		}
+		out[key] = value
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // getEnvOrViper returns the value from environment variable or viper config.

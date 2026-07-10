@@ -424,11 +424,40 @@ func TestGetPresets(t *testing.T) {
 	}
 
 	// Check for expected presets
-	expectedPresets := []string{"filesystem", "github", "postgres"}
+	expectedPresets := []string{"filesystem", "github", "postgres", "datadog", "bugsnag", "linear", "slack"}
 	for _, name := range expectedPresets {
 		if !presetNames[name] {
 			t.Errorf("GetPresetServers() missing expected preset: %s", name)
 		}
+	}
+}
+
+func TestGetIntegrationStatuses(t *testing.T) {
+	statuses := GetIntegrationStatuses([]Server{
+		{
+			Name:    "linear",
+			Env:     map[string]string{"LINEAR_API_KEY": "secret"},
+			Enabled: true,
+		},
+		{
+			Name:    "datadog",
+			Env:     map[string]string{"DD_API_KEY": "api"},
+			Enabled: true,
+		},
+	})
+
+	byName := make(map[string]IntegrationStatus, len(statuses))
+	for _, status := range statuses {
+		byName[status.Name] = status
+	}
+	if byName["linear"].State != "connected" {
+		t.Fatalf("linear status = %#v, want connected", byName["linear"])
+	}
+	if byName["datadog"].State != "needs_configuration" {
+		t.Fatalf("datadog status = %#v, want needs_configuration", byName["datadog"])
+	}
+	if byName["slack"].State != "disabled" {
+		t.Fatalf("slack status = %#v, want disabled", byName["slack"])
 	}
 }
 

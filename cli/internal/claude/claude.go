@@ -48,6 +48,9 @@ type Client struct {
 	// Model specifies which Claude model to use (e.g., "claude-opus-4-6", "claude-sonnet-4-6")
 	Model string
 
+	// Agent specifies a Claude CLI agent/skill to invoke.
+	Agent string
+
 	// Effort sets the reasoning effort level ("low", "medium", "high")
 	// Empty = CLI default. Only used with models that support extended thinking.
 	Effort string
@@ -259,6 +262,9 @@ func (c *Client) doStreamingRequest(ctx context.Context, systemPrompt, userPromp
 	if c.Model != "" {
 		args = append(args, "--model", c.Model)
 	}
+	if c.Agent != "" {
+		args = append(args, "--agent", c.Agent)
+	}
 	if c.Effort != "" {
 		args = append(args, "--effort", c.Effort)
 	}
@@ -464,6 +470,9 @@ func (c *Client) messageNonStreaming(ctx context.Context, systemPrompt, userProm
 	if c.Model != "" {
 		args = append(args, "--model", c.Model)
 	}
+	if c.Agent != "" {
+		args = append(args, "--agent", c.Agent)
+	}
 	if c.Effort != "" {
 		args = append(args, "--effort", c.Effort)
 	}
@@ -475,7 +484,10 @@ func (c *Client) messageNonStreaming(ctx context.Context, systemPrompt, userProm
 		args = append(args, "--system-prompt", systemPrompt)
 	}
 
-	args = append(args, userPrompt)
+	useStdin := len(userPrompt) > 100000
+	if !useStdin {
+		args = append(args, userPrompt)
+	}
 
 	cmd := exec.CommandContext(ctx, c.Command, args...)
 
@@ -487,6 +499,9 @@ func (c *Client) messageNonStreaming(ctx context.Context, systemPrompt, userProm
 	cmd.Env = filterParentEnv()
 	for k, v := range c.Env {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
+	}
+	if useStdin {
+		cmd.Stdin = strings.NewReader(userPrompt)
 	}
 
 	if c.Debug {
@@ -518,6 +533,9 @@ func (c *Client) MessageWithFiles(ctx context.Context, systemPrompt, userPrompt 
 	if c.Model != "" {
 		args = append(args, "--model", c.Model)
 	}
+	if c.Agent != "" {
+		args = append(args, "--agent", c.Agent)
+	}
 	if c.Effort != "" {
 		args = append(args, "--effort", c.Effort)
 	}
@@ -533,7 +551,10 @@ func (c *Client) MessageWithFiles(ctx context.Context, systemPrompt, userPrompt 
 		args = append(args, "--add-dir", f)
 	}
 
-	args = append(args, userPrompt)
+	useStdin := len(userPrompt) > 100000
+	if !useStdin {
+		args = append(args, userPrompt)
+	}
 
 	cmd := exec.CommandContext(ctx, c.Command, args...)
 
@@ -545,6 +566,9 @@ func (c *Client) MessageWithFiles(ctx context.Context, systemPrompt, userPrompt 
 	cmd.Env = filterParentEnv()
 	for k, v := range c.Env {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
+	}
+	if useStdin {
+		cmd.Stdin = strings.NewReader(userPrompt)
 	}
 
 	var stdout, stderr bytes.Buffer

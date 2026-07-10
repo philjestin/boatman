@@ -2,7 +2,7 @@
 
 A monorepo containing the Boatman CLI tool and desktop application for AI-powered autonomous software development.
 
-> 🆕 **[What's New in February 2026](./WHATS_NEW.md)** - See recent enhancements: monorepo architecture, advanced search, batch diff approval, BoatmanMode integration, agent logs, and more!
+> 🆕 **Runtime platform update** - Boatman now has a provider-neutral runtime layer, OpenAI Responses adapter, inspectable run store, file-backed memory docs, integration health checks, and a desktop Runtime tab for inspecting recorded events and memory.
 
 ## Repository Structure
 
@@ -18,6 +18,10 @@ boatman-ecosystem/
 │   ├── agent/        # Go backend for desktop app
 │   └── wailsjs/      # Wails bindings
 │
+├── shared/           # Provider-neutral runtime, events, tools, integrations
+├── harness/          # Test harness and scaffold helpers
+├── docs/             # Documentation site
+│
 ├── go.work           # Go workspace configuration
 └── README.md         # This file
 ```
@@ -31,6 +35,9 @@ Boatman is an AI-powered autonomous development system that:
 - **Reviews its own code** via ScottBott peer review with iterative refactoring
 - **Creates draft PRs as safety checkpoints** so work is preserved even if later stages fail
 - **Supports resume** — pick up a failed execution from the review/refactor stage without re-doing the work
+- **Routes model calls through provider adapters** so Claude CLI, OpenAI Responses, and future providers can be adopted per workflow role
+- **Records inspectable runtime runs** with normalized events, original requests, artifacts, usage, raw provider payloads, integration status, and memory-load events
+- **Stores memory as Markdown files** under `.boatman/memory`, so users can inspect exactly what context future sessions may load
 - Integrates with Linear, GitHub, and provides both CLI and desktop GUI interfaces
 
 ## Components
@@ -44,6 +51,10 @@ The command-line interface and core autonomous agent.
 - **Backlog triage pipeline**: fetch → score (7-dimension rubric) → classify (deterministic gates) → cluster → plan (optional)
 - Git worktree isolation for safe parallel work
 - Claude AI integration for code generation and review
+- Provider-neutral runtime requests with Claude CLI and OpenAI Responses adapters
+- Runtime provider routing by default, role, and workflow profile
+- Inspectable run store and memory document commands
+- Integration descriptor checks for Linear, Slack, Datadog, and Bugsnag
 - Draft PR safety checkpoints — work is preserved even if review/refactor fails
 - Resume failed executions from the review/refactor stage
 - Generated file filtering (protobuf, GraphQL codegen, Wails bindings)
@@ -64,6 +75,15 @@ go build -o boatman ./cmd/boatman
 
 # Resume a failed execution
 ./boatman work EMP-1234 --resume
+
+# Inspect runtime/provider capabilities
+./boatman providers
+./boatman providers check
+
+# Inspect recorded runs and memory documents
+BOATMAN_RUNTIME_STORE=1 ./boatman work --prompt "Update docs"
+./boatman runs list
+./boatman memory list
 ```
 
 See [cli/README.md](./cli/README.md) for detailed documentation.
@@ -87,6 +107,8 @@ A cross-platform desktop application built with Wails that provides a GUI for th
 - **Triage mode** for scoring, classifying, and planning entire backlogs
 - **Firefighter mode** for production incident investigation
 - **Agent logs panel** for real-time visibility into AI actions
+- **Runtime tab** for inspecting `.boatman/runs` events, artifacts, and `.boatman/memory` documents
+- **Integration health** for MCP-backed services before starting incident or autonomous workflows
 - **Onboarding wizard** for first-time setup
 - **MCP server management** via UI dialog
 
@@ -103,7 +125,7 @@ See [desktop/README.md](./desktop/README.md) for detailed documentation.
 ### Prerequisites
 
 - Go 1.24.1 or later
-- Node.js 18+ (for desktop frontend)
+- Node.js 24+ (for desktop frontend and CI quality gates)
 - Wails v2 (for desktop app)
 - Claude CLI or Anthropic API key
 
@@ -130,17 +152,12 @@ go build -o boatman ./cmd/boatman
 
 **Desktop only:**
 ```bash
-cd desktop
-wails build
+make build-desktop
 ```
 
 **Both:**
 ```bash
-# Build CLI first (desktop bundles it)
-cd cli && go build -o boatman ./cmd/boatman
-
-# Build desktop
-cd ../desktop && wails build
+make build-all
 ```
 
 ### Testing
@@ -155,12 +172,19 @@ go test ./...
 ```bash
 cd desktop
 go test ./...
-cd frontend && npm test
+cd frontend && npm run test:run
 ```
+
+**Full quality gate:**
+```bash
+make quality
+```
+
+`make quality` runs CLI, shared runtime, harness, frontend tests, frontend build, selected desktop runtime tests, architecture docs validation, and the defrag scan.
 
 ## Integration
 
-The CLI and desktop communicate via structured JSON events:
+The CLI and desktop still communicate via legacy structured JSON events:
 
 ```json
 {"type": "agent_started", "id": "execute-ENG-123", "name": "Execution", "description": "Implementing code"}
@@ -184,6 +208,22 @@ Events are emitted by the CLI to stdout and captured by the desktop app for real
 
 The desktop app routes these events through the session message system with proper agent attribution, so each workflow phase gets its own tab in the Agent Logs panel.
 
+Boatman also has a provider-neutral runtime event contract in `shared/agentruntime`. Set `BOATMAN_RUNTIME_EVENTS=1` to emit normalized runtime events alongside legacy stdout events during migration. Set `BOATMAN_RUNTIME_STORE=1` or `BOATMAN_RUNTIME_STORE_DIR=/path/to/runs` to persist normalized run metadata, original requests, events, and artifacts under `.boatman/runs`.
+
+Runtime inspection commands:
+```bash
+boatman providers
+boatman integrations
+boatman integrations check --emit-events
+boatman runs list
+boatman runs show <run-id>
+boatman runs request <run-id>
+boatman runs artifacts <run-id>
+boatman memory list
+boatman memory show domains/payments
+boatman memory context project domains/payments
+```
+
 ## Why a Monorepo?
 
 The CLI and desktop are tightly coupled:
@@ -193,8 +233,18 @@ The CLI and desktop are tightly coupled:
 - Single source of truth for integration contracts
 - Atomic commits for cross-cutting changes
 - **Hybrid architecture**: Desktop can use subprocess OR direct imports
+- **Runtime platform**: CLI, desktop, harness, and future services share provider-neutral runtime contracts
 
 ## Recent Enhancements
+
+### Runtime Platform and Inspectability
+- ✅ **Provider-neutral runtime** in `shared/agentruntime` for requests, events, tools, schemas, approvals, MCP refs, and capabilities
+- ✅ **Provider adapters** for Claude CLI and OpenAI Responses, with role/profile routing
+- ✅ **Tool broker** for local Read, Write, Edit, Bash, Grep, and Glob tools with approval policy enforcement
+- ✅ **Run store** for `metadata.json`, `request.json`, `events.ndjson`, and `artifacts.json`
+- ✅ **Inspectable memory docs** as Markdown under `.boatman/memory`
+- ✅ **Integration catalog and health checks** for Datadog, Bugsnag, Linear, and Slack
+- ✅ **Desktop Runtime tab** for browsing runs, event summaries, artifacts, and memory documents
 
 ### Monorepo Architecture (February 2026)
 The project has been restructured into a unified monorepo with shared types and utilities:
@@ -318,6 +368,8 @@ See [RELEASE_SUMMARY.md](./RELEASE_SUMMARY.md) for quick reference or [RELEASES.
 - **[Desktop Changelog](./desktop/CHANGELOG.md)** - Desktop version history
 
 ### Architecture & Development
+- **[Runtime Platform](./docs/pages/architecture/runtime-platform.mdx)** - Provider adapters, run store, memory, integrations, and quality gates
+- **[Event Protocol](./docs/pages/architecture/event-protocol.mdx)** - Legacy and normalized runtime events
 - **[Hybrid Architecture](./HYBRID_ARCHITECTURE.md)** - Subprocess vs direct imports
 - **[Contributing](./CONTRIBUTING.md)** - Development guidelines
 - **[Releases](./RELEASES.md)** - Complete release guide

@@ -5,13 +5,13 @@ import { vi } from 'vitest';
 Element.prototype.scrollIntoView = vi.fn();
 
 // Mock Wails runtime bindings
-vi.mock('../wailsjs/runtime/runtime', () => ({
+vi.mock('../../wailsjs/runtime/runtime', () => ({
   EventsOn: vi.fn(),
   EventsOff: vi.fn(),
 }));
 
 // Mock Go bindings - these would be injected by Wails at runtime
-vi.mock('../wailsjs/go/main/App', () => ({
+vi.mock('../../wailsjs/go/main/App', () => ({
   GetPreferences: vi.fn().mockResolvedValue({
     apiKey: '',
     approvalMode: 'suggest',
@@ -53,4 +53,38 @@ vi.mock('../wailsjs/go/main/App', () => ({
     oldestDate: '',
     newestDate: ''
   }),
+  IsGCloudInstalled: vi.fn().mockResolvedValue(true),
+  IsGCloudAuthenticated: vi.fn().mockResolvedValue(true),
+  GetGCloudAuthInfo: vi.fn().mockResolvedValue({
+    account: 'test@example.com',
+    project: 'my-project'
+  }),
+  GCloudLoginApplicationDefault: vi.fn().mockResolvedValue(undefined),
+  GCloudGetAvailableProjects: vi.fn().mockResolvedValue(['my-project', 'new-project']),
+  GCloudSetProject: vi.fn().mockResolvedValue(undefined),
+  GCloudRevoke: vi.fn().mockResolvedValue(undefined),
+  GetMCPServers: vi.fn().mockResolvedValue([]),
+  GetMCPPresets: vi.fn().mockResolvedValue([]),
+  GetIntegrationStatuses: vi.fn().mockResolvedValue([
+    {
+      name: 'linear',
+      state: 'needs_configuration',
+      message: 'integration is missing required configuration',
+      missingEnv: ['LINEAR_API_KEY'],
+      lastChecked: new Date().toISOString()
+    },
+    {
+      name: 'slack',
+      state: 'disabled',
+      message: 'integration is disabled',
+      lastChecked: new Date().toISOString()
+    }
+  ]),
+  AddMCPServer: vi.fn().mockResolvedValue(undefined),
+  RemoveMCPServer: vi.fn().mockResolvedValue(undefined),
+  UpdateMCPServer: vi.fn().mockResolvedValue(undefined),
+  ListRuntimeRuns: vi.fn().mockResolvedValue([]),
+  GetRuntimeRun: vi.fn().mockResolvedValue(null),
+  ListMemoryDocuments: vi.fn().mockResolvedValue([]),
+  GetMemoryDocument: vi.fn().mockResolvedValue(null),
 }));

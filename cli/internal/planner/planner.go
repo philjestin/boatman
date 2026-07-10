@@ -1,4 +1,4 @@
-// Package planner runs a Claude agent to analyze tickets and plan execution.
+// Package planner runs a runtime provider to analyze tickets and plan execution.
 // This gives the executor agent focused context and a clear approach.
 package planner
 
@@ -10,11 +10,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/philjestin/boatmanmode/internal/claude"
+	agentruntime "github.com/philjestin/boatman-ecosystem/shared/agentruntime"
+	"github.com/philjestin/boatman-ecosystem/shared/agentruntime/toolbroker"
 	"github.com/philjestin/boatmanmode/internal/config"
 	"github.com/philjestin/boatmanmode/internal/cost"
 	"github.com/philjestin/boatmanmode/internal/events"
 	"github.com/philjestin/boatmanmode/internal/linear"
+	runtimeproviders "github.com/philjestin/boatmanmode/internal/providers"
 	"github.com/philjestin/boatmanmode/internal/task"
 )
 
@@ -42,44 +44,30 @@ type Plan struct {
 	Warnings []string `json:"warnings"`
 }
 
-// Planner is a Claude agent that analyzes tickets.
+// Planner analyzes tickets before execution.
 type Planner struct {
-	client       *claude.Client
+	provider     agentruntime.Provider
 	worktreePath string
+	model        string
+	effort       string
+	enableTools  bool
+	runText      func(context.Context, agentruntime.Provider, agentruntime.RunRequest, func(agentruntime.Event)) (string, *cost.Usage, error)
 }
 
 // New creates a new Planner agent.
 func New(worktreePath string, cfg *config.Config) *Planner {
-	var client *claude.Client
+	provider := runtimeproviders.MustFromConfig(cfg, agentruntime.RolePlanner, "planner")
+	return newPlannerWithProvider(worktreePath, cfg, provider)
+}
 
-	if cfg.EnableTools {
-		// Allow planner to explore codebase with Read, Grep, Glob
-		client = claude.NewWithTools(worktreePath, "planner", []string{"Read", "Grep", "Glob"})
-	} else {
-		// Backward compatibility - no tools
-		client = claude.NewWithTmux(worktreePath, "planner")
-	}
-
-	// Configure model if specified
-	if cfg.Claude.Models.Planner != "" {
-		client.Model = cfg.Claude.Models.Planner
-	}
-	client.Effort = cfg.Claude.Effort
-
-	// Note: Prompt caching is automatically handled by Claude CLI
-	client.EnablePromptCaching = cfg.Claude.EnablePromptCaching
-
-	// Skip permissions so Claude doesn't prompt for tool approval interactively
-	client.SkipPermissions = true
-
-	// Forward Claude stream events for desktop app visibility
-	client.EventForwarder = func(rawLine string) {
-		events.ClaudeStream("planner", rawLine)
-	}
-
+func newPlannerWithProvider(worktreePath string, cfg *config.Config, provider agentruntime.Provider) *Planner {
 	return &Planner{
-		client:       client,
+		provider:     provider,
 		worktreePath: worktreePath,
+		model:        cfg.Claude.Models.Planner,
+		effort:       cfg.Claude.Effort,
+		enableTools:  cfg.EnableTools,
+		runText:      runtimeproviders.RunTextWithEvents,
 	}
 }
 
@@ -142,7 +130,35 @@ Focus on understanding existing patterns before proposing new code.`,
 	fmt.Println("   📝 Analyzing task and exploring codebase...")
 
 	start := time.Now()
-	response, usage, err := p.client.Message(ctx, systemPrompt, prompt)
+	response, usage, err := p.runText(ctx, p.provider, agentruntime.RunRequest{
+		RunID:        "planner-" + t.GetID(),
+		Role:         agentruntime.RolePlanner,
+		Profile:      "planner",
+		Provider:     p.provider.Name(),
+		Model:        p.model,
+		WorkDir:      p.worktreePath,
+		Instructions: systemPrompt,
+		Messages: []agentruntime.Message{
+			{Role: "user", Content: prompt},
+		},
+		Tools:          plannerTools(p.enableTools),
+		OutputSchema:   plannerOutputSchema(),
+		ApprovalPolicy: agentruntime.ApprovalFullAuto,
+		Reasoning: &agentruntime.ReasoningOptions{
+			Effort: p.effort,
+		},
+		Metadata: map[string]string{
+			"phaseId": "planner",
+		},
+	}, func(event agentruntime.Event) {
+		if event.Type == agentruntime.EventProviderRaw {
+			if len(event.Raw) > 0 {
+				events.ProviderRaw("planner", event.Provider, string(event.Raw))
+			} else if event.Message != "" {
+				events.ProviderRaw("planner", event.Provider, event.Message)
+			}
+		}
+	})
 	elapsed := time.Since(start)
 
 	if err != nil {
@@ -170,6 +186,58 @@ Focus on understanding existing patterns before proposing new code.`,
 	}
 
 	return plan, usage, nil
+}
+
+func plannerTools(enabled bool) []agentruntime.ToolRef {
+	if !enabled {
+		return nil
+	}
+	return toolbroker.PlannerRefs()
+}
+
+func plannerOutputSchema() *agentruntime.OutputSchema {
+	return &agentruntime.OutputSchema{
+		Name:        "work_planner_plan",
+		Description: "Focused implementation plan for the work pipeline executor.",
+		Strict:      true,
+		Schema: json.RawMessage(`{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "summary",
+    "approach",
+    "relevant_files",
+    "relevant_dirs",
+    "existing_patterns",
+    "test_strategy",
+    "warnings"
+  ],
+  "properties": {
+    "summary": {"type": "string"},
+    "approach": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "relevant_files": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "relevant_dirs": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "existing_patterns": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "test_strategy": {"type": "string"},
+    "warnings": {
+      "type": "array",
+      "items": {"type": "string"}
+    }
+  }
+}`),
+	}
 }
 
 // AnalyzeTicket is a backward-compatibility wrapper for Linear tickets.

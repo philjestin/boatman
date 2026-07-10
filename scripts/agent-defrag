@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+# agent-defrag - scan for codebase fragmentation that makes agent-written code drift.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$REPO_ROOT"
+
+STRICT=0
+if [[ "${1:-}" == "--strict" ]]; then
+  STRICT=1
+fi
+
+if ! command -v rg >/dev/null 2>&1; then
+  echo "[agent-defrag] ripgrep is required for fragmentation scans"
+  exit 2
+fi
+
+issues=0
+
+report() {
+  local title="$1"
+  local detail="$2"
+  issues=$((issues + 1))
+  echo "[agent-defrag] issue: $title"
+  echo "  $detail"
+}
+
+count_matches() {
+  local pattern="$1"
+  shift
+  { rg -n "$pattern" "$@" 2>/dev/null || true; } | wc -l | tr -d ' '
+}
+
+claude_process_calls="$(count_matches 'exec\.(Command|CommandContext)\([^)]*"claude"' cli desktop harness shared -g '*.go' -g '!**/providers/**' -g '!*_test.go')"
+if [[ "$claude_process_calls" -gt 1 ]]; then
+  report "provider process calls are duplicated" \
+    "Found $claude_process_calls direct Claude process call sites. Prefer shared/agentruntime plus provider adapters."
+fi
+
+claude_stream_mentions="$(count_matches 'claude_stream|ClaudeStream\(' cli desktop shared -g '*.go' -g '*.ts' -g '*.tsx' -g '!**/providers/**' -g '!cli/internal/events/emitter.go' -g '!desktop/boatmanmode/integration.go' -g '!desktop/app.go' -g '!*_test.go')"
+if [[ "$claude_stream_mentions" -gt 0 ]]; then
+  report "provider-specific stream event is spreading" \
+    "Found $claude_stream_mentions references. New consumers should use agentruntime.EventProviderRaw."
+fi
+
+claude_config_mentions="$(count_matches 'ClaudeConfig|claude\.models|AuthMethodAnthropicAPI|ANTHROPIC_API_KEY' cli desktop harness shared -g '*.go' -g '!**/providers/**' -g '!*_test.go')"
+if [[ "$claude_config_mentions" -gt 20 ]]; then
+  report "configuration is still provider-shaped" \
+    "Found $claude_config_mentions Claude-specific config/auth references. Migrate toward role profiles and provider credentials."
+fi
+
+stream_parser_files="$(rg -l 'parseStreamLine|StreamChunk|content_block_delta|message_delta' cli desktop harness shared -g '*.go' -g '!**/providers/**' -g '!*_test.go' 2>/dev/null | wc -l | tr -d ' ')"
+if [[ "$stream_parser_files" -gt 2 ]]; then
+  report "stream parsing logic is fragmented" \
+    "Found provider stream parsing logic in $stream_parser_files files. Keep parsing inside provider adapters."
+fi
+
+if [[ ! -f "docs/pages/architecture/runtime-platform.mdx" ]]; then
+  report "runtime architecture docs are missing" \
+    "Add docs/pages/architecture/runtime-platform.mdx before expanding provider work."
+fi
+
+if [[ "$issues" -eq 0 ]]; then
+  echo "[agent-defrag] ok: no tracked fragmentation patterns found"
+else
+  echo "[agent-defrag] found $issues tracked fragmentation pattern(s)"
+fi
+
+if [[ "$STRICT" -eq 1 && "$issues" -gt 0 ]]; then
+  exit 1
+fi

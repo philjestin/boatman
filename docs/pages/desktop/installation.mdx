@@ -4,8 +4,8 @@
 
 ### Required
 - **macOS** (currently only darwin/arm64 supported)
-- **Go 1.18+**: Build the application
-- **Node.js 16+**: Frontend development
+- **Go 1.24.1+**: Build the application
+- **Node.js 24+**: Frontend development and quality gates
 - **Wails CLI**: `go install github.com/wailsapp/wails/v2/cmd/wails@latest`
 - **Claude API Access** via one of:
   - Anthropic API key (from https://console.anthropic.com)
@@ -32,7 +32,7 @@ cd boatman
 make build-cli
 
 # Install frontend dependencies
-cd desktop/frontend && npm install && cd ../..
+cd desktop/frontend && npm ci && cd ../..
 
 # Build the application
 cd desktop && wails build
@@ -45,6 +45,7 @@ cd desktop && wails build
 ```bash
 # From monorepo root
 make build-cli        # Build CLI binary
+make build-frontend   # Build desktop frontend
 make build-desktop    # Build desktop app (includes CLI)
 make build-all        # Build both
 

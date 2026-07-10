@@ -10,8 +10,11 @@ import (
 	"time"
 
 	harnessbrain "github.com/philjestin/boatman-ecosystem/harness/brain"
-	"github.com/philjestin/boatmanmode/internal/claude"
+	agentruntime "github.com/philjestin/boatman-ecosystem/shared/agentruntime"
+	"github.com/philjestin/boatman-ecosystem/shared/agentruntime/memorydocs"
 	"github.com/philjestin/boatmanmode/internal/config"
+	"github.com/philjestin/boatmanmode/internal/cost"
+	runtimeproviders "github.com/philjestin/boatmanmode/internal/providers"
 	"gopkg.in/yaml.v3"
 )
 
@@ -21,24 +24,34 @@ type AutoDistiller struct {
 	projectPath string
 	outputDir   string
 	cfg         *config.Config
+	provider    agentruntime.Provider
+	runText     func(context.Context, agentruntime.Provider, agentruntime.RunRequest, func(agentruntime.Event)) (string, *cost.Usage, error)
 }
 
 // NewAutoDistiller creates a distiller that outputs to the project's .boatman/brains/ directory.
 func NewAutoDistiller(projectPath string, cfg *config.Config) *AutoDistiller {
+	provider := runtimeproviders.MustFromConfig(cfg, agentruntime.RoleMemory, "brain-distiller")
+	return newAutoDistillerWithProvider(projectPath, cfg, provider)
+}
+
+func newAutoDistillerWithProvider(projectPath string, cfg *config.Config, provider agentruntime.Provider) *AutoDistiller {
 	return &AutoDistiller{
 		projectPath: projectPath,
 		outputDir:   filepath.Join(projectPath, ".boatman", "brains"),
 		cfg:         cfg,
+		provider:    provider,
+		runText:     runtimeproviders.RunTextWithEvents,
 	}
 }
 
 // DistillResult describes what was generated.
 type DistillResult struct {
-	Domain    string
-	Path      string
-	BrainID   string
-	Signals   int
-	UsedLLM   bool
+	Domain     string
+	Path       string
+	MemoryPath string
+	BrainID    string
+	Signals    int
+	UsedLLM    bool
 }
 
 // SignalThreshold defines when a domain has enough signals to warrant a brain.
@@ -151,19 +164,9 @@ func (d *AutoDistiller) distillDomain(ctx context.Context, domain string, signal
 	return d.templateDistill(domain, signals)
 }
 
-// llmDistill uses Claude to synthesize a brain from signals and file context.
+// llmDistill uses the configured model provider to synthesize a brain from
+// signals and file context.
 func (d *AutoDistiller) llmDistill(ctx context.Context, domain string, signals []harnessbrain.Signal, fileContents map[string]string) (*DistillResult, error) {
-	client := claude.New()
-	client.WorkDir = d.projectPath
-	client.SkipPermissions = true
-
-	if d.cfg != nil && d.cfg.Claude.Models.Planner != "" {
-		client.Model = d.cfg.Claude.Models.Planner
-	}
-	if d.cfg != nil && d.cfg.Claude.Effort != "" {
-		client.Effort = d.cfg.Claude.Effort
-	}
-
 	systemPrompt := `You are a domain knowledge curator for an AI agent system called Boatman.
 Your job is to synthesize observed knowledge gaps (signals) and source code into a structured
 brain document that helps future agents work correctly in this domain.
@@ -232,9 +235,38 @@ Guidelines:
 
 	sb.WriteString(fmt.Sprintf("\nGenerate the brain YAML for the %s domain. Today's date is %s.", domain, time.Now().Format("2006-01-02")))
 
-	response, _, err := client.Message(ctx, systemPrompt, sb.String())
+	metadata := map[string]string{
+		"phaseId": "brain-distiller",
+	}
+	model := ""
+	effort := ""
+	if d.cfg != nil {
+		model = d.cfg.Claude.Models.Planner
+		effort = d.cfg.Claude.Effort
+		if d.cfg.Claude.EnablePromptCaching {
+			metadata["enablePromptCaching"] = "true"
+		}
+	}
+
+	response, _, err := d.runText(ctx, d.provider, agentruntime.RunRequest{
+		RunID:        "brain-distiller-" + sanitize(domain),
+		Role:         agentruntime.RoleMemory,
+		Profile:      "brain-distiller",
+		Provider:     d.provider.Name(),
+		Model:        model,
+		WorkDir:      d.projectPath,
+		Instructions: systemPrompt,
+		Messages: []agentruntime.Message{
+			{Role: "user", Content: sb.String()},
+		},
+		ApprovalPolicy: agentruntime.ApprovalSuggest,
+		Reasoning: &agentruntime.ReasoningOptions{
+			Effort: effort,
+		},
+		Metadata: metadata,
+	}, nil)
 	if err != nil {
-		return nil, fmt.Errorf("claude call failed: %w", err)
+		return nil, fmt.Errorf("model provider call failed: %w", err)
 	}
 
 	// Clean up response — strip markdown fences if present
@@ -260,13 +292,18 @@ Guidelines:
 	if err := os.WriteFile(outPath, data, 0644); err != nil {
 		return nil, fmt.Errorf("failed to write brain: %w", err)
 	}
+	memoryPath, err := d.writeMemoryDoc(ctx, domain, signals, parsed, outPath, true)
+	if err != nil {
+		return nil, fmt.Errorf("failed to write memory document: %w", err)
+	}
 
 	return &DistillResult{
-		Domain:  domain,
-		Path:    outPath,
-		BrainID: parsed.ID,
-		Signals: len(signals),
-		UsedLLM: true,
+		Domain:     domain,
+		Path:       outPath,
+		MemoryPath: memoryPath,
+		BrainID:    parsed.ID,
+		Signals:    len(signals),
+		UsedLLM:    true,
 	}, nil
 }
 
@@ -353,14 +390,107 @@ func (d *AutoDistiller) templateDistill(domain string, signals []harnessbrain.Si
 	if err := os.WriteFile(outPath, data, 0644); err != nil {
 		return nil, err
 	}
+	memoryPath, err := d.writeMemoryDoc(context.Background(), domain, signals, draft, outPath, false)
+	if err != nil {
+		return nil, err
+	}
 
 	return &DistillResult{
-		Domain:  domain,
-		Path:    outPath,
-		BrainID: brainID,
-		Signals: len(signals),
-		UsedLLM: false,
+		Domain:     domain,
+		Path:       outPath,
+		MemoryPath: memoryPath,
+		BrainID:    brainID,
+		Signals:    len(signals),
+		UsedLLM:    false,
 	}, nil
+}
+
+func (d *AutoDistiller) writeMemoryDoc(ctx context.Context, domain string, signals []harnessbrain.Signal, brain yamlBrain, brainPath string, usedLLM bool) (string, error) {
+	store := memorydocs.NewFileStore(memorydocs.DefaultDir(d.projectPath))
+	method := "template"
+	if usedLLM {
+		method = "llm"
+	}
+	id := "domains/" + sanitize(domain)
+	title := brain.Name
+	if strings.TrimSpace(title) == "" {
+		title = titleCase(domain) + " Domain Memory"
+	}
+	body := renderDistilledMemoryBody(domain, signals, brain, brainPath, method)
+	doc, err := store.Write(ctx, memorydocs.Document{
+		ID:          id,
+		Scope:       memorydocs.ScopeDomain,
+		Title:       title,
+		Body:        body,
+		Provenance:  fmt.Sprintf("Generated by brain-distiller from %d Boatman signal(s); brain=%s; method=%s", len(signals), brain.ID, method),
+		SourceRunID: "brain-distiller-" + sanitize(domain),
+		Metadata: map[string]string{
+			"brain_id":   brain.ID,
+			"brain_path": brainPath,
+			"method":     method,
+		},
+	})
+	if err != nil {
+		return "", err
+	}
+	return doc.Path, nil
+}
+
+func renderDistilledMemoryBody(domain string, signals []harnessbrain.Signal, brain yamlBrain, brainPath, method string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "Generated domain memory for `%s` using `%s` distillation.\n\n", domain, method)
+	if brain.Description != "" {
+		fmt.Fprintf(&b, "%s\n\n", brain.Description)
+	}
+	fmt.Fprintf(&b, "Curated brain: `%s`\n\n", brainPath)
+
+	if len(signals) > 0 {
+		b.WriteString("## Signals\n\n")
+		for _, sig := range signals {
+			fmt.Fprintf(&b, "- [%s] %s (count: %d)\n", sig.Type, sig.Details, sig.Count)
+			if len(sig.FilePaths) > 0 {
+				fmt.Fprintf(&b, "  Files: %s\n", strings.Join(sig.FilePaths, ", "))
+			}
+		}
+		b.WriteString("\n")
+	}
+
+	if len(brain.Triggers.Keywords) > 0 || len(brain.Triggers.Entities) > 0 || len(brain.Triggers.FilePatterns) > 0 {
+		b.WriteString("## When To Load\n\n")
+		if len(brain.Triggers.Keywords) > 0 {
+			fmt.Fprintf(&b, "- Keywords: %s\n", strings.Join(brain.Triggers.Keywords, ", "))
+		}
+		if len(brain.Triggers.Entities) > 0 {
+			fmt.Fprintf(&b, "- Entities: %s\n", strings.Join(brain.Triggers.Entities, ", "))
+		}
+		if len(brain.Triggers.FilePatterns) > 0 {
+			fmt.Fprintf(&b, "- File patterns: %s\n", strings.Join(brain.Triggers.FilePatterns, ", "))
+		}
+		b.WriteString("\n")
+	}
+
+	if len(brain.Sections) > 0 {
+		b.WriteString("## Distilled Guidance\n\n")
+		for _, section := range brain.Sections {
+			if strings.TrimSpace(section.Title) == "" && strings.TrimSpace(section.Content) == "" {
+				continue
+			}
+			fmt.Fprintf(&b, "### %s\n\n%s\n\n", section.Title, strings.TrimSpace(section.Content))
+		}
+	}
+
+	if len(brain.References) > 0 {
+		b.WriteString("## References\n\n")
+		for _, ref := range brain.References {
+			if ref.Description != "" {
+				fmt.Fprintf(&b, "- `%s` - %s\n", ref.Path, ref.Description)
+			} else {
+				fmt.Fprintf(&b, "- `%s`\n", ref.Path)
+			}
+		}
+	}
+
+	return strings.TrimSpace(b.String())
 }
 
 // readReferencedFiles reads file contents from the project for LLM context.

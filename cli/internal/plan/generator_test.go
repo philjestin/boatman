@@ -1,11 +1,38 @@
 package plan
 
 import (
+	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
+	agentruntime "github.com/philjestin/boatman-ecosystem/shared/agentruntime"
+	"github.com/philjestin/boatmanmode/internal/config"
+	"github.com/philjestin/boatmanmode/internal/cost"
 	"github.com/philjestin/boatmanmode/internal/triage"
 )
+
+type generatorFakeProvider struct{}
+
+func (generatorFakeProvider) Name() string {
+	return "fake"
+}
+
+func (generatorFakeProvider) Capabilities(context.Context) (agentruntime.Capabilities, error) {
+	return agentruntime.Capabilities{}, nil
+}
+
+func (generatorFakeProvider) StartRun(context.Context, agentruntime.RunRequest) (agentruntime.EventStream, error) {
+	return nil, nil
+}
+
+func (generatorFakeProvider) ResumeRun(context.Context, string, agentruntime.RunInput) (agentruntime.EventStream, error) {
+	return nil, nil
+}
+
+func (generatorFakeProvider) CancelRun(context.Context, string) error {
+	return nil
+}
 
 func TestParsePlanResponse_JSONBlock(t *testing.T) {
 	response := "Here is the plan:\n\n```json\n" + `{
@@ -215,5 +242,87 @@ func TestBuildPlannerPrompt_NoDescription(t *testing.T) {
 
 	if strings.Contains(prompt, "## Description") {
 		t.Error("prompt should not contain description section when description is empty")
+	}
+}
+
+func TestPlannerOutputSchemaIsValidJSON(t *testing.T) {
+	schema := plannerOutputSchema()
+	if schema == nil {
+		t.Fatal("schema should not be nil")
+	}
+	if !schema.Strict {
+		t.Fatal("schema should be strict")
+	}
+	if !json.Valid(schema.Schema) {
+		t.Fatalf("schema is not valid JSON: %s", schema.Schema)
+	}
+	if err := agentruntime.ValidateOutputSchema(schema); err != nil {
+		t.Fatalf("schema should pass runtime validation: %v", err)
+	}
+}
+
+func TestGeneratePlanUsesRuntimeProviderRequest(t *testing.T) {
+	cfg := &config.Config{
+		Claude: config.ClaudeConfig{
+			Effort: "high",
+			Models: config.ModelConfig{
+				Planner: "planner-model",
+			},
+		},
+	}
+	generator := newGeneratorWithProvider(cfg, "/repo", generatorFakeProvider{})
+
+	var captured agentruntime.RunRequest
+	generator.runText = func(_ context.Context, provider agentruntime.Provider, req agentruntime.RunRequest, onEvent func(agentruntime.Event)) (string, *cost.Usage, error) {
+		captured = req
+		if provider.Name() != "fake" {
+			t.Fatalf("provider = %q, want fake", provider.Name())
+		}
+		if onEvent == nil {
+			t.Fatal("expected provider raw event observer")
+		}
+		return `{"approach":"do it","candidateFiles":["src/Foo.tsx"],"newFiles":[],"deletedFiles":[],"validation":["yarn test"],"rollback":"revert","stopConditions":["stop"],"uncertainties":[]}`, &cost.Usage{InputTokens: 7}, nil
+	}
+
+	plan, usage, err := generator.GeneratePlan(context.Background(),
+		triage.NormalizedTicket{TicketID: "ENG-7", Title: "Plan me"},
+		triage.Classification{TicketID: "ENG-7", Category: triage.CategoryAIDefinite},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("GeneratePlan error: %v", err)
+	}
+	if plan.TicketID != "ENG-7" {
+		t.Fatalf("TicketID = %q, want ENG-7", plan.TicketID)
+	}
+	if usage == nil || usage.InputTokens != 7 {
+		t.Fatalf("usage = %#v, want input tokens", usage)
+	}
+	if captured.Role != agentruntime.RolePlanner {
+		t.Fatalf("Role = %q, want %q", captured.Role, agentruntime.RolePlanner)
+	}
+	if captured.Profile != "triage-planner" {
+		t.Fatalf("Profile = %q, want triage-planner", captured.Profile)
+	}
+	if captured.Model != "planner-model" {
+		t.Fatalf("Model = %q, want planner-model", captured.Model)
+	}
+	if captured.WorkDir != "/repo" {
+		t.Fatalf("WorkDir = %q, want /repo", captured.WorkDir)
+	}
+	if captured.ApprovalPolicy != agentruntime.ApprovalFullAuto {
+		t.Fatalf("ApprovalPolicy = %q, want %q", captured.ApprovalPolicy, agentruntime.ApprovalFullAuto)
+	}
+	if captured.Reasoning == nil || captured.Reasoning.Effort != "high" {
+		t.Fatalf("Reasoning = %#v, want high effort", captured.Reasoning)
+	}
+	if len(captured.Tools) != 3 {
+		t.Fatalf("Tools = %#v, want 3 planner tools", captured.Tools)
+	}
+	if captured.OutputSchema == nil || captured.OutputSchema.Name != "triage_ticket_plan" {
+		t.Fatalf("OutputSchema = %#v, want planner schema", captured.OutputSchema)
+	}
+	if captured.Metadata["phaseId"] != "triage-planner" {
+		t.Fatalf("phaseId = %q, want triage-planner", captured.Metadata["phaseId"])
 	}
 }

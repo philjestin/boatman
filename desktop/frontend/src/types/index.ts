@@ -203,6 +203,24 @@ export interface MCPServer {
   enabled: boolean;
 }
 
+export type IntegrationState =
+  | 'unknown'
+  | 'disabled'
+  | 'needs_configuration'
+  | 'ready'
+  | 'connected'
+  | 'degraded'
+  | 'failed';
+
+export interface IntegrationStatus {
+  name: string;
+  state: IntegrationState;
+  message?: string;
+  missingEnv?: string[];
+  lastChecked: string;
+  metadata?: Record<string, string>;
+}
+
 export interface UserPreferences {
   apiKey: string;
   authMethod: AuthMethod;
@@ -240,6 +258,83 @@ export interface UserPreferences {
 
   // Slack monitoring settings
   slackAlertChannels?: string;
+}
+
+// =============================================================================
+// Runtime Inspection Types
+// =============================================================================
+
+export interface RuntimeRunSummary {
+  runId: string;
+  provider?: string;
+  model?: string;
+  role?: string;
+  profile?: string;
+  workDir?: string;
+  status?: string;
+  startedAt?: string;
+  updatedAt?: string;
+  endedAt?: string;
+  eventCount: number;
+  artifactCount?: number;
+}
+
+export interface RuntimeArtifactSummary {
+  kind: string;
+  path?: string;
+  url?: string;
+  diff?: string;
+  message?: string;
+  phaseId?: string;
+  taskId?: string;
+  eventType?: string;
+  firstSeenAt?: string;
+  lastSeenAt?: string;
+  eventCount: number;
+}
+
+export interface RuntimeEventSummary {
+  type: string;
+  status?: string;
+  role?: string;
+  provider?: string;
+  model?: string;
+  phaseId?: string;
+  taskId?: string;
+  name?: string;
+  message?: string;
+  timestamp?: string;
+  toolName?: string;
+  toolError?: boolean;
+  artifactKind?: string;
+  artifactPath?: string;
+  artifactUrl?: string;
+  rawPreview?: string;
+}
+
+export interface RuntimeRunDetail {
+  metadata: RuntimeRunSummary;
+  events: RuntimeEventSummary[];
+  artifacts: RuntimeArtifactSummary[];
+}
+
+export interface MemoryDocumentSummary {
+  id: string;
+  scope?: string;
+  title?: string;
+  bodyPreview?: string;
+  provenance?: string;
+  sourceRunId?: string;
+  metadata?: Record<string, string>;
+  generatedAt?: string;
+  updatedAt?: string;
+  expiresAt?: string;
+  expired?: boolean;
+  path?: string;
+}
+
+export interface MemoryDocumentDetail extends MemoryDocumentSummary {
+  body?: string;
 }
 
 export interface ProjectPreferences {
@@ -300,13 +395,27 @@ export interface AgentStatusEvent {
 }
 
 export interface BoatmanModeEvent {
+  version?: number;
   type: string;
   id?: string;
+  runId?: string;
+  phaseId?: string;
+  taskId?: string;
+  provider?: string;
+  model?: string;
+  role?: string;
   name?: string;
   description?: string;
   status?: string;
   message?: string;
+  usage?: Record<string, any>;
+  tool?: Record<string, any>;
+  approval?: Record<string, any>;
+  artifact?: Record<string, any>;
+  schema?: Record<string, any>;
+  raw?: any;
   data?: Record<string, any>;
+  timestamp?: string;
 }
 
 export interface BoatmanModeEventPayload {

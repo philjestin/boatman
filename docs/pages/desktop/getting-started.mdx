@@ -26,6 +26,11 @@
    - Click "New Session" to start a conversation
    - Ask questions about your code, request changes, or get explanations
 
+5. **Inspect Runtime Context**
+   - Open the **Runtime** tab for the active project
+   - Review recorded runs, normalized events, artifacts, and memory documents
+   - Use this when you want to understand what Boatman did, which provider handled the work, or what context future sessions may load
+
 ---
 
 ## Sessions
@@ -44,6 +49,7 @@
 | Tags | Organize sessions with custom tags (`#bug-fix`, `#refactor`, `#investigation`) |
 | Search | Find sessions by content or metadata |
 | History | View all past conversations and tasks |
+| Runtime | Inspect recorded runtime runs, artifacts, events, and memory docs |
 
 ---
 
@@ -114,6 +120,31 @@ Boatman can:
 - Generate PRs with descriptions
 - Create worktrees for parallel work (firefighter mode)
 - Run git blame for code ownership
+
+---
+
+## Runtime Inspector
+
+The Runtime tab reads files from the active project:
+
+```text
+.boatman/
+  runs/
+  memory/
+```
+
+### Runs
+
+Each recorded runtime run includes:
+
+- Provider, model, role, profile, status, and timestamps
+- Original provider-neutral request
+- Normalized event stream
+- Artifact manifest for files, diffs, PRs, or other durable outputs
+
+### Memory
+
+Memory documents are Markdown files with frontmatter. Boatman can load them as prompt context for future sessions, and users can inspect them directly in the Runtime tab before trusting the context.
 
 ---
 

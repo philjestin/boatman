@@ -154,6 +154,9 @@ func TestConfigDefaultValues(t *testing.T) {
 	if cfg.Claude.LargePromptThreshold != 100000 {
 		t.Errorf("Expected Claude.LargePromptThreshold 100000, got %d", cfg.Claude.LargePromptThreshold)
 	}
+	if cfg.Runtime.DefaultProvider != DefaultRuntimeProvider {
+		t.Errorf("Expected Runtime.DefaultProvider %q, got %s", DefaultRuntimeProvider, cfg.Runtime.DefaultProvider)
+	}
 
 	// Token budget defaults
 	if cfg.TokenBudget.Context != 8000 {
@@ -173,6 +176,9 @@ func TestConfigCustomValues(t *testing.T) {
 	viper.Set("retry.max_attempts", 5)
 	viper.Set("claude.command", "custom-claude")
 	viper.Set("token_budget.context", 16000)
+	viper.Set("runtime.default_provider", "openai-responses")
+	viper.Set("runtime.role_providers", map[string]string{"reviewer": "claude-cli"})
+	viper.Set("runtime.profile_providers", map[string]string{"triage-scorer": "openai-responses"})
 
 	cfg, err := Load()
 	if err != nil {
@@ -196,6 +202,51 @@ func TestConfigCustomValues(t *testing.T) {
 	}
 	if cfg.TokenBudget.Context != 16000 {
 		t.Errorf("Expected TokenBudget.Context 16000, got %d", cfg.TokenBudget.Context)
+	}
+	if cfg.Runtime.DefaultProvider != "openai-responses" {
+		t.Errorf("Expected Runtime.DefaultProvider 'openai-responses', got %s", cfg.Runtime.DefaultProvider)
+	}
+	if got := cfg.Runtime.ProviderFor("planner", "triage-scorer"); got != "openai-responses" {
+		t.Errorf("Expected triage-scorer provider openai-responses, got %s", got)
+	}
+	if got := cfg.Runtime.ProviderFor("reviewer", "fallback"); got != "claude-cli" {
+		t.Errorf("Expected reviewer provider claude-cli, got %s", got)
+	}
+}
+
+func TestRuntimeConfigProviderForPrecedence(t *testing.T) {
+	runtime := RuntimeConfig{
+		DefaultProvider: "default",
+		RoleProviders: map[string]string{
+			"planner": "role-provider",
+		},
+		ProfileProviders: map[string]string{
+			"triage-planner": "profile-provider",
+		},
+	}
+
+	if got := runtime.ProviderFor("planner", "triage-planner"); got != "profile-provider" {
+		t.Fatalf("ProviderFor profile = %q, want profile-provider", got)
+	}
+	if got := runtime.ProviderFor("planner", ""); got != "role-provider" {
+		t.Fatalf("ProviderFor role = %q, want role-provider", got)
+	}
+	if got := runtime.ProviderFor("executor", ""); got != "default" {
+		t.Fatalf("ProviderFor default = %q, want default", got)
+	}
+}
+
+func TestRuntimeProviderEnvOverride(t *testing.T) {
+	viper.Reset()
+	t.Setenv("LINEAR_API_KEY", "test-api-key")
+	t.Setenv("BOATMAN_PROVIDER", "openai-responses")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if cfg.Runtime.DefaultProvider != "openai-responses" {
+		t.Fatalf("Runtime.DefaultProvider = %q, want openai-responses", cfg.Runtime.DefaultProvider)
 	}
 }
 
@@ -227,6 +278,23 @@ func TestLoadWithoutLinearKey(t *testing.T) {
 	_, err := Load()
 	if err == nil {
 		t.Error("Should error when LINEAR_API_KEY is not set")
+	}
+}
+
+func TestLoadRuntimeDoesNotRequireLinearKey(t *testing.T) {
+	viper.Reset()
+	t.Setenv("BOATMAN_PROVIDER", "openai-responses")
+	os.Unsetenv("LINEAR_API_KEY")
+
+	cfg, err := LoadRuntime()
+	if err != nil {
+		t.Fatalf("LoadRuntime failed: %v", err)
+	}
+	if cfg.LinearKey != "" {
+		t.Fatalf("LinearKey = %q, want empty", cfg.LinearKey)
+	}
+	if cfg.Runtime.DefaultProvider != "openai-responses" {
+		t.Fatalf("Runtime.DefaultProvider = %q, want openai-responses", cfg.Runtime.DefaultProvider)
 	}
 }
 

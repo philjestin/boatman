@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { render, screen, fireEvent, within, waitFor } from '@testing-library/react';
 import { SettingsModal } from './SettingsModal';
 import type { UserPreferences } from '../../types';
+import { GetIntegrationStatuses, GetMCPServers, UpdateMCPServer } from '../../../wailsjs/go/main/App';
 
 describe('SettingsModal', () => {
   const mockPreferences: UserPreferences = {
@@ -22,6 +23,23 @@ describe('SettingsModal', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(GetMCPServers).mockResolvedValue([]);
+    vi.mocked(GetIntegrationStatuses).mockResolvedValue([
+      {
+        name: 'linear',
+        state: 'needs_configuration',
+        message: 'integration is missing required configuration',
+        missingEnv: ['LINEAR_API_KEY'],
+        lastChecked: new Date().toISOString(),
+      },
+      {
+        name: 'slack',
+        state: 'disabled',
+        message: 'integration is disabled',
+        lastChecked: new Date().toISOString(),
+      },
+    ]);
+    vi.mocked(UpdateMCPServer).mockResolvedValue(undefined);
   });
 
   describe('Modal visibility', () => {
@@ -215,7 +233,7 @@ describe('SettingsModal', () => {
       expect(anthropicButton).toHaveClass('border-blue-500');
     });
 
-    it('should switch to Google Cloud auth method', () => {
+    it('should switch to Google Cloud auth method', async () => {
       render(
         <SettingsModal
           isOpen={true}
@@ -230,8 +248,10 @@ describe('SettingsModal', () => {
         fireEvent.click(gcpButton);
       }
 
-      expect(screen.getByText('GCP Project ID')).toBeInTheDocument();
-      expect(screen.getByText('GCP Region')).toBeInTheDocument();
+      await waitFor(() => {
+        expect(screen.getByText('Google Cloud OAuth')).toBeInTheDocument();
+      });
+      expect(screen.getByText('Authenticated')).toBeInTheDocument();
     });
 
     it('should render API key input when using Anthropic API', () => {
@@ -302,7 +322,7 @@ describe('SettingsModal', () => {
       gcpRegion: 'us-central1',
     };
 
-    it('should render GCP configuration when Google Cloud is selected', () => {
+    it('should render GCP configuration when Google Cloud is selected', async () => {
       render(
         <SettingsModal
           isOpen={true}
@@ -312,11 +332,14 @@ describe('SettingsModal', () => {
         />
       );
 
-      expect(screen.getByText('GCP Project ID')).toBeInTheDocument();
-      expect(screen.getByText('GCP Region')).toBeInTheDocument();
+      await waitFor(() => {
+        expect(screen.getByText('Google Cloud OAuth')).toBeInTheDocument();
+      });
+      expect(screen.getByText('GCP Project')).toBeInTheDocument();
+      expect(screen.getByText('Region')).toBeInTheDocument();
     });
 
-    it('should display GCP project ID value', () => {
+    it('should display GCP project ID value', async () => {
       render(
         <SettingsModal
           isOpen={true}
@@ -326,11 +349,11 @@ describe('SettingsModal', () => {
         />
       );
 
-      const projectIdInput = screen.getByPlaceholderText('my-project-id');
-      expect(projectIdInput).toHaveValue('my-project');
+      const projectSelect = await screen.findByDisplayValue('my-project');
+      expect(projectSelect).toBeInTheDocument();
     });
 
-    it('should update GCP project ID', () => {
+    it('should update GCP project ID', async () => {
       render(
         <SettingsModal
           isOpen={true}
@@ -340,13 +363,13 @@ describe('SettingsModal', () => {
         />
       );
 
-      const projectIdInput = screen.getByPlaceholderText('my-project-id');
-      fireEvent.change(projectIdInput, { target: { value: 'new-project' } });
+      const projectSelect = await screen.findByDisplayValue('my-project');
+      fireEvent.change(projectSelect, { target: { value: 'new-project' } });
 
-      expect(projectIdInput).toHaveValue('new-project');
+      expect(projectSelect).toHaveValue('new-project');
     });
 
-    it('should render GCP region selector with options', () => {
+    it('should render GCP region selector with options', async () => {
       render(
         <SettingsModal
           isOpen={true}
@@ -356,7 +379,7 @@ describe('SettingsModal', () => {
         />
       );
 
-      const regionSelect = screen.getByDisplayValue('us-central1');
+      const regionSelect = await screen.findByDisplayValue('us-central1');
       expect(regionSelect).toBeInTheDocument();
 
       const options = within(regionSelect.parentElement!).getAllByRole('option');
@@ -367,7 +390,7 @@ describe('SettingsModal', () => {
       expect(options[3]).toHaveValue('asia-southeast1');
     });
 
-    it('should update GCP region', () => {
+    it('should update GCP region', async () => {
       render(
         <SettingsModal
           isOpen={true}
@@ -377,7 +400,7 @@ describe('SettingsModal', () => {
         />
       );
 
-      const regionSelect = screen.getByDisplayValue('us-central1');
+      const regionSelect = await screen.findByDisplayValue('us-central1');
       fireEvent.change(regionSelect, { target: { value: 'europe-west1' } });
 
       expect(regionSelect).toHaveValue('europe-west1');
@@ -548,6 +571,7 @@ describe('SettingsModal', () => {
 
   describe('Approval Settings', () => {
     beforeEach(() => {
+      vi.mocked(GetMCPServers).mockResolvedValue([]);
       render(
         <SettingsModal
           isOpen={true}
@@ -611,6 +635,7 @@ describe('SettingsModal', () => {
 
   describe('MCP Settings - Empty State', () => {
     beforeEach(() => {
+      vi.mocked(GetMCPServers).mockResolvedValue([]);
       render(
         <SettingsModal
           isOpen={true}
@@ -624,12 +649,21 @@ describe('SettingsModal', () => {
       fireEvent.click(mcpTab);
     });
 
-    it('should show empty state when no servers configured', () => {
-      expect(screen.getByText('No MCP servers configured')).toBeInTheDocument();
+    it('should show empty state when no servers configured', async () => {
+      expect(await screen.findByText('No MCP servers configured')).toBeInTheDocument();
     });
 
-    it('should render add server button in empty state', () => {
-      expect(screen.getByText('Add Server')).toBeInTheDocument();
+    it('should render add server button in empty state', async () => {
+      expect(await screen.findByText('Add Server')).toBeInTheDocument();
+    });
+
+    it('should render integration health statuses', async () => {
+      await waitFor(() => {
+        expect(screen.getByText('Integration health')).toBeInTheDocument();
+      });
+      expect(screen.getByText('linear')).toBeInTheDocument();
+      expect(screen.getByText('needs configuration')).toBeInTheDocument();
+      expect(screen.getByText('LINEAR_API_KEY')).toBeInTheDocument();
     });
   });
 
@@ -650,8 +684,14 @@ describe('SettingsModal', () => {
         },
       ],
     };
+    let backendServers: UserPreferences['mcpServers'];
 
     beforeEach(() => {
+      backendServers = preferencesWithServers.mcpServers.map((server) => ({ ...server }));
+      vi.mocked(GetMCPServers).mockImplementation(async () => backendServers);
+      vi.mocked(UpdateMCPServer).mockImplementation(async (server) => {
+        backendServers = backendServers.map((item) => item.name === server.name ? server : item);
+      });
       render(
         <SettingsModal
           isOpen={true}
@@ -665,26 +705,26 @@ describe('SettingsModal', () => {
       fireEvent.click(mcpTab);
     });
 
-    it('should render server list', () => {
-      expect(screen.getByText('Test Server 1')).toBeInTheDocument();
-      expect(screen.getByText('Test Server 2')).toBeInTheDocument();
+    it('should render server list', async () => {
+      expect(await screen.findByText('Test Server 1')).toBeInTheDocument();
+      expect(await screen.findByText('Test Server 2')).toBeInTheDocument();
     });
 
-    it('should display server commands', () => {
-      expect(screen.getByText('npx test-server')).toBeInTheDocument();
-      expect(screen.getByText('node server.js')).toBeInTheDocument();
+    it('should display server commands', async () => {
+      expect(await screen.findByText('npx test-server')).toBeInTheDocument();
+      expect(await screen.findByText('node server.js --port 3000')).toBeInTheDocument();
     });
 
-    it('should show enabled/disabled status', () => {
-      const enabledLabels = screen.getAllByText('Enabled');
-      const disabledLabels = screen.getAllByText('Disabled');
+    it('should show enabled/disabled status', async () => {
+      const enabledLabels = await screen.findAllByText('Enabled');
+      const disabledLabels = await screen.findAllByText('Disabled');
 
       expect(enabledLabels.length).toBeGreaterThan(0);
       expect(disabledLabels.length).toBeGreaterThan(0);
     });
 
-    it('should have correct checkbox states', () => {
-      const checkboxes = screen.getAllByRole('checkbox');
+    it('should have correct checkbox states', async () => {
+      const checkboxes = await screen.findAllByRole('checkbox');
 
       // The first checkbox is notifications checkbox from General tab (still in state but not visible)
       // Server checkboxes start after that
@@ -697,15 +737,17 @@ describe('SettingsModal', () => {
       expect(serverCheckboxes[1]).not.toBeChecked();
     });
 
-    it('should toggle server enabled state', () => {
-      const checkboxes = screen.getAllByRole('checkbox');
+    it('should toggle server enabled state', async () => {
+      const checkboxes = await screen.findAllByRole('checkbox');
       const allCheckboxes = Array.from(checkboxes);
       const serverCheckboxes = allCheckboxes.slice(-2); // Get the last 2 checkboxes (server ones)
       const firstServerCheckbox = serverCheckboxes[0];
 
       expect(firstServerCheckbox).toBeChecked();
       fireEvent.click(firstServerCheckbox);
-      expect(firstServerCheckbox).not.toBeChecked();
+      await waitFor(() => {
+        expect(firstServerCheckbox).not.toBeChecked();
+      });
     });
   });
 
@@ -903,7 +945,7 @@ describe('SettingsModal', () => {
       expect(apiKeyInputAfter).toHaveValue('sk-ant-changed');
     });
 
-    it('should preserve MCP server changes', () => {
+    it('should preserve MCP server changes', async () => {
       const preferencesWithServers: UserPreferences = {
         ...mockPreferences,
         mcpServers: [
@@ -914,6 +956,11 @@ describe('SettingsModal', () => {
           },
         ],
       };
+      let backendServers = preferencesWithServers.mcpServers.map((server) => ({ ...server }));
+      vi.mocked(GetMCPServers).mockImplementation(async () => backendServers);
+      vi.mocked(UpdateMCPServer).mockImplementation(async (server) => {
+        backendServers = backendServers.map((item) => item.name === server.name ? server : item);
+      });
 
       render(
         <SettingsModal
@@ -929,7 +976,7 @@ describe('SettingsModal', () => {
       fireEvent.click(mcpTab);
 
       // Toggle server - get the last checkbox which should be the server one
-      const checkboxes = screen.getAllByRole('checkbox');
+      const checkboxes = await screen.findAllByRole('checkbox');
       const serverCheckbox = checkboxes[checkboxes.length - 1];
       if (serverCheckbox) {
         fireEvent.click(serverCheckbox);
@@ -1025,7 +1072,7 @@ describe('SettingsModal', () => {
       expect(apiKeyInput).toHaveValue('');
     });
 
-    it('should handle empty MCP servers array', () => {
+    it('should handle empty MCP servers array', async () => {
       render(
         <SettingsModal
           isOpen={true}
@@ -1038,10 +1085,10 @@ describe('SettingsModal', () => {
       const mcpTab = screen.getByRole('button', { name: /MCP Servers/i });
       fireEvent.click(mcpTab);
 
-      expect(screen.getByText('No MCP servers configured')).toBeInTheDocument();
+      expect(await screen.findByText('No MCP servers configured')).toBeInTheDocument();
     });
 
-    it('should handle undefined GCP values', () => {
+    it('should handle undefined GCP values', async () => {
       const prefsWithoutGCP: UserPreferences = {
         ...mockPreferences,
         authMethod: 'google-cloud',
@@ -1058,11 +1105,9 @@ describe('SettingsModal', () => {
         />
       );
 
-      const projectIdInput = screen.getByPlaceholderText('my-project-id');
-      expect(projectIdInput).toHaveValue('');
-
-      const regionSelect = screen.getByDisplayValue('us-east5');
-      expect(regionSelect).toBeInTheDocument();
+      const projectSelect = await screen.findByDisplayValue('Select a project...');
+      expect(projectSelect).toHaveValue('');
+      expect(screen.queryByText('Region')).not.toBeInTheDocument();
     });
   });
 });

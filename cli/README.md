@@ -1,6 +1,6 @@
 # BoatmanMode 🚣
 
-An AI-powered development agent that automates ticket execution with peer review. BoatmanMode fetches tickets from Linear, generates code using Claude, reviews changes with a configurable Claude skill (default: `peer-review`), iterates until quality passes, and creates pull requests.
+An AI-powered development agent that automates ticket execution with peer review. BoatmanMode fetches tickets from Linear, routes model work through provider adapters, generates code, reviews changes with a configurable review skill (default: `peer-review`), iterates until quality passes, and creates pull requests.
 
 ## Architecture
 
@@ -59,6 +59,13 @@ An AI-powered development agent that automates ticket execution with peer review
 - Full visibility into AI decision-making
 - `claude_stream` events forward raw Claude output for desktop app integration
 
+### 🧭 Provider Runtime
+- Workflows build provider-neutral runtime requests for planning, execution, review, refactor, triage scoring, triage planning, and memory synthesis
+- `claude-cli` remains the default adapter
+- `openai-responses` can be routed to selected roles or profiles
+- Normalized runtime events can be emitted and recorded alongside legacy events
+- Local tools flow through a shared broker with workspace and approval policy checks
+
 ### 🌲 Git Worktree Isolation
 - Each ticket works in an isolated worktree
 - No interference with your main working directory
@@ -112,6 +119,35 @@ boatman work ENG-123 | grep '^{' | jq
 - CI/CD pipeline integration
 
 See [EVENTS.md](EVENTS.md) for complete event specification and integration examples.
+
+---
+
+### 🧭 Runtime Inspection (NEW)
+
+Inspect provider capabilities, integration health, recorded runs, artifacts, and
+memory documents from the CLI:
+
+```bash
+boatman providers
+boatman providers check
+
+boatman integrations
+boatman integrations check --emit-events
+
+BOATMAN_RUNTIME_STORE=1 boatman work --prompt "Update docs"
+boatman runs list
+boatman runs show <run-id>
+boatman runs request <run-id>
+boatman runs artifacts <run-id>
+
+boatman memory list
+boatman memory show domains/payments
+boatman memory context project domains/payments
+```
+
+Recorded runs are written as `metadata.json`, `request.json`, `events.ndjson`,
+and `artifacts.json`. Memory documents are Markdown files with provenance,
+scope, optional source run, and optional expiration.
 
 ---
 
@@ -767,6 +803,7 @@ boatmanmode/
 │   ├── memory/               # Cross-session learning
 │   ├── planner/              # Plan generation
 │   ├── preflight/            # Pre-execution validation
+│   ├── providers/            # Runtime provider registry and adapters
 │   ├── retry/                # Exponential backoff retry logic (NEW)
 │   ├── scottbott/            # Peer review
 │   ├── testenv/              # E2E test environment with mocks (NEW)
@@ -785,8 +822,14 @@ boatmanmode/
 | `CLOUD_ML_REGION` | Vertex AI region | If using Vertex |
 | `ANTHROPIC_VERTEX_PROJECT_ID` | GCP project ID | If using Vertex |
 | `BOATMAN_DEBUG` | Set to `1` for debug output (structured logs) | No |
+| `BOATMAN_PROVIDER` | Default runtime provider override | No |
+| `BOATMAN_RUNTIME_EVENTS` | Set to `1` to emit normalized runtime events alongside legacy events | No |
+| `BOATMAN_RUNTIME_STORE` | Set to `1` to record runs under `.boatman/runs` | No |
+| `BOATMAN_RUNTIME_STORE_DIR` | Custom runtime run store directory | No |
 | `BOATMAN_CHECKPOINT_DIR` | Custom checkpoint directory | No |
 | `BOATMAN_MEMORY_DIR` | Custom memory directory | No |
+| `OPENAI_API_KEY` | OpenAI API key for `openai-responses` | If using OpenAI |
+| `OPENAI_MODEL` | Default model for `openai-responses` | If using OpenAI without per-run model |
 | `LINEAR_API_URL` | Override Linear API URL (for testing) | No |
 
 ## Troubleshooting

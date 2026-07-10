@@ -1,9 +1,13 @@
 package mcp
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
+
+	"github.com/philjestin/boatman-ecosystem/shared/agentruntime/integrations"
 )
 
 // Server represents an MCP server configuration
@@ -15,6 +19,9 @@ type Server struct {
 	Env         map[string]string `json:"env,omitempty"`
 	Enabled     bool              `json:"enabled"`
 }
+
+// IntegrationStatus is the broker-visible status for a known service integration.
+type IntegrationStatus = integrations.Status
 
 // Config represents the MCP configuration file structure
 type Config struct {
@@ -158,7 +165,7 @@ func (m *Manager) ValidateServer(server Server) error {
 
 // GetPresetServers returns common MCP server presets
 func GetPresetServers() []Server {
-	return []Server{
+	servers := []Server{
 		{
 			Name:        "filesystem",
 			Description: "File system access for Claude",
@@ -180,50 +187,24 @@ func GetPresetServers() []Server {
 			Args:        []string{"-y", "@anthropic/mcp-server-postgres"},
 			Enabled:     false,
 		},
-		{
-			Name:        "datadog",
-			Description: "Query Datadog logs, metrics, and monitors",
-			Command:     "npx",
-			Args:        []string{"-y", "@datadog/mcp-server"},
-			Env: map[string]string{
-				"DD_API_KEY": "",
-				"DD_APP_KEY": "",
-				"DD_SITE":    "datadoghq.com",
-			},
-			Enabled: false,
-		},
-		{
-			Name:        "bugsnag",
-			Description: "Investigate Bugsnag errors and exceptions",
-			Command:     "npx",
-			Args:        []string{"-y", "@bugsnag/mcp-server"},
-			Env: map[string]string{
-				"BUGSNAG_API_KEY": "",
-			},
-			Enabled: false,
-		},
-		{
-			Name:        "linear",
-			Description: "Linear project management and issue tracking",
-			Command:     "npx",
-			Args:        []string{"-y", "@modelcontextprotocol/server-linear"},
-			Env: map[string]string{
-				"LINEAR_API_KEY": "",
-			},
-			Enabled: false,
-		},
-		{
-			Name:        "slack",
-			Description: "Slack workspace integration",
-			Command:     "npx",
-			Args:        []string{"-y", "@modelcontextprotocol/server-slack"},
-			Env: map[string]string{
-				"SLACK_BOT_TOKEN": "",
-				"SLACK_TEAM_ID":   "",
-			},
-			Enabled: false,
-		},
-		{
+	}
+	catalog := integrations.DefaultCatalog()
+	for _, name := range []string{"datadog", "bugsnag", "linear", "slack"} {
+		if item, ok := catalog.Lookup(name); ok {
+			if ref, ok := item.MCPRef(); ok {
+				servers = append(servers, Server{
+					Name:        ref.Label,
+					Description: ref.Description,
+					Command:     ref.Command,
+					Args:        ref.Args,
+					Env:         ref.Env,
+					Enabled:     false,
+				})
+			}
+		}
+	}
+	servers = append(servers,
+		Server{
 			Name:        "figma",
 			Description: "Figma design file access and manipulation",
 			Command:     "npx",
@@ -233,5 +214,38 @@ func GetPresetServers() []Server {
 			},
 			Enabled: false,
 		},
+	)
+	return servers
+}
+
+// GetIntegrationStatuses reports descriptor-level health for known service
+// integrations based on configured MCP servers.
+func GetIntegrationStatuses(servers []Server) []IntegrationStatus {
+	catalog := integrations.DefaultCatalog()
+	manager := integrations.NewManager(catalog)
+	configured := make(map[string]Server, len(servers))
+	for _, server := range servers {
+		configured[strings.ToLower(strings.TrimSpace(server.Name))] = server
 	}
+
+	statuses := make([]IntegrationStatus, 0, len(catalog.List()))
+	for _, item := range catalog.List() {
+		server, ok := configured[item.Name]
+		opts := integrations.ResolveOptions{}
+		if ok {
+			opts.Enabled = server.Enabled
+			opts.Env = server.Env
+		}
+		conn, err := manager.Connect(context.Background(), item.Name, opts)
+		status := conn.Status
+		if err != nil {
+			status = integrations.Status{
+				Name:    item.Name,
+				State:   integrations.StateFailed,
+				Message: err.Error(),
+			}
+		}
+		statuses = append(statuses, status)
+	}
+	return statuses
 }

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"os"
 	"testing"
+
+	agentruntime "github.com/philjestin/boatman-ecosystem/shared/agentruntime"
 )
 
 func TestAgentStarted(t *testing.T) {
@@ -158,5 +160,99 @@ func TestProgress(t *testing.T) {
 	}
 	if event.Message != "Running tests..." {
 		t.Errorf("Expected message 'Running tests...', got '%s'", event.Message)
+	}
+}
+
+func TestRuntimeEventBridgeOptIn(t *testing.T) {
+	t.Setenv("BOATMAN_RUNTIME_EVENTS", "1")
+
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	AgentCompleted("execute-123", "Execution", "success")
+
+	w.Close()
+	os.Stdout = old
+
+	var buf bytes.Buffer
+	if _, err := buf.ReadFrom(r); err != nil {
+		t.Fatalf("Failed to read from pipe: %v", err)
+	}
+
+	dec := json.NewDecoder(&buf)
+	var legacy Event
+	if err := dec.Decode(&legacy); err != nil {
+		t.Fatalf("Failed to parse legacy event JSON: %v", err)
+	}
+	var runtimeEvent agentruntime.Event
+	if err := dec.Decode(&runtimeEvent); err != nil {
+		t.Fatalf("Failed to parse runtime event JSON: %v", err)
+	}
+
+	if legacy.Type != "agent_completed" {
+		t.Fatalf("legacy.Type = %q, want agent_completed", legacy.Type)
+	}
+	if runtimeEvent.Type != agentruntime.EventPhaseCompleted {
+		t.Fatalf("runtimeEvent.Type = %q, want %q", runtimeEvent.Type, agentruntime.EventPhaseCompleted)
+	}
+	if runtimeEvent.Status != agentruntime.StatusSucceeded {
+		t.Fatalf("runtimeEvent.Status = %q, want %q", runtimeEvent.Status, agentruntime.StatusSucceeded)
+	}
+	if runtimeEvent.PhaseID != "execute-123" {
+		t.Fatalf("runtimeEvent.PhaseID = %q, want execute-123", runtimeEvent.PhaseID)
+	}
+}
+
+func TestNormalizeClaudeStream(t *testing.T) {
+	event := Event{
+		Type:    "claude_stream",
+		ID:      "executor",
+		Message: `{"type":"content_block_delta","delta":{"text":"hello"}}`,
+	}
+
+	runtimeEvent := Normalize(event)
+
+	if runtimeEvent.Type != agentruntime.EventProviderRaw {
+		t.Fatalf("Type = %q, want %q", runtimeEvent.Type, agentruntime.EventProviderRaw)
+	}
+	if runtimeEvent.Provider != "claude-cli" {
+		t.Fatalf("Provider = %q, want claude-cli", runtimeEvent.Provider)
+	}
+	if string(runtimeEvent.Raw) != event.Message {
+		t.Fatalf("Raw = %s, want %s", runtimeEvent.Raw, event.Message)
+	}
+}
+
+func TestProviderRawEmitsRuntimeEvent(t *testing.T) {
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	ProviderRaw("executor", "", `{"type":"content_block_delta","delta":{"text":"hello"}}`)
+
+	w.Close()
+	os.Stdout = old
+
+	var buf bytes.Buffer
+	if _, err := buf.ReadFrom(r); err != nil {
+		t.Fatalf("Failed to read from pipe: %v", err)
+	}
+
+	var event agentruntime.Event
+	if err := json.Unmarshal(buf.Bytes(), &event); err != nil {
+		t.Fatalf("Failed to parse runtime event JSON: %v", err)
+	}
+	if event.Type != agentruntime.EventProviderRaw {
+		t.Fatalf("Type = %q, want %q", event.Type, agentruntime.EventProviderRaw)
+	}
+	if event.PhaseID != "executor" {
+		t.Fatalf("PhaseID = %q, want executor", event.PhaseID)
+	}
+	if event.Provider != "claude-cli" {
+		t.Fatalf("Provider = %q, want claude-cli", event.Provider)
+	}
+	if string(event.Raw) != `{"type":"content_block_delta","delta":{"text":"hello"}}` {
+		t.Fatalf("Raw = %s", event.Raw)
 	}
 }

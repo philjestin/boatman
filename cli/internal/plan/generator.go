@@ -9,47 +9,43 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/philjestin/boatmanmode/internal/claude"
+	agentruntime "github.com/philjestin/boatman-ecosystem/shared/agentruntime"
+	"github.com/philjestin/boatman-ecosystem/shared/agentruntime/toolbroker"
 	"github.com/philjestin/boatmanmode/internal/config"
 	"github.com/philjestin/boatmanmode/internal/cost"
 	"github.com/philjestin/boatmanmode/internal/events"
+	runtimeproviders "github.com/philjestin/boatmanmode/internal/providers"
 	"github.com/philjestin/boatmanmode/internal/triage"
 )
 
-// Generator uses Claude with tools to generate execution plans for tickets.
+// Generator uses the configured runtime provider with tools to generate execution plans for tickets.
 type Generator struct {
-	client   *claude.Client
+	provider agentruntime.Provider
 	cfg      *config.Config
 	repoPath string
+	model    string
+	effort   string
+	runText  func(context.Context, agentruntime.Provider, agentruntime.RunRequest, func(agentruntime.Event)) (string, *cost.Usage, error)
 
 	// OnPlanGenerated is called after each ticket is planned in GenerateBatch.
 	OnPlanGenerated func(result PlanResult, index, total int)
 }
 
-// NewGenerator creates a Generator that uses Claude with Read/Grep/Glob tools
-// to explore the repo and produce execution plans.
+// NewGenerator creates a Generator that uses Read/Grep/Glob tools to explore
+// the repo and produce execution plans.
 func NewGenerator(cfg *config.Config, repoPath string) *Generator {
-	client := claude.NewWithTools(repoPath, "triage-planner", []string{"Read", "Grep", "Glob"})
+	provider := runtimeproviders.MustFromConfig(cfg, agentruntime.RolePlanner, "triage-planner")
+	return newGeneratorWithProvider(cfg, repoPath, provider)
+}
 
-	if cfg.Claude.Models.Planner != "" {
-		client.Model = cfg.Claude.Models.Planner
-	}
-	client.Effort = cfg.Claude.Effort
-	client.EnablePromptCaching = cfg.Claude.EnablePromptCaching
-	client.SkipPermissions = true
-
-	// Set BOATMAN_NO_TMUX so desktop subprocess mode uses streaming instead of tmux
-	client.Env["BOATMAN_NO_TMUX"] = "1"
-
-	// Forward Claude stream events for desktop visibility
-	client.EventForwarder = func(rawLine string) {
-		events.ClaudeStream("triage-planner", rawLine)
-	}
-
+func newGeneratorWithProvider(cfg *config.Config, repoPath string, provider agentruntime.Provider) *Generator {
 	return &Generator{
-		client:   client,
+		provider: provider,
 		cfg:      cfg,
 		repoPath: repoPath,
+		model:    cfg.Claude.Models.Planner,
+		effort:   cfg.Claude.Effort,
+		runText:  runtimeproviders.RunTextWithEvents,
 	}
 }
 
@@ -111,9 +107,37 @@ func (g *Generator) GeneratePlan(
 ) (*TicketPlan, *cost.Usage, error) {
 	userPrompt := buildPlannerPrompt(ticket, classification, contextDoc)
 
-	response, usage, err := g.client.Message(ctx, plannerSystemPrompt, userPrompt)
+	response, usage, err := g.runText(ctx, g.provider, agentruntime.RunRequest{
+		RunID:        "plan-" + ticket.TicketID,
+		Role:         agentruntime.RolePlanner,
+		Profile:      "triage-planner",
+		Provider:     g.provider.Name(),
+		Model:        g.model,
+		WorkDir:      g.repoPath,
+		Instructions: plannerSystemPrompt,
+		Messages: []agentruntime.Message{
+			{Role: "user", Content: userPrompt},
+		},
+		Tools:          toolbroker.PlannerRefs(),
+		OutputSchema:   plannerOutputSchema(),
+		ApprovalPolicy: agentruntime.ApprovalFullAuto,
+		Reasoning: &agentruntime.ReasoningOptions{
+			Effort: g.effort,
+		},
+		Metadata: map[string]string{
+			"phaseId": "triage-planner",
+		},
+	}, func(event agentruntime.Event) {
+		if event.Type == agentruntime.EventProviderRaw {
+			if len(event.Raw) > 0 {
+				events.ProviderRaw("triage-planner", event.Provider, string(event.Raw))
+			} else if event.Message != "" {
+				events.ProviderRaw("triage-planner", event.Provider, event.Message)
+			}
+		}
+	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("planner Claude call failed for %s: %w", ticket.TicketID, err)
+		return nil, nil, fmt.Errorf("planner provider call failed for %s: %w", ticket.TicketID, err)
 	}
 
 	plan, err := parsePlanResponse(response)
@@ -129,6 +153,56 @@ func (g *Generator) GeneratePlan(
 
 	plan.TicketID = ticket.TicketID
 	return plan, usage, nil
+}
+
+func plannerOutputSchema() *agentruntime.OutputSchema {
+	return &agentruntime.OutputSchema{
+		Name:        "triage_ticket_plan",
+		Description: "Concrete execution plan for a single AI-ready ticket.",
+		Strict:      true,
+		Schema: json.RawMessage(`{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "approach",
+    "candidateFiles",
+    "newFiles",
+    "deletedFiles",
+    "validation",
+    "rollback",
+    "stopConditions",
+    "uncertainties"
+  ],
+  "properties": {
+    "approach": {"type": "string"},
+    "candidateFiles": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "newFiles": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "deletedFiles": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "validation": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "rollback": {"type": "string"},
+    "stopConditions": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "uncertainties": {
+      "type": "array",
+      "items": {"type": "string"}
+    }
+  }
+}`),
+	}
 }
 
 // GenerateBatch generates plans for multiple tickets concurrently.

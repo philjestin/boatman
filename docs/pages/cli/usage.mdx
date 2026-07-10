@@ -100,6 +100,97 @@ boatman sessions cleanup    # Clean up idle sessions
 
 ---
 
+## Runtime Provider Inspection
+
+Provider commands are local checks; they do not call model APIs.
+
+```bash
+boatman providers          # Show compiled-in provider capability metadata
+boatman providers --json   # Machine-readable capability output
+boatman providers check    # Validate configured runtime routes
+```
+
+Use these before long runs when changing `runtime.default_provider`,
+`runtime.role_providers`, or `runtime.profile_providers`.
+
+---
+
+## Integration Inspection
+
+Boatman has shared descriptors for built-in service integrations.
+
+```bash
+boatman integrations
+boatman integrations --json
+boatman integrations check
+boatman integrations check linear slack
+boatman integrations check --emit-events
+```
+
+`integrations check` validates local environment/configuration and reports
+states such as `ready`, `needs_configuration`, or `disabled`. With
+`--emit-events`, it prints normalized runtime events. If runtime-store
+environment variables are set, those events are also recorded.
+
+---
+
+## Recorded Runtime Runs
+
+Enable run recording:
+
+```bash
+BOATMAN_RUNTIME_STORE=1 boatman work --prompt "Add a health check endpoint"
+```
+
+Inspect recorded runs:
+
+```bash
+boatman runs list
+boatman runs show <run-id>
+boatman runs request <run-id>
+boatman runs artifacts <run-id>
+```
+
+Useful flags:
+
+```bash
+boatman runs list --store-dir /tmp/boatman-runs
+boatman runs show <run-id> --json
+boatman runs artifacts <run-id> --json
+boatman runs request <run-id> --json
+```
+
+The run store writes `metadata.json`, `request.json`, `events.ndjson`, and
+`artifacts.json` for each run.
+
+---
+
+## Runtime Memory Documents
+
+Memory docs are inspectable Markdown files that future sessions can load as
+context.
+
+```bash
+boatman memory list
+boatman memory show domains/payments
+boatman memory context project domains/payments
+boatman memory context --emit-event --run-id <run-id>
+```
+
+Useful flags:
+
+```bash
+boatman memory list --memory-dir .boatman/memory --json
+boatman memory list --include-expired=false
+boatman memory show domains/payments --json
+boatman memory context --max-bytes 12000
+```
+
+Agents should read memory at run startup; background jobs and distillers write
+memory files with provenance so users can inspect what Boatman knows and why.
+
+---
+
 ## Worktree Management
 
 ```bash
