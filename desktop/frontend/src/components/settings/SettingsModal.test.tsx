@@ -4,6 +4,17 @@ import { SettingsModal } from './SettingsModal';
 import type { UserPreferences } from '../../types';
 import { GetIntegrationStatuses, GetMCPServers, UpdateMCPServer } from '../../../wailsjs/go/main/App';
 
+type IntegrationStatusResult = Awaited<ReturnType<typeof GetIntegrationStatuses>>[number];
+
+const integrationStatus = (status: {
+  name: string;
+  state: string;
+  message?: string;
+  missingEnv?: string[];
+  lastChecked: string;
+  metadata?: Record<string, string>;
+}): IntegrationStatusResult => status as unknown as IntegrationStatusResult;
+
 describe('SettingsModal', () => {
   const mockPreferences: UserPreferences = {
     apiKey: 'sk-ant-test123',
@@ -25,19 +36,19 @@ describe('SettingsModal', () => {
     vi.clearAllMocks();
     vi.mocked(GetMCPServers).mockResolvedValue([]);
     vi.mocked(GetIntegrationStatuses).mockResolvedValue([
-      {
+      integrationStatus({
         name: 'linear',
         state: 'needs_configuration',
         message: 'integration is missing required configuration',
         missingEnv: ['LINEAR_API_KEY'],
         lastChecked: new Date().toISOString(),
-      },
-      {
+      }),
+      integrationStatus({
         name: 'slack',
         state: 'disabled',
         message: 'integration is disabled',
         lastChecked: new Date().toISOString(),
-      },
+      }),
     ]);
     vi.mocked(UpdateMCPServer).mockResolvedValue(undefined);
   });
