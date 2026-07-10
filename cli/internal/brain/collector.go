@@ -1,6 +1,7 @@
 package brain
 
 import (
+	"errors"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -11,6 +12,9 @@ import (
 // Collector passively detects knowledge gap signals during agent workflows.
 type Collector struct {
 	store     *harnessbrain.SignalStore
+	graph     *KnowledgeGraph
+	taskID    string
+	taskTitle string
 	fileReads map[string]int // track repeated file reads
 	mu        sync.Mutex
 }
@@ -21,11 +25,33 @@ func NewCollector(projectPath string) (*Collector, error) {
 	if err != nil {
 		return nil, err
 	}
+	graph, _ := LoadKnowledgeGraph(projectPath)
 
 	return &Collector{
 		store:     store,
+		graph:     graph,
 		fileReads: make(map[string]int),
 	}, nil
+}
+
+// OnTaskContext records the task and files selected during planning.
+func (c *Collector) OnTaskContext(taskID, title string, filePaths []string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.taskID = taskID
+	c.taskTitle = title
+	c.graph.RecordTaskContext(taskID, title, filePaths)
+}
+
+// OnTaskExecution records the files changed by implementation.
+func (c *Collector) OnTaskExecution(taskID, title string, filesChanged []string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.taskID = taskID
+	c.taskTitle = title
+	c.graph.RecordTaskExecution(taskID, title, filesChanged)
 }
 
 // OnReviewFailure records a signal when code review finds issues.
@@ -36,7 +62,7 @@ func (c *Collector) OnReviewFailure(issues []string, filesChanged []string) {
 
 	domain := inferDomain(filesChanged)
 
-	c.store.Record(harnessbrain.Signal{
+	c.recordSignal(harnessbrain.Signal{
 		Type:      harnessbrain.SignalReviewFailure,
 		Domain:    domain,
 		Details:   strings.Join(issues, "; "),
@@ -52,7 +78,7 @@ func (c *Collector) OnRefactorIteration(iteration int, issues []string, filesCha
 
 	domain := inferDomain(filesChanged)
 
-	c.store.Record(harnessbrain.Signal{
+	c.recordSignal(harnessbrain.Signal{
 		Type:      harnessbrain.SignalRefactorLoop,
 		Domain:    domain,
 		Details:   strings.Join(issues, "; "),
@@ -70,7 +96,7 @@ func (c *Collector) OnFileRead(path string) {
 	if count >= 3 {
 		domain := inferDomain([]string{path})
 
-		c.store.Record(harnessbrain.Signal{
+		c.recordSignal(harnessbrain.Signal{
 			Type:      harnessbrain.SignalRepeatedFileRead,
 			Domain:    domain,
 			Details:   path + " read " + strings.Repeat(".", count) + " times",
@@ -79,9 +105,44 @@ func (c *Collector) OnFileRead(path string) {
 	}
 }
 
+// OnBrainsDistilled records generated brain artifacts in the graph.
+func (c *Collector) OnBrainsDistilled(results []DistillResult) {
+	if len(results) == 0 {
+		return
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, result := range results {
+		c.graph.RecordBrain(result)
+	}
+}
+
 // Flush persists accumulated signals to disk.
 func (c *Collector) Flush() error {
-	return c.store.Save()
+	var errs []error
+	if c.store != nil {
+		errs = append(errs, c.store.Save())
+	}
+	if c.graph != nil {
+		errs = append(errs, c.graph.Save())
+	}
+	return errors.Join(errs...)
+}
+
+func (c *Collector) recordSignal(sig harnessbrain.Signal) {
+	if c.store != nil {
+		c.store.Record(sig)
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.graph != nil {
+		c.graph.RecordSignal(sig)
+		if c.taskID != "" || c.taskTitle != "" {
+			c.graph.RecordTaskSignal(c.taskID, c.taskTitle, sig)
+		}
+	}
 }
 
 // inferDomain guesses a domain area from file paths.

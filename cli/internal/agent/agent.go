@@ -143,23 +143,7 @@ func (a *Agent) Work(ctx context.Context, t task.Task) (*WorkResult, error) {
 		return nil, err
 	}
 
-	// Post-workflow: auto-distill brains from accumulated signals
-	if a.config.Brain.Enabled && brain.ShouldRunPeriodicDistill(24*time.Hour) {
-		distiller := brain.NewAutoDistiller(wc.worktree.Path, a.config)
-		results, err := distiller.DistillAll(ctx)
-		if err != nil {
-			fmt.Printf("   ⚠️  Auto-distillation error: %v\n", err)
-		} else if len(results) > 0 {
-			brain.RecordDistilled()
-			for _, r := range results {
-				method := "template"
-				if r.UsedLLM {
-					method = "LLM"
-				}
-				fmt.Printf("   🧠 Auto-generated brain: %s (%s, %d signals)\n", r.BrainID, method, r.Signals)
-			}
-		}
-	}
+	a.maybeAutoDistillBrains(ctx, wc)
 
 	// Release context pins
 	wc.pinner.Unpin("executor")
@@ -242,6 +226,9 @@ func (a *Agent) ResumeWork(ctx context.Context, t task.Task) (*WorkResult, error
 		Success:      true,
 		FilesChanged: changedFiles,
 	}
+	if wc.collector != nil {
+		wc.collector.OnTaskExecution(wc.task.GetID(), wc.task.GetTitle(), changedFiles)
+	}
 
 	// Stage changes
 	fmt.Println("   📥 Staging changes...")
@@ -263,6 +250,8 @@ func (a *Agent) ResumeWork(ctx context.Context, t task.Task) (*WorkResult, error
 	if err := a.stepRefactorLoop(ctx, wc); err != nil {
 		return nil, err
 	}
+
+	a.maybeAutoDistillBrains(ctx, wc)
 
 	// Release context pins
 	wc.pinner.Unpin("executor")
@@ -289,6 +278,43 @@ func (a *Agent) ResumeWork(ctx context.Context, t task.Task) (*WorkResult, error
 
 	// Step 9: Finalize PR
 	return a.stepFinalizePR(ctx, wc)
+}
+
+func (a *Agent) maybeAutoDistillBrains(ctx context.Context, wc *workContext) {
+	if !a.config.Brain.Enabled || wc.worktree == nil {
+		return
+	}
+
+	if wc.collector != nil {
+		if err := wc.collector.Flush(); err != nil {
+			fmt.Printf("   ⚠️  Brain collector flush failed: %v\n", err)
+		}
+	}
+
+	distiller := brain.NewAutoDistiller(wc.worktree.Path, a.config)
+	results, err := distiller.DistillAll(ctx)
+	if err != nil {
+		fmt.Printf("   ⚠️  Auto-distillation error: %v\n", err)
+		return
+	}
+	if len(results) == 0 {
+		return
+	}
+
+	brain.RecordDistilled()
+	if wc.collector != nil {
+		wc.collector.OnBrainsDistilled(results)
+		if err := wc.collector.Flush(); err != nil {
+			fmt.Printf("   ⚠️  Brain graph flush failed: %v\n", err)
+		}
+	}
+	for _, r := range results {
+		method := "template"
+		if r.UsedLLM {
+			method = "LLM"
+		}
+		fmt.Printf("   🧠 Auto-generated brain: %s (%s, %d signals)\n", r.BrainID, method, r.Signals)
+	}
 }
 
 // stepResumeWorktree finds an existing worktree for the task's branch.
@@ -485,6 +511,13 @@ func (a *Agent) stepPlanning(ctx context.Context, wc *workContext) error {
 			fmt.Printf("   🧠 Loaded brain context: %s\n", brainHandoff.Concise())
 		}
 	}
+	if wc.collector != nil {
+		var filePaths []string
+		if wc.plan != nil {
+			filePaths = wc.plan.RelevantFiles
+		}
+		wc.collector.OnTaskContext(wc.task.GetID(), wc.task.GetTitle(), filePaths)
+	}
 
 	fmt.Println()
 
@@ -568,6 +601,9 @@ func (a *Agent) stepExecute(ctx context.Context, wc *workContext) error {
 	}
 
 	wc.execResult = result
+	if wc.collector != nil {
+		wc.collector.OnTaskExecution(wc.task.GetID(), wc.task.GetTitle(), result.FilesChanged)
+	}
 	fmt.Println()
 
 	// Stage changes

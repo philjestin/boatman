@@ -347,6 +347,25 @@ showing document scope, provenance, source run, expiration, path, and full body
 content. This makes memory inspectable by default: users can see exactly what
 future sessions may load and trace generated context back to recorded runs.
 
+### Self-Building Brain Graph
+
+BoatmanMode now updates a project-local knowledge graph while it works:
+
+```text
+.boatman/knowledge/graph.json
+```
+
+The graph is deterministic JSON with nodes for tasks, domains, files, detected
+signals, and generated brains. Edges record planned files, changed files,
+emitted signals, domain membership, and brains distilled from a domain.
+
+The same collector that records review failures, repeated refactor loops, and
+repeated file reads writes this graph. At the end of work and resume workflows,
+Boatman flushes the collector first, then runs threshold-based brain
+distillation. If a new brain or memory document is generated, the collector
+records that artifact back into the graph. This makes the brain system build
+itself from normal use without requiring a manual distillation pass.
+
 ### Docs And Schema Gates
 
 Every provider adapter, workflow, skill, and user-facing command should carry

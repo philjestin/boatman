@@ -97,6 +97,19 @@ mem.GetPatternsForFile() — returns relevant patterns
 mem.ToContext(budget) — formats as agent context
 ```
 
+### Project Knowledge Graph
+
+BoatmanMode also writes an inspectable project-local graph:
+
+```text
+<project>/.boatman/knowledge/graph.json
+```
+
+The graph captures relationships observed during normal work: tasks, domains,
+planned files, changed files, review/refactor signals, and generated brains.
+Auto-distillation flushes the collector before checking thresholds, so signals
+from the current run can immediately contribute to new brain and memory docs.
+
 ### Auto-Limiting
 
 Memory files are bounded to prevent unbounded growth:
