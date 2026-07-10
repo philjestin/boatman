@@ -50,6 +50,10 @@ export function CreateFirefighterSession(arg1, arg2, arg3) {
   return window['go']['main']['App']['CreateFirefighterSession'](arg1, arg2, arg3);
 }
 
+export function CreateMultiRepoProject(arg1, arg2) {
+  return window['go']['main']['App']['CreateMultiRepoProject'](arg1, arg2);
+}
+
 export function CreateTriageSession(arg1) {
   return window['go']['main']['App']['CreateTriageSession'](arg1);
 }

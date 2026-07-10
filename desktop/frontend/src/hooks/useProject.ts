@@ -4,6 +4,7 @@ import type { Project } from '../types';
 
 // Import Wails bindings
 import {
+  CreateMultiRepoProject,
   OpenProject,
   RemoveProject,
   ListProjects,
@@ -58,17 +59,44 @@ export function useProject() {
     }
   }, [addProject, setActiveProject, setLoading, setError]);
 
+  // Create a project from multiple repository paths
+  const createMultiRepoProject = useCallback(async (name: string, repositoryPaths: string[]): Promise<Project | null> => {
+    try {
+      setLoading('projects', true);
+      const project = await CreateMultiRepoProject(name, repositoryPaths);
+      addProject(project);
+      setActiveProject(project.id);
+      return project;
+    } catch (err) {
+      setError('Failed to create project');
+      return null;
+    } finally {
+      setLoading('projects', false);
+    }
+  }, [addProject, setActiveProject, setLoading, setError]);
+
+  // Open folder dialog and return the selected path
+  const selectFolder = useCallback(async (): Promise<string | null> => {
+    try {
+      const path = await SelectFolder();
+      return path || null;
+    } catch (err) {
+      setError('Failed to select folder');
+      return null;
+    }
+  }, [setError]);
+
   // Open folder dialog and select a project
   const selectAndOpenProject = useCallback(async (): Promise<Project | null> => {
     try {
-      const path = await SelectFolder();
+      const path = await selectFolder();
       if (!path) return null;
       return await openProject(path);
     } catch (err) {
       setError('Failed to select folder');
       return null;
     }
-  }, [openProject, setError]);
+  }, [openProject, selectFolder, setError]);
 
   // Remove a project
   const deleteProject = useCallback(async (projectId: string) => {
@@ -117,6 +145,8 @@ export function useProject() {
     activeProjectId,
     recentProjects,
     openProject,
+    createMultiRepoProject,
+    selectFolder,
     selectAndOpenProject,
     deleteProject,
     selectProject,
