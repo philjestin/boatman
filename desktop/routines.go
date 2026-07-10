@@ -23,7 +23,19 @@ import (
 	"github.com/philjestin/boatman-ecosystem/shared/agentruntime/runstore"
 )
 
-const datadogClaudeMCPName = "plugin:datadog:datadog-mcp"
+const (
+	datadogClaudeMCPName        = "plugin:datadog:datadog-mcp"
+	datadogBoatmanMCPName       = "boatman-datadog-mcp"
+	datadogManualMCPName        = "datadog-mcp"
+	datadogLegacyRemotePath     = "/api/unstable/mcp-server/mcp"
+	datadogRoutineToolsetsQuery = "toolsets=core,llmobs,alerting,apm,onboarding"
+)
+
+type claudeMCPLoginTarget struct {
+	Name       string
+	URL        string
+	EnsureHTTP bool
+}
 
 var runClaudeMCPCommand = func(ctx context.Context, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "claude", args...)
@@ -31,13 +43,13 @@ var runClaudeMCPCommand = func(ctx context.Context, args ...string) (string, err
 	return string(out), err
 }
 
-var launchClaudeMCPLogin = func(ctx context.Context, mcpName string) (string, error) {
-	command := terminalDatadogMCPLoginCommand(mcpName)
+var launchClaudeMCPLogin = func(ctx context.Context, target claudeMCPLoginTarget) (string, error) {
+	command := terminalDatadogMCPLoginCommand(target)
 	switch goruntime.GOOS {
 	case "darwin":
 		return launchMacTerminal(ctx, command)
 	case "windows":
-		return launchWindowsTerminal(ctx, "claude mcp login "+mcpName)
+		return launchWindowsTerminal(ctx, terminalWindowsDatadogMCPLoginCommand(target))
 	default:
 		return launchLinuxTerminal(ctx, command)
 	}
@@ -150,12 +162,13 @@ func (a *App) AuthenticateDatadogMCP() (*DatadogMCPAuthResult, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	target := a.datadogMCPLoginTarget(ctx)
 	result := &DatadogMCPAuthResult{
-		MCPName:     datadogClaudeMCPName,
-		Command:     "claude mcp login " + datadogClaudeMCPName,
+		MCPName:     target.Name,
+		Command:     datadogMCPLoginCommandPreview(target),
 		Interactive: true,
 	}
-	output, err := launchClaudeMCPLogin(ctx, datadogClaudeMCPName)
+	output, err := launchClaudeMCPLogin(ctx, target)
 	result.Output = strings.TrimSpace(output)
 	if err != nil {
 		return result, fmt.Errorf("failed to open interactive Datadog MCP authentication: %w%s", err, commandOutputSuffix(output))
@@ -361,7 +374,12 @@ func desktopRoutineIntegrationRefs(ctx context.Context, routine routines.Routine
 				if dryRun {
 					continue
 				}
-				return statuses, nil, nil, fmt.Errorf("routine %q Datadog MCP is not authenticated; click Authenticate in the Routines tab or run %q", routine.ID, "claude mcp login "+datadogClaudeMCPName)
+				target := claudeMCPLoginTarget{
+					Name:       datadogBoatmanMCPName,
+					URL:        datadogMCPURLForSite(prefs.DatadogSite),
+					EnsureHTTP: true,
+				}
+				return statuses, nil, nil, fmt.Errorf("routine %q Datadog MCP is not authenticated; click Authenticate in the Routines tab or run %q", routine.ID, datadogMCPLoginCommandPreview(target))
 			}
 		}
 		env := desktopEnvForIntegration(item, prefs)
@@ -412,8 +430,51 @@ func desktopHasDatadogAPIKeys(prefs config.UserPreferences) bool {
 	return apiKey != "" && appKey != ""
 }
 
+func (a *App) datadogMCPLoginTarget(ctx context.Context) claudeMCPLoginTarget {
+	for _, name := range []string{datadogBoatmanMCPName, datadogManualMCPName} {
+		if status, ok := claudeMCPStatus(ctx, name); ok && !isLegacyDatadogMCP(status) {
+			return claudeMCPLoginTarget{Name: name}
+		}
+	}
+	if status, ok := claudeMCPStatus(ctx, datadogClaudeMCPName); ok && !isLegacyDatadogMCP(status) {
+		return claudeMCPLoginTarget{Name: datadogClaudeMCPName}
+	}
+	return claudeMCPLoginTarget{
+		Name:       datadogBoatmanMCPName,
+		URL:        datadogMCPURLForSite(a.datadogSitePreference()),
+		EnsureHTTP: true,
+	}
+}
+
+func (a *App) datadogSitePreference() string {
+	if a != nil && a.config != nil {
+		if site := strings.TrimSpace(a.config.GetPreferences().DatadogSite); site != "" {
+			return site
+		}
+	}
+	if site := strings.TrimSpace(os.Getenv("DD_SITE")); site != "" {
+		return site
+	}
+	return "datadoghq.com"
+}
+
 func claudeManagedDatadogStatus(ctx context.Context) (mcp.IntegrationStatus, bool) {
-	output, err := runClaudeMCPCommand(ctx, "mcp", "get", datadogClaudeMCPName)
+	for _, name := range []string{datadogBoatmanMCPName, datadogManualMCPName, datadogClaudeMCPName} {
+		status, ok := claudeMCPStatus(ctx, name)
+		if !ok {
+			continue
+		}
+		if isLegacyDatadogMCP(status) && status.State != integrations.StateConnected {
+			status.Message = "Datadog plugin MCP uses a legacy remote endpoint; click Authenticate to add Boatman's current Datadog MCP server"
+			status.Metadata["fallback_mcp_name"] = datadogBoatmanMCPName
+		}
+		return status, true
+	}
+	return mcp.IntegrationStatus{}, false
+}
+
+func claudeMCPStatus(ctx context.Context, name string) (mcp.IntegrationStatus, bool) {
+	output, err := runClaudeMCPCommand(ctx, "mcp", "get", name)
 	text := strings.TrimSpace(output)
 	lower := strings.ToLower(text)
 	if err != nil && strings.Contains(lower, "no mcp server") {
@@ -429,8 +490,11 @@ func claudeManagedDatadogStatus(ctx context.Context) (mcp.IntegrationStatus, boo
 		LastChecked: time.Now().UTC(),
 		Metadata: map[string]string{
 			"auth_method": "claude_mcp",
-			"mcp_name":    datadogClaudeMCPName,
+			"mcp_name":    name,
 		},
+	}
+	if url := claudeMCPURL(text); url != "" {
+		status.Metadata["url"] = url
 	}
 	if strings.Contains(lower, "status:") && (strings.Contains(lower, "connected") || strings.Contains(lower, "✓") || strings.Contains(lower, "✔")) {
 		status.State = integrations.StateConnected
@@ -451,12 +515,72 @@ func claudeManagedDatadogStatus(ctx context.Context) (mcp.IntegrationStatus, boo
 	return status, true
 }
 
-func terminalDatadogMCPLoginCommand(mcpName string) string {
-	login := "claude mcp login " + shellQuote(mcpName)
+func isLegacyDatadogMCP(status mcp.IntegrationStatus) bool {
+	return strings.Contains(status.Metadata["url"], datadogLegacyRemotePath)
+}
+
+func claudeMCPURL(output string) string {
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(strings.ToLower(line), "url:") {
+			return strings.TrimSpace(line[len("url:"):])
+		}
+	}
+	return ""
+}
+
+func datadogMCPURLForSite(site string) string {
+	host := strings.ToLower(strings.TrimSpace(site))
+	host = strings.TrimPrefix(host, "https://")
+	host = strings.TrimPrefix(host, "http://")
+	host = strings.TrimPrefix(host, "app.")
+	host = strings.TrimSuffix(host, "/")
+	switch host {
+	case "", "us1", "datadoghq.com":
+		host = "datadoghq.com"
+	case "us3", "us3.datadoghq.com":
+		host = "us3.datadoghq.com"
+	case "us5", "us5.datadoghq.com":
+		host = "us5.datadoghq.com"
+	case "eu", "datadoghq.eu":
+		host = "datadoghq.eu"
+	case "ap1", "ap1.datadoghq.com":
+		host = "ap1.datadoghq.com"
+	case "ap2", "ap2.datadoghq.com":
+		host = "ap2.datadoghq.com"
+	case "fed", "us1-fed", "ddog-gov.com":
+		host = "ddog-gov.com"
+	}
+	if host == "datadoghq.com" {
+		return "https://mcp.datadoghq.com/v1/mcp?" + datadogRoutineToolsetsQuery
+	}
+	return "https://mcp." + host + "/v1/mcp?" + datadogRoutineToolsetsQuery
+}
+
+func datadogMCPLoginCommandPreview(target claudeMCPLoginTarget) string {
+	if !target.EnsureHTTP {
+		return "claude mcp login " + target.Name
+	}
+	return "claude mcp add --transport http --scope user " + target.Name + " " + target.URL + " && claude mcp login " + target.Name
+}
+
+func terminalDatadogMCPLoginCommand(target claudeMCPLoginTarget) string {
+	ensure := ""
+	if target.EnsureHTTP {
+		ensure = fmt.Sprintf("if ! claude mcp get %s >/dev/null 2>&1; then claude mcp add --transport http --scope user %s %s; fi; ", shellQuote(target.Name), shellQuote(target.Name), shellQuote(target.URL))
+	}
+	login := "claude mcp login " + shellQuote(target.Name)
 	success := shellQuote("Boatman: Datadog MCP auth finished. Return to Boatman and click Check.")
 	failure := shellQuote("Boatman: Datadog MCP auth did not finish. Fix the issue above, then run Authenticate again.")
 	keepOpen := shellQuote("Boatman: this terminal will stay open so you can inspect the auth output.")
-	return fmt.Sprintf("%s; status=$?; echo; if [ $status -eq 0 ]; then echo %s; else echo %s; fi; echo %s; exec \"${SHELL:-/bin/sh}\" -l", login, success, failure, keepOpen)
+	return fmt.Sprintf("%s%s; status=$?; echo; if [ $status -eq 0 ]; then echo %s; else echo %s; fi; echo %s; exec \"${SHELL:-/bin/sh}\" -l", ensure, login, success, failure, keepOpen)
+}
+
+func terminalWindowsDatadogMCPLoginCommand(target claudeMCPLoginTarget) string {
+	if !target.EnsureHTTP {
+		return "claude mcp login " + target.Name
+	}
+	return "claude mcp get " + target.Name + " >NUL 2>NUL || claude mcp add --transport http --scope user " + target.Name + " " + target.URL + " && claude mcp login " + target.Name
 }
 
 func launchMacTerminal(ctx context.Context, command string) (string, error) {

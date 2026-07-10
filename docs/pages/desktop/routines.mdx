@@ -53,20 +53,28 @@ operations for a graph area, and returns a Markdown report with:
 
 ## Setup
 
-1. Install and enable the Datadog Claude Code plugin:
-   `claude /plugin install datadog@handshake-marketplace`.
-2. Open a project.
-3. Open the **Routines** tab.
-4. Click **Check**. If Datadog is not authenticated, click **Authenticate**.
-5. Complete the Datadog MCP auth flow in the terminal window opened by Boatman.
-6. Enter graph area, top N, lookback, environment, and optional service.
-7. Click **Run Routine**.
+1. Open a project.
+2. Open the **Routines** tab.
+3. Click **Check**. If Datadog is not authenticated, click **Authenticate**.
+4. Complete the Datadog MCP auth flow in the terminal window opened by Boatman.
+5. Enter graph area, top N, lookback, environment, and optional service.
+6. Click **Run Routine**.
 
-Desktop prefers Claude Code's Datadog plugin MCP server
-`plugin:datadog:datadog-mcp`, so Datadog OAuth credentials stay in Claude's MCP
-auth store and are not serialized into Boatman runtime request JSON. If the
-plugin is unavailable, Boatman can still fall back to API-key MCP configuration
-from `Datadog API Key`, `Datadog App Key`, and optional `Datadog Site`.
+Desktop auth keeps Datadog OAuth credentials in Claude Code's MCP auth store.
+Boatman first reuses an existing healthy Datadog MCP server, including
+`boatman-datadog-mcp`, `datadog-mcp`, or `plugin:datadog:datadog-mcp`. If the
+Claude plugin is missing, unauthenticated, or points at Datadog's legacy
+`/api/unstable/mcp-server/mcp` endpoint, **Authenticate** creates
+`boatman-datadog-mcp` against the current Datadog MCP endpoint:
+
+```text
+https://mcp.datadoghq.com/v1/mcp?toolsets=core,llmobs,alerting,apm,onboarding
+```
+
+If you use a non-US1 Datadog site, set `Datadog Site` in Settings or `DD_SITE`
+before authenticating so Boatman creates the regional MCP URL. Boatman can still
+fall back to API-key MCP configuration from `Datadog API Key`, `Datadog App Key`,
+and optional `Datadog Site`.
 
 ## Output
 
