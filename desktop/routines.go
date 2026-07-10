@@ -502,6 +502,7 @@ func claudeMCPStatus(ctx context.Context, name string) (mcp.IntegrationStatus, b
 		return status, true
 	}
 	if strings.Contains(lower, "failed to connect") {
+		status.Message = "Claude Code reports Datadog MCP failed to connect; finish auth in the browser, then click Check"
 		return status, true
 	}
 	if err != nil {

@@ -35,9 +35,12 @@ interface RoutineViewProps {
 }
 
 type RunState = 'idle' | 'checking' | 'running' | 'complete' | 'error';
+type DatadogAuthPhase = 'idle' | 'opening' | 'checking';
 
 const DEFAULT_ROUTINE_ID = 'datadog-gql-slow-queries';
 const INPUT_CLASS = 'w-full px-3 py-2 text-sm bg-slate-950 border border-slate-700 rounded-md text-slate-100 placeholder-slate-500 focus:outline-none focus:border-teal-500';
+const DATADOG_AUTH_POLL_ATTEMPTS = 40;
+const DATADOG_AUTH_POLL_DELAY_MS = 3000;
 
 export function RoutineView({ projectPath, onOpenSettings }: RoutineViewProps) {
   const [routines, setRoutines] = useState<DesktopRoutine[]>([]);
@@ -47,7 +50,7 @@ export function RoutineView({ projectPath, onOpenSettings }: RoutineViewProps) {
   const [dryRun, setDryRun] = useState<RoutineDryRunResult | null>(null);
   const [result, setResult] = useState<RoutineRunResult | null>(null);
   const [runState, setRunState] = useState<RunState>('idle');
-  const [authenticatingDatadog, setAuthenticatingDatadog] = useState(false);
+  const [datadogAuthPhase, setDatadogAuthPhase] = useState<DatadogAuthPhase>('idle');
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -105,6 +108,13 @@ export function RoutineView({ projectPath, onOpenSettings }: RoutineViewProps) {
     values: routineValues(selectedRoutine, values),
   });
 
+  const refreshRoutineCheck = async () => {
+    const response = (await DryRunRoutine(buildRequest())) as unknown as RoutineDryRunResult;
+    setDryRun(response);
+    setResult(null);
+    return response;
+  };
+
   const handleDryRun = async () => {
     if (!selectedRoutine || !projectPath) {
       setError('Open a project before checking a routine.');
@@ -115,8 +125,7 @@ export function RoutineView({ projectPath, onOpenSettings }: RoutineViewProps) {
     setNotice(null);
     setResult(null);
     try {
-      const response = await DryRunRoutine(buildRequest());
-      setDryRun(response as unknown as RoutineDryRunResult);
+      await refreshRoutineCheck();
       setRunState('idle');
     } catch (err) {
       setError(errorMessage(err, 'Routine check failed'));
@@ -144,22 +153,44 @@ export function RoutineView({ projectPath, onOpenSettings }: RoutineViewProps) {
     }
   };
 
+  const pollDatadogReadiness = async () => {
+    let latest: RoutineDryRunResult | null = null;
+    for (let attempt = 0; attempt < DATADOG_AUTH_POLL_ATTEMPTS; attempt += 1) {
+      if (attempt > 0) {
+        await sleep(DATADOG_AUTH_POLL_DELAY_MS);
+      }
+      latest = await refreshRoutineCheck();
+      const datadog = integrationStatus(latest.integrations || [], 'datadog');
+      if (isReadyIntegration(datadog)) {
+        setNotice('Datadog MCP is authenticated and ready for routines.');
+        return;
+      }
+    }
+
+    const datadog = integrationStatus(latest?.integrations || [], 'datadog');
+    setNotice(datadog?.message
+      ? `Datadog MCP is still not ready: ${datadog.message}`
+      : 'Datadog MCP is still not ready. Finish the browser auth flow, then click Check.');
+  };
+
   const handleAuthenticateDatadog = async () => {
-    setAuthenticatingDatadog(true);
+    setDatadogAuthPhase('opening');
     setError(null);
     setNotice(null);
     try {
       const response = (await AuthenticateDatadogMCP()) as unknown as DatadogMCPAuthResult;
-      setNotice(response.message || 'Datadog MCP auth opened. Complete the Claude auth flow, then click Check.');
-      if (!response.interactive && projectPath && selectedRoutine && !hasMissingRequired) {
-        const dryRunResponse = await DryRunRoutine(buildRequest());
-        setDryRun(dryRunResponse as unknown as RoutineDryRunResult);
-        setResult(null);
+      const message = response.message || 'Datadog MCP auth opened. Complete the Claude auth flow.';
+      if (projectPath && selectedRoutine && !hasMissingRequired) {
+        setNotice(`${message} Boatman will keep checking for readiness.`);
+        setDatadogAuthPhase('checking');
+        await pollDatadogReadiness();
+      } else {
+        setNotice(`${message} Click Check when the browser flow is complete.`);
       }
     } catch (err) {
       setError(errorMessage(err, 'Datadog MCP authentication failed'));
     } finally {
-      setAuthenticatingDatadog(false);
+      setDatadogAuthPhase('idle');
     }
   };
 
@@ -239,7 +270,7 @@ export function RoutineView({ projectPath, onOpenSettings }: RoutineViewProps) {
                 statuses={selectedStatuses}
                 onOpenSettings={onOpenSettings}
                 onAuthenticateDatadog={handleAuthenticateDatadog}
-                authenticatingDatadog={authenticatingDatadog}
+                datadogAuthPhase={datadogAuthPhase}
               />
             )}
 
@@ -357,16 +388,17 @@ function IntegrationsPanel({
   statuses,
   onOpenSettings,
   onAuthenticateDatadog,
-  authenticatingDatadog,
+  datadogAuthPhase,
 }: {
   routine: DesktopRoutine;
   statuses: IntegrationStatus[];
   onOpenSettings?: () => void;
   onAuthenticateDatadog?: () => void;
-  authenticatingDatadog?: boolean;
+  datadogAuthPhase?: DatadogAuthPhase;
 }) {
   const statusByName = new Map(statuses.map((status) => [status.name, status]));
   const integrations = routine.integrations || [];
+  const authInProgress = datadogAuthPhase && datadogAuthPhase !== 'idle';
 
   return (
     <div className="border border-slate-800 rounded-md p-3 bg-slate-950/40">
@@ -408,11 +440,11 @@ function IntegrationsPanel({
                     <button
                       type="button"
                       onClick={onAuthenticateDatadog}
-                      disabled={authenticatingDatadog}
+                      disabled={authInProgress}
                       className="inline-flex items-center gap-1.5 px-2 py-1 text-xs text-teal-200 border border-teal-700 rounded-md hover:bg-teal-950/40 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      {authenticatingDatadog ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <KeyRound className="w-3.5 h-3.5" />}
-                      {authenticatingDatadog ? 'Opening' : 'Authenticate'}
+                      {authInProgress ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <KeyRound className="w-3.5 h-3.5" />}
+                      {datadogAuthPhase === 'checking' ? 'Checking' : datadogAuthPhase === 'opening' ? 'Opening' : 'Authenticate'}
                     </button>
                   )}
                 </div>
@@ -568,6 +600,18 @@ function StatusBadge({ status }: { status: string }) {
       {status.replace('_', ' ')}
     </span>
   );
+}
+
+function integrationStatus(statuses: IntegrationStatus[], name: string) {
+  return statuses.find((status) => status.name === name);
+}
+
+function isReadyIntegration(status?: IntegrationStatus) {
+  return status?.state === 'connected' || status?.state === 'ready';
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
 function errorMessage(err: unknown, fallback: string): string {
