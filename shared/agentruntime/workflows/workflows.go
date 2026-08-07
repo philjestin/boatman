@@ -177,6 +177,20 @@ func DefaultTemplates() []Template {
 				terminalStage("synthesis", StageSynthesis, "Synthesis", "Publish backlog summary, plans, and stop conditions.", GateNone, true),
 			},
 		},
+		{
+			ID:          "frontend-ticket-orchestration",
+			Name:        "Frontend Ticket Orchestration",
+			Description: "Classify frontend tickets, plan conflict-aware parallel workers, validate visually, and publish draft PR evidence.",
+			Stages: []Stage{
+				stage("intake", StageIntake, "Linear Intake", "Fetch frontend tickets, linked Figma refs, labels, status, estimate, and parent relationships.", GateNone, false, "context"),
+				stage("context", StageContext, "Frontend Context", "Map tickets to routes, stories, components, design tokens, and learned Boatman Brain hints.", GateNone, true, "planning"),
+				stage("planning", StagePlanning, "Queue Planning", "Classify automation policy and build conflict-aware parallel batches.", GateDynamic, true, "implementation"),
+				failureStage("implementation", StageImplementation, "Parallel Workers", "Run eligible tickets in isolated worktrees with browser sandboxes and Pass@K where useful.", GateDynamic, false, []string{"validation"}, []string{"planning"}),
+				failureStage("validation", StageValidation, "Visual Validation", "Run static checks, DOM assertions, screenshots, visual diffs, accessibility smoke checks, and review skills.", GateNone, false, []string{"pull-request"}, []string{"implementation"}),
+				stage("pull-request", StagePullRequest, "Draft PRs", "Create draft PRs with Linear/Figma links, screenshots, validation output, and residual risk.", GateDynamic, true, "synthesis"),
+				terminalStage("synthesis", StageSynthesis, "Queue Summary", "Summarize shipped PRs, blocked tickets, confidence, and learned mappings.", GateNone, true),
+			},
+		},
 	}
 }
 

@@ -338,6 +338,156 @@ export interface DatadogMCPAuthResult {
   launched: boolean;
 }
 
+// =============================================================================
+// Frontend Queue Types
+// =============================================================================
+
+export type FrontendTicketType =
+  | 'copy-only'
+  | 'style-token'
+  | 'component-restyle'
+  | 'page-restyle'
+  | 'interaction-behavior'
+  | 'ambiguous-design';
+
+export type FrontendAutomationPolicy =
+  | 'auto-pr'
+  | 'draft-pr'
+  | 'plan-only'
+  | 'blocked';
+
+export type FrontendValidationKind =
+  | 'static'
+  | 'unit'
+  | 'visual'
+  | 'dom'
+  | 'review'
+  | 'accessibility'
+  | 'acceptance';
+
+export interface FrontendTicket {
+  id: string;
+  title: string;
+  description?: string;
+  url?: string;
+  branchName?: string;
+  status?: string;
+  statusType?: string;
+  team?: string;
+  project?: string;
+  parentId?: string;
+  labels?: string[];
+  estimate?: number;
+  priority?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface FrontendQueueTargetHint {
+  kind: string;
+  value: string;
+  confidence: number;
+}
+
+export interface FrontendQueueValidationStep {
+  kind: FrontendValidationKind;
+  command?: string;
+  description: string;
+  required: boolean;
+}
+
+export interface FrontendTicketPlan {
+  ticket: FrontendTicket;
+  type: FrontendTicketType;
+  policy: FrontendAutomationPolicy;
+  confidence: number;
+  riskScore: number;
+  targetKey: string;
+  targetHints?: FrontendQueueTargetHint[];
+  figmaRefs?: string[];
+  validation?: FrontendQueueValidationStep[];
+  reasons?: string[];
+  blockers?: string[];
+  workerPrompt: string;
+  passKCandidates?: number;
+}
+
+export interface FrontendQueueBatch {
+  id: string;
+  name: string;
+  ticketIds: string[];
+  targetKeys: string[];
+  parallelism: number;
+  rationale: string;
+}
+
+export interface FrontendQueueStats {
+  totalTickets: number;
+  autoPrCount: number;
+  draftPrCount: number;
+  planOnlyCount: number;
+  blockedCount: number;
+  batchCount: number;
+  maxParallel: number;
+  byType: Record<string, number>;
+  byTarget: Record<string, number>;
+  eligibleCount: number;
+  passKCandidateCount: number;
+}
+
+export interface FrontendQueuePlan {
+  generatedAt: string;
+  options: {
+    projectPath?: string;
+    linearProject?: string;
+    maxParallel?: number;
+    allowedPolicies?: string[];
+    includePlanOnly?: boolean;
+    defaultBaseBranch?: string;
+  };
+  stats: FrontendQueueStats;
+  tickets: FrontendTicketPlan[];
+  batches: FrontendQueueBatch[];
+}
+
+export interface FrontendTicketQueueResult {
+  source: string;
+  linearProject?: string;
+  tickets: FrontendTicket[];
+  plan: FrontendQueuePlan;
+  warning?: string;
+}
+
+export interface FrontendTicketQueueRunRequest {
+  projectPath?: string;
+  linearProject?: string;
+  plan: FrontendQueuePlan;
+  batchId?: string;
+  ticketIds?: string[];
+  runAll?: boolean;
+  baseBranch?: string;
+  models?: ModelProfile;
+}
+
+export interface FrontendTicketQueueWorkerSession {
+  ticketId: string;
+  sessionId?: string;
+  policy: FrontendAutomationPolicy;
+  branchName?: string;
+  status: string;
+  message?: string;
+}
+
+export interface FrontendTicketQueueRunResult {
+  runId: string;
+  batchId?: string;
+  projectPath: string;
+  startedAt: string;
+  sessions: FrontendTicketQueueWorkerSession[];
+  startedCount: number;
+  skippedCount: number;
+}
+
 export interface UserPreferences {
   apiKey: string;
   authMethod: AuthMethod;

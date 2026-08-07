@@ -183,6 +183,8 @@ export function OpenProject(arg1:string):Promise<project.Project>;
 
 export function ParseDiff(arg1:string):Promise<Array<diff.FileDiff>>;
 
+export function PlanFrontendTicketQueue(arg1:main.FrontendTicketQueueRequest):Promise<main.FrontendTicketQueueResult>;
+
 export function RejectAgentAction(arg1:string,arg2:string):Promise<void>;
 
 export function RemoveMCPServer(arg1:string):Promise<void>;
@@ -192,6 +194,8 @@ export function RemoveProject(arg1:string):Promise<void>;
 export function RemoveSessionTag(arg1:string,arg2:string):Promise<void>;
 
 export function ResumeBoatmanModeExecution(arg1:string):Promise<void>;
+
+export function RunFrontendTicketQueue(arg1:main.FrontendTicketQueueRunRequest):Promise<main.FrontendTicketQueueRunResult>;
 
 export function RunHarness(arg1:string,arg2:harnessui.RunRequest):Promise<void>;
 
