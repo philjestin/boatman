@@ -346,6 +346,10 @@ export function ParseDiff(arg1) {
   return window['go']['main']['App']['ParseDiff'](arg1);
 }
 
+export function PlanFrontendTicketQueue(arg1) {
+  return window['go']['main']['App']['PlanFrontendTicketQueue'](arg1);
+}
+
 export function RejectAgentAction(arg1, arg2) {
   return window['go']['main']['App']['RejectAgentAction'](arg1, arg2);
 }
@@ -364,6 +368,10 @@ export function RemoveSessionTag(arg1, arg2) {
 
 export function ResumeBoatmanModeExecution(arg1) {
   return window['go']['main']['App']['ResumeBoatmanModeExecution'](arg1);
+}
+
+export function RunFrontendTicketQueue(arg1) {
+  return window['go']['main']['App']['RunFrontendTicketQueue'](arg1);
 }
 
 export function RunHarness(arg1, arg2) {

@@ -1,5 +1,5 @@
 export namespace agent {
-	
+
 	export class AgentInfo {
 	    agentId: string;
 	    agentType: string;
@@ -8,11 +8,11 @@ export namespace agent {
 	    status?: string;
 	    // Go type: time
 	    completedAt?: any;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new AgentInfo(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.agentId = source["agentId"];
@@ -22,7 +22,7 @@ export namespace agent {
 	        this.status = source["status"];
 	        this.completedAt = this.convertValues(source["completedAt"], null);
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -45,11 +45,11 @@ export namespace agent {
 	    inputTokens: number;
 	    outputTokens: number;
 	    totalCost: number;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new CostInfo(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.inputTokens = source["inputTokens"];
@@ -61,11 +61,11 @@ export namespace agent {
 	    toolId: string;
 	    content: string;
 	    isError: boolean;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new ToolResult(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.toolId = source["toolId"];
@@ -77,11 +77,11 @@ export namespace agent {
 	    toolName: string;
 	    toolId: string;
 	    input: number[];
-	
+
 	    static createFrom(source: any = {}) {
 	        return new ToolUse(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.toolName = source["toolName"];
@@ -94,11 +94,11 @@ export namespace agent {
 	    toolResult?: ToolResult;
 	    costInfo?: CostInfo;
 	    agent?: AgentInfo;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new MessageMetadata(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.toolUse = this.convertValues(source["toolUse"], ToolUse);
@@ -106,7 +106,7 @@ export namespace agent {
 	        this.costInfo = this.convertValues(source["costInfo"], CostInfo);
 	        this.agent = this.convertValues(source["agent"], AgentInfo);
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -132,11 +132,11 @@ export namespace agent {
 	    // Go type: time
 	    timestamp: any;
 	    metadata?: MessageMetadata;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new Message(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -145,7 +145,7 @@ export namespace agent {
 	        this.timestamp = this.convertValues(source["timestamp"], null);
 	        this.metadata = this.convertValues(source["metadata"], MessageMetadata);
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -164,18 +164,18 @@ export namespace agent {
 		    return a;
 		}
 	}
-	
+
 	export class Task {
 	    id: string;
 	    subject: string;
 	    description: string;
 	    status: string;
 	    metadata?: Record<string, any>;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new Task(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -185,21 +185,21 @@ export namespace agent {
 	        this.metadata = source["metadata"];
 	    }
 	}
-	
+
 
 }
 
 export namespace agentruntime {
-	
+
 	export class ModelProfile {
 	    plan?: string;
 	    implementation?: string;
 	    skills?: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new ModelProfile(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.plan = source["plan"];
@@ -213,11 +213,11 @@ export namespace agentruntime {
 	    cacheReadTokens?: number;
 	    cacheWriteTokens?: number;
 	    totalCostUsd?: number;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new Usage(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.inputTokens = source["inputTokens"];
@@ -231,18 +231,18 @@ export namespace agentruntime {
 }
 
 export namespace config {
-	
+
 	export class MCPServer {
 	    name: string;
 	    command: string;
 	    args: string[];
 	    env?: Record<string, string>;
 	    enabled: boolean;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new MCPServer(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.name = source["name"];
@@ -279,11 +279,11 @@ export namespace config {
 	    oktaClientSecret?: string;
 	    linearAPIKey?: string;
 	    slackAlertChannels?: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new UserPreferences(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.apiKey = source["apiKey"];
@@ -313,7 +313,7 @@ export namespace config {
 	        this.linearAPIKey = source["linearAPIKey"];
 	        this.slackAlertChannels = source["slackAlertChannels"];
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -336,7 +336,7 @@ export namespace config {
 }
 
 export namespace diff {
-	
+
 	export class DiffComment {
 	    id: string;
 	    lineNum: number;
@@ -344,11 +344,11 @@ export namespace diff {
 	    content: string;
 	    timestamp: string;
 	    author?: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new DiffComment(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -364,11 +364,11 @@ export namespace diff {
 	    content: string;
 	    oldNum?: number;
 	    newNum?: number;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new Line(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.type = source["type"];
@@ -385,11 +385,11 @@ export namespace diff {
 	    newLines: number;
 	    lines: Line[];
 	    approved?: boolean;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new Hunk(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -400,7 +400,7 @@ export namespace diff {
 	        this.lines = this.convertValues(source["lines"], Line);
 	        this.approved = source["approved"];
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -428,11 +428,11 @@ export namespace diff {
 	    isBinary: boolean;
 	    approved?: boolean;
 	    comments?: DiffComment[];
-	
+
 	    static createFrom(source: any = {}) {
 	        return new FileDiff(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.oldPath = source["oldPath"];
@@ -444,7 +444,7 @@ export namespace diff {
 	        this.approved = source["approved"];
 	        this.comments = this.convertValues(source["comments"], DiffComment);
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -463,19 +463,19 @@ export namespace diff {
 		    return a;
 		}
 	}
-	
-	
+
+
 	export class SideBySideLine {
 	    leftNum?: number;
 	    leftContent?: string;
 	    rightNum?: number;
 	    rightContent?: string;
 	    type: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new SideBySideLine(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.leftNum = source["leftNum"];
@@ -488,18 +488,291 @@ export namespace diff {
 
 }
 
+export namespace frontendqueue {
+
+	export class Batch {
+	    id: string;
+	    name: string;
+	    ticketIds: string[];
+	    targetKeys: string[];
+	    parallelism: number;
+	    rationale: string;
+
+	    static createFrom(source: any = {}) {
+	        return new Batch(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.ticketIds = source["ticketIds"];
+	        this.targetKeys = source["targetKeys"];
+	        this.parallelism = source["parallelism"];
+	        this.rationale = source["rationale"];
+	    }
+	}
+	export class ValidationStep {
+	    kind: string;
+	    command?: string;
+	    description: string;
+	    required: boolean;
+
+	    static createFrom(source: any = {}) {
+	        return new ValidationStep(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.kind = source["kind"];
+	        this.command = source["command"];
+	        this.description = source["description"];
+	        this.required = source["required"];
+	    }
+	}
+	export class TargetHint {
+	    kind: string;
+	    value: string;
+	    confidence: number;
+
+	    static createFrom(source: any = {}) {
+	        return new TargetHint(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.kind = source["kind"];
+	        this.value = source["value"];
+	        this.confidence = source["confidence"];
+	    }
+	}
+	export class Ticket {
+	    id: string;
+	    title: string;
+	    description?: string;
+	    url?: string;
+	    branchName?: string;
+	    status?: string;
+	    statusType?: string;
+	    team?: string;
+	    project?: string;
+	    parentId?: string;
+	    labels?: string[];
+	    estimate?: number;
+	    priority?: number;
+	    // Go type: time
+	    createdAt?: any;
+	    // Go type: time
+	    updatedAt?: any;
+
+	    static createFrom(source: any = {}) {
+	        return new Ticket(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.title = source["title"];
+	        this.description = source["description"];
+	        this.url = source["url"];
+	        this.branchName = source["branchName"];
+	        this.status = source["status"];
+	        this.statusType = source["statusType"];
+	        this.team = source["team"];
+	        this.project = source["project"];
+	        this.parentId = source["parentId"];
+	        this.labels = source["labels"];
+	        this.estimate = source["estimate"];
+	        this.priority = source["priority"];
+	        this.createdAt = this.convertValues(source["createdAt"], null);
+	        this.updatedAt = this.convertValues(source["updatedAt"], null);
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class TicketPlan {
+	    ticket: Ticket;
+	    type: string;
+	    policy: string;
+	    confidence: number;
+	    riskScore: number;
+	    targetKey: string;
+	    targetHints?: TargetHint[];
+	    figmaRefs?: string[];
+	    validation?: ValidationStep[];
+	    reasons?: string[];
+	    blockers?: string[];
+	    workerPrompt: string;
+	    passKCandidates?: number;
+
+	    static createFrom(source: any = {}) {
+	        return new TicketPlan(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.ticket = this.convertValues(source["ticket"], Ticket);
+	        this.type = source["type"];
+	        this.policy = source["policy"];
+	        this.confidence = source["confidence"];
+	        this.riskScore = source["riskScore"];
+	        this.targetKey = source["targetKey"];
+	        this.targetHints = this.convertValues(source["targetHints"], TargetHint);
+	        this.figmaRefs = source["figmaRefs"];
+	        this.validation = this.convertValues(source["validation"], ValidationStep);
+	        this.reasons = source["reasons"];
+	        this.blockers = source["blockers"];
+	        this.workerPrompt = source["workerPrompt"];
+	        this.passKCandidates = source["passKCandidates"];
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class Stats {
+	    totalTickets: number;
+	    autoPrCount: number;
+	    draftPrCount: number;
+	    planOnlyCount: number;
+	    blockedCount: number;
+	    batchCount: number;
+	    maxParallel: number;
+	    byType: Record<string, number>;
+	    byTarget: Record<string, number>;
+	    eligibleCount: number;
+	    passKCandidateCount: number;
+
+	    static createFrom(source: any = {}) {
+	        return new Stats(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.totalTickets = source["totalTickets"];
+	        this.autoPrCount = source["autoPrCount"];
+	        this.draftPrCount = source["draftPrCount"];
+	        this.planOnlyCount = source["planOnlyCount"];
+	        this.blockedCount = source["blockedCount"];
+	        this.batchCount = source["batchCount"];
+	        this.maxParallel = source["maxParallel"];
+	        this.byType = source["byType"];
+	        this.byTarget = source["byTarget"];
+	        this.eligibleCount = source["eligibleCount"];
+	        this.passKCandidateCount = source["passKCandidateCount"];
+	    }
+	}
+	export class PlanOptions {
+	    projectPath?: string;
+	    linearProject?: string;
+	    maxParallel?: number;
+	    allowedPolicies?: string[];
+	    includePlanOnly?: boolean;
+	    defaultBaseBranch?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new PlanOptions(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.projectPath = source["projectPath"];
+	        this.linearProject = source["linearProject"];
+	        this.maxParallel = source["maxParallel"];
+	        this.allowedPolicies = source["allowedPolicies"];
+	        this.includePlanOnly = source["includePlanOnly"];
+	        this.defaultBaseBranch = source["defaultBaseBranch"];
+	    }
+	}
+	export class Plan {
+	    // Go type: time
+	    generatedAt: any;
+	    options: PlanOptions;
+	    stats: Stats;
+	    tickets: TicketPlan[];
+	    batches: Batch[];
+
+	    static createFrom(source: any = {}) {
+	        return new Plan(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.generatedAt = this.convertValues(source["generatedAt"], null);
+	        this.options = this.convertValues(source["options"], PlanOptions);
+	        this.stats = this.convertValues(source["stats"], Stats);
+	        this.tickets = this.convertValues(source["tickets"], TicketPlan);
+	        this.batches = this.convertValues(source["batches"], Batch);
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+
+
+
+
+
+
+}
+
 export namespace harnessui {
-	
+
 	export class HarnessInfo {
 	    name: string;
 	    path: string;
 	    hasGoMod: boolean;
 	    hasMain: boolean;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new HarnessInfo(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.name = source["name"];
@@ -516,11 +789,11 @@ export namespace harnessui {
 	    model?: string;
 	    models?: agentruntime.ModelProfile;
 	    envVars: Record<string, string>;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new RunRequest(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.harnessPath = source["harnessPath"];
@@ -531,7 +804,7 @@ export namespace harnessui {
 	        this.models = this.convertValues(source["models"], agentruntime.ModelProfile);
 	        this.envVars = source["envVars"];
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -560,11 +833,11 @@ export namespace harnessui {
 	    includeCostTracking: boolean;
 	    maxIterations: number;
 	    reviewCriteria: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new ScaffoldRequest(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.projectName = source["projectName"];
@@ -581,11 +854,11 @@ export namespace harnessui {
 	export class ScaffoldResponse {
 	    outputDir: string;
 	    filesCreated: string[];
-	
+
 	    static createFrom(source: any = {}) {
 	        return new ScaffoldResponse(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.outputDir = source["outputDir"];
@@ -596,7 +869,7 @@ export namespace harnessui {
 }
 
 export namespace integrations {
-	
+
 	export class Status {
 	    name: string;
 	    state: string;
@@ -605,11 +878,11 @@ export namespace integrations {
 	    // Go type: time
 	    lastChecked: any;
 	    metadata?: Record<string, string>;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new Status(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.name = source["name"];
@@ -619,7 +892,7 @@ export namespace integrations {
 	        this.lastChecked = this.convertValues(source["lastChecked"], null);
 	        this.metadata = source["metadata"];
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -642,7 +915,7 @@ export namespace integrations {
 }
 
 export namespace main {
-	
+
 	export class AgentSessionInfo {
 	    id: string;
 	    projectPath: string;
@@ -654,11 +927,11 @@ export namespace main {
 	    reasoningEffort?: string;
 	    mode?: string;
 	    modeConfig?: Record<string, any>;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new AgentSessionInfo(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -680,11 +953,11 @@ export namespace main {
 	    output?: string;
 	    interactive: boolean;
 	    launched: boolean;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new DatadogMCPAuthResult(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.mcpName = source["mcpName"];
@@ -698,11 +971,11 @@ export namespace main {
 	export class RoutineOutput {
 	    format: string;
 	    defaultPath?: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new RoutineOutput(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.format = source["format"];
@@ -715,11 +988,11 @@ export namespace main {
 	    description?: string;
 	    default?: string;
 	    required?: boolean;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new RoutineParameter(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.name = source["name"];
@@ -742,11 +1015,11 @@ export namespace main {
 	    parameters?: RoutineParameter[];
 	    output: RoutineOutput;
 	    metadata?: Record<string, string>;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new DesktopRoutine(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -762,7 +1035,7 @@ export namespace main {
 	        this.output = this.convertValues(source["output"], RoutineOutput);
 	        this.metadata = source["metadata"];
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -781,6 +1054,197 @@ export namespace main {
 		    return a;
 		}
 	}
+	export class FrontendTicketQueueRequest {
+	    projectPath?: string;
+	    linearProject?: string;
+	    query?: string;
+	    limit?: number;
+	    states?: string[];
+	    includeCanceled?: boolean;
+	    maxParallel?: number;
+	    tickets?: frontendqueue.Ticket[];
+
+	    static createFrom(source: any = {}) {
+	        return new FrontendTicketQueueRequest(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.projectPath = source["projectPath"];
+	        this.linearProject = source["linearProject"];
+	        this.query = source["query"];
+	        this.limit = source["limit"];
+	        this.states = source["states"];
+	        this.includeCanceled = source["includeCanceled"];
+	        this.maxParallel = source["maxParallel"];
+	        this.tickets = this.convertValues(source["tickets"], frontendqueue.Ticket);
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class FrontendTicketQueueResult {
+	    source: string;
+	    linearProject?: string;
+	    tickets: frontendqueue.Ticket[];
+	    plan: frontendqueue.Plan;
+	    warning?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new FrontendTicketQueueResult(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.source = source["source"];
+	        this.linearProject = source["linearProject"];
+	        this.tickets = this.convertValues(source["tickets"], frontendqueue.Ticket);
+	        this.plan = this.convertValues(source["plan"], frontendqueue.Plan);
+	        this.warning = source["warning"];
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class FrontendTicketQueueRunRequest {
+	    projectPath?: string;
+	    linearProject?: string;
+	    plan: frontendqueue.Plan;
+	    batchId?: string;
+	    ticketIds?: string[];
+	    runAll?: boolean;
+	    baseBranch?: string;
+	    models?: agentruntime.ModelProfile;
+
+	    static createFrom(source: any = {}) {
+	        return new FrontendTicketQueueRunRequest(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.projectPath = source["projectPath"];
+	        this.linearProject = source["linearProject"];
+	        this.plan = this.convertValues(source["plan"], frontendqueue.Plan);
+	        this.batchId = source["batchId"];
+	        this.ticketIds = source["ticketIds"];
+	        this.runAll = source["runAll"];
+	        this.baseBranch = source["baseBranch"];
+	        this.models = this.convertValues(source["models"], agentruntime.ModelProfile);
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class FrontendTicketQueueWorkerSession {
+	    ticketId: string;
+	    sessionId?: string;
+	    policy: string;
+	    branchName?: string;
+	    status: string;
+	    message?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new FrontendTicketQueueWorkerSession(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.ticketId = source["ticketId"];
+	        this.sessionId = source["sessionId"];
+	        this.policy = source["policy"];
+	        this.branchName = source["branchName"];
+	        this.status = source["status"];
+	        this.message = source["message"];
+	    }
+	}
+	export class FrontendTicketQueueRunResult {
+	    runId: string;
+	    batchId?: string;
+	    projectPath: string;
+	    startedAt: string;
+	    sessions: FrontendTicketQueueWorkerSession[];
+	    startedCount: number;
+	    skippedCount: number;
+
+	    static createFrom(source: any = {}) {
+	        return new FrontendTicketQueueRunResult(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.runId = source["runId"];
+	        this.batchId = source["batchId"];
+	        this.projectPath = source["projectPath"];
+	        this.startedAt = source["startedAt"];
+	        this.sessions = this.convertValues(source["sessions"], FrontendTicketQueueWorkerSession);
+	        this.startedCount = source["startedCount"];
+	        this.skippedCount = source["skippedCount"];
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+
 	export class GitStatus {
 	    isRepo: boolean;
 	    branch: string;
@@ -788,11 +1252,11 @@ export namespace main {
 	    added: string[];
 	    deleted: string[];
 	    untracked: string[];
-	
+
 	    static createFrom(source: any = {}) {
 	        return new GitStatus(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.isRepo = source["isRepo"];
@@ -817,11 +1281,11 @@ export namespace main {
 	    expired?: boolean;
 	    path?: string;
 	    body?: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new MemoryDocumentDetail(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -852,11 +1316,11 @@ export namespace main {
 	    expiresAt?: string;
 	    expired?: boolean;
 	    path?: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new MemoryDocumentSummary(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -879,11 +1343,11 @@ export namespace main {
 	    page: number;
 	    pageSize: number;
 	    hasMore: boolean;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new MessagePage(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.messages = this.convertValues(source["messages"], agent.Message);
@@ -892,7 +1356,7 @@ export namespace main {
 	        this.pageSize = source["pageSize"];
 	        this.hasMore = source["hasMore"];
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -925,11 +1389,11 @@ export namespace main {
 	    instructionsPreview?: string;
 	    firstMessagePreview?: string;
 	    firstMessageCharacterCount?: number;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new RoutineRequestPreview(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.runId = source["runId"];
@@ -955,11 +1419,11 @@ export namespace main {
 	    integrations?: integrations.Status[];
 	    reportPath?: string;
 	    command?: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new RoutineDryRunResult(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.routine = this.convertValues(source["routine"], DesktopRoutine);
@@ -970,7 +1434,7 @@ export namespace main {
 	        this.reportPath = source["reportPath"];
 	        this.command = source["command"];
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -989,8 +1453,8 @@ export namespace main {
 		    return a;
 		}
 	}
-	
-	
+
+
 	export class RoutineRemediationResult {
 	    id?: string;
 	    title: string;
@@ -999,11 +1463,11 @@ export namespace main {
 	    branchName?: string;
 	    message?: string;
 	    error?: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new RoutineRemediationResult(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -1015,7 +1479,7 @@ export namespace main {
 	        this.error = source["error"];
 	    }
 	}
-	
+
 	export class RoutineRunRequest {
 	    routineId: string;
 	    projectPath: string;
@@ -1025,11 +1489,11 @@ export namespace main {
 	    models?: agentruntime.ModelProfile;
 	    runId?: string;
 	    reportOut?: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new RoutineRunRequest(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.routineId = source["routineId"];
@@ -1041,7 +1505,7 @@ export namespace main {
 	        this.runId = source["runId"];
 	        this.reportOut = source["reportOut"];
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -1073,11 +1537,11 @@ export namespace main {
 	    usage?: agentruntime.Usage;
 	    report?: string;
 	    remediations?: RoutineRemediationResult[];
-	
+
 	    static createFrom(source: any = {}) {
 	        return new RoutineRunResult(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.routineId = source["routineId"];
@@ -1093,7 +1557,7 @@ export namespace main {
 	        this.report = source["report"];
 	        this.remediations = this.convertValues(source["remediations"], RoutineRemediationResult);
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -1124,11 +1588,11 @@ export namespace main {
 	    firstSeenAt?: string;
 	    lastSeenAt?: string;
 	    eventCount: number;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new RuntimeArtifactSummary(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.kind = source["kind"];
@@ -1161,11 +1625,11 @@ export namespace main {
 	    artifactPath?: string;
 	    artifactUrl?: string;
 	    rawPreview?: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new RuntimeEventSummary(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.type = source["type"];
@@ -1202,11 +1666,11 @@ export namespace main {
 	    instructionsPreview?: string;
 	    firstMessagePreview?: string;
 	    metadata?: Record<string, string>;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new RuntimeRequestSummary(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.provider = source["provider"];
@@ -1239,11 +1703,11 @@ export namespace main {
 	    endedAt?: string;
 	    eventCount: number;
 	    artifactCount?: number;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new RuntimeRunSummary(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.runId = source["runId"];
@@ -1265,11 +1729,11 @@ export namespace main {
 	    request?: RuntimeRequestSummary;
 	    events: RuntimeEventSummary[];
 	    artifacts: RuntimeArtifactSummary[];
-	
+
 	    static createFrom(source: any = {}) {
 	        return new RuntimeRunDetail(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.metadata = this.convertValues(source["metadata"], RuntimeRunSummary);
@@ -1277,7 +1741,7 @@ export namespace main {
 	        this.events = this.convertValues(source["events"], RuntimeEventSummary);
 	        this.artifacts = this.convertValues(source["artifacts"], RuntimeArtifactSummary);
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -1296,7 +1760,7 @@ export namespace main {
 		    return a;
 		}
 	}
-	
+
 	export class SearchSessionsRequest {
 	    query: string;
 	    tags: string[];
@@ -1304,11 +1768,11 @@ export namespace main {
 	    isFavorite?: boolean;
 	    fromDate: string;
 	    toDate: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new SearchSessionsRequest(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.query = source["query"];
@@ -1330,11 +1794,11 @@ export namespace main {
 	    score: number;
 	    matchReasons: string[];
 	    status: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new SearchSessionsResponse(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.sessionId = source["sessionId"];
@@ -1353,7 +1817,7 @@ export namespace main {
 }
 
 export namespace mcp {
-	
+
 	export class Server {
 	    name: string;
 	    description?: string;
@@ -1361,11 +1825,11 @@ export namespace mcp {
 	    args?: string[];
 	    env?: Record<string, string>;
 	    enabled: boolean;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new Server(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.name = source["name"];
@@ -1380,7 +1844,7 @@ export namespace mcp {
 }
 
 export namespace project {
-	
+
 	export class Project {
 	    id: string;
 	    name: string;
@@ -1390,11 +1854,11 @@ export namespace project {
 	    lastOpened: any;
 	    // Go type: time
 	    createdAt: any;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new Project(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -1404,7 +1868,7 @@ export namespace project {
 	        this.lastOpened = this.convertValues(source["lastOpened"], null);
 	        this.createdAt = this.convertValues(source["createdAt"], null);
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -1429,11 +1893,11 @@ export namespace project {
 	    isGitRepo: boolean;
 	    hasPackage: boolean;
 	    languages: string[];
-	
+
 	    static createFrom(source: any = {}) {
 	        return new WorkspaceInfo(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.path = source["path"];
@@ -1447,18 +1911,18 @@ export namespace project {
 }
 
 export namespace services {
-	
+
 	export class AutoDistillResult {
 	    domain: string;
 	    brainId: string;
 	    path: string;
 	    signals: number;
 	    usedLlm: boolean;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new AutoDistillResult(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.domain = source["domain"];
@@ -1472,11 +1936,11 @@ export namespace services {
 	    path: string;
 	    description: string;
 	    checksum: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new BrainReference(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.path = source["path"];
@@ -1487,11 +1951,11 @@ export namespace services {
 	export class BrainSection {
 	    title: string;
 	    content: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new BrainSection(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.title = source["title"];
@@ -1510,11 +1974,11 @@ export namespace services {
 	    filePatterns: string[];
 	    sections: BrainSection[];
 	    references: BrainReference[];
-	
+
 	    static createFrom(source: any = {}) {
 	        return new BrainDetail(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -1529,7 +1993,7 @@ export namespace services {
 	        this.sections = this.convertValues(source["sections"], BrainSection);
 	        this.references = this.convertValues(source["references"], BrainReference);
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -1558,11 +2022,11 @@ export namespace services {
 	    keywords: string[];
 	    entities: string[];
 	    filePatterns: string[];
-	
+
 	    static createFrom(source: any = {}) {
 	        return new BrainEntry(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -1576,16 +2040,16 @@ export namespace services {
 	        this.filePatterns = source["filePatterns"];
 	    }
 	}
-	
-	
+
+
 	export class StaleRefResult {
 	    path: string;
 	    reason: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new StaleRefResult(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.path = source["path"];
@@ -1596,18 +2060,18 @@ export namespace services {
 	    valid: boolean;
 	    errors: string[];
 	    stale: StaleRefResult[];
-	
+
 	    static createFrom(source: any = {}) {
 	        return new BrainValidationResult(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.valid = source["valid"];
 	        this.errors = source["errors"];
 	        this.stale = this.convertValues(source["stale"], StaleRefResult);
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -1634,11 +2098,11 @@ export namespace services {
 	    count: number;
 	    firstSeen: string;
 	    lastSeen: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new SignalEntry(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.type = source["type"];
@@ -1654,7 +2118,7 @@ export namespace services {
 }
 
 export namespace triage {
-	
+
 	export class TriageOptions {
 	    teams: string[];
 	    states: string[];
@@ -1666,11 +2130,11 @@ export namespace triage {
 	    concurrency: number;
 	    generatePlans: boolean;
 	    repoPath: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new TriageOptions(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.teams = source["teams"];

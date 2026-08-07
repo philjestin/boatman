@@ -20,18 +20,19 @@ import { HarnessView } from './components/harness/HarnessView';
 import { BrainView } from './components/brain/BrainView';
 import { RuntimeView } from './components/runtime/RuntimeView';
 import { RoutineView } from './components/routines/RoutineView';
+import { FrontendQueueView } from './components/frontendqueue/FrontendQueueView';
 import { useAgent } from './hooks/useAgent';
 import { useProject } from './hooks/useProject';
 import { usePreferences } from './hooks/usePreferences';
 import { useSearch } from './hooks/useSearch';
 import { useDiff } from './hooks/useDiff';
 import { useStore } from './store';
-import { Activity, ListTodo, MessageSquare, FileCode, Hammer, Brain, Sparkles } from 'lucide-react';
+import { Activity, ListTodo, MessageSquare, FileCode, Hammer, Brain, Sparkles, Workflow } from 'lucide-react';
 import { ListAgentSessions, SetSessionFavorite, AddSessionTag, RemoveSessionTag } from '../wailsjs/go/main/App';
 import { EventsOff, EventsOn } from '../wailsjs/runtime/runtime';
 import type { Task, TriageOptions } from './types';
 
-type TabView = 'chat' | 'tasks' | 'diff' | 'harness' | 'brain' | 'runtime' | 'routines';
+type TabView = 'chat' | 'tasks' | 'diff' | 'harness' | 'brain' | 'runtime' | 'routines' | 'frontend-queue';
 
 function App() {
   const [activeTab, setActiveTab] = useState<TabView>('chat');
@@ -488,7 +489,7 @@ function App() {
 
         {/* Main Content */}
         <MainPanel
-          isEmpty={!hasActiveSession && activeTab !== 'harness' && activeTab !== 'brain' && activeTab !== 'runtime' && activeTab !== 'routines'}
+          isEmpty={!hasActiveSession && activeTab !== 'harness' && activeTab !== 'brain' && activeTab !== 'runtime' && activeTab !== 'routines' && activeTab !== 'frontend-queue'}
           onNewSession={handleNewSession}
           onOpenProject={handleOpenProject}
         >
@@ -585,6 +586,17 @@ function App() {
               <Sparkles className="w-4 h-4" />
               Routines
             </button>
+            <button
+              onClick={() => setActiveTab('frontend-queue')}
+              className={`flex items-center gap-2 px-4 py-3 text-sm transition-colors border-b-2 ${
+                activeTab === 'frontend-queue'
+                  ? 'border-emerald-500 text-slate-100'
+                  : 'border-transparent text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Workflow className="w-4 h-4" />
+              Frontend Queue
+            </button>
           </div>
 
           {/* Tab Content */}
@@ -657,6 +669,12 @@ function App() {
                 projectPath={activeProject?.path}
                 onOpenSettings={() => setSettingsOpen(true)}
                 onRoutineSessionOpen={handleRoutineSessionOpen}
+              />
+            )}
+            {activeTab === 'frontend-queue' && (
+              <FrontendQueueView
+                projectPath={activeProject?.path}
+                onOpenSettings={() => setSettingsOpen(true)}
               />
             )}
           </div>
